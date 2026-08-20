@@ -10,6 +10,7 @@ import com.tempobox.database.entity.TrackEntity
 import com.tempobox.database.pojo.AlbumArtistRow
 import com.tempobox.database.pojo.AlbumRow
 import com.tempobox.database.pojo.GenreRow
+import com.tempobox.database.pojo.TrackScanMeta
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -68,6 +69,10 @@ interface TrackDao {
 
     @Query("SELECT filePath FROM tracks")
     suspend fun getAllPaths(): List<String>
+
+    /** Lightweight projection used by the scanner's change diff. */
+    @Query("SELECT filePath, dateModifiedMs, sizeBytes, dateAddedMs FROM tracks")
+    suspend fun getAllScanMeta(): List<TrackScanMeta>
 
     @Query("SELECT COUNT(*) FROM tracks")
     suspend fun count(): Int

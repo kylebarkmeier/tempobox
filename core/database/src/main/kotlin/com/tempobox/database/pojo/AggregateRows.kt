@@ -85,6 +85,14 @@ data class GenreRow(
     )
 }
 
+/** (path, mtime, size, added) projection for the scanner's change diff. */
+data class TrackScanMeta(
+    val filePath: String,
+    val dateModifiedMs: Long,
+    val sizeBytes: Long,
+    val dateAddedMs: Long,
+)
+
 /** Playlist row joined with its entry count and total duration. */
 data class PlaylistWithStats(
     val id: Long,
