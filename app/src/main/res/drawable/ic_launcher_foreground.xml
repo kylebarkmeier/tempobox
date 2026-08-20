@@ -1,0 +1,16 @@
+<!-- Launcher foreground: a beamed eighth-note pair, centered in the safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.5"
+        android:scaleY="0.5"
+        android:pivotX="54"
+        android:pivotY="54">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M70,26 L42,32 C40.9,32.2 40,33.2 40,34.3 L40,64.6 C38.4,63.6 36.3,63 34,63 C28.5,63 24,66.6 24,71 C24,75.4 28.5,79 34,79 C39.5,79 44,75.4 44,71 L44,44.7 L68,39.5 L68,58.6 C66.4,57.6 64.3,57 62,57 C56.5,57 52,60.6 52,65 C52,69.4 56.5,73 62,73 C67.5,73 72,69.4 72,65 L72,28.3 C72,26.9 71.1,25.8 70,26 Z" />
+    </group>
+</vector>

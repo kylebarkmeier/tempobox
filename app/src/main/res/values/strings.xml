@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">TempoBox</string>
+    <string name="widget_label">TempoBox player</string>
+    <string name="widget_description">Album art with playback controls</string>
+</resources>
