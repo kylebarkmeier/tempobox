@@ -1,5 +1,9 @@
 # TempoBox 🎵
 
+[![CI](https://github.com/kbarkmeier/tempobox/actions/workflows/ci.yml/badge.svg)](https://github.com/kbarkmeier/tempobox/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/kbarkmeier/tempobox?include_prereleases)](https://github.com/kbarkmeier/tempobox/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A modern, local-first Android music player built with Kotlin, Jetpack Compose,
 and Media3/ExoPlayer.
 
@@ -156,6 +160,21 @@ docs/              Architecture notes
 
 See `docs/ARCHITECTURE.md` for the module graph and key design decisions, and
 `CLAUDE.md` for the condensed contributor guiderails.
+
+## CI/CD
+
+GitHub Actions runs the pipeline (see `.github/workflows/`):
+
+- **CI** (`ci.yml`) — every push/PR: all unit tests, Android Lint, and a debug
+  APK build (uploaded as an artifact). Pushes to `main` additionally run the
+  instrumented Compose tests on an API 34 emulator.
+- **Release** (`release.yml`) — push a `v*` tag (or run manually): tests,
+  builds, optionally signs, and publishes a GitHub Release with the APK and
+  auto-generated notes. See [docs/RELEASING.md](docs/RELEASING.md).
+- **Dependabot** — weekly grouped dependency-update PRs for Gradle and
+  Actions.
+
+Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Codecs
 

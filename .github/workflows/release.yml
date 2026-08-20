@@ -1,0 +1,105 @@
+# Release pipeline: push a tag like v1.2.0 (or run manually with a version)
+# and this builds, tests, optionally signs, and publishes a GitHub Release
+# with the APK attached and auto-generated notes.
+#
+# Signing (optional): add these repository secrets and release APKs get
+# signed; without them the unsigned APK is published instead.
+#   KEYSTORE_BASE64      base64 of your .jks/.keystore file
+#                        (create with: base64 -w0 my.keystore)
+#   KEYSTORE_PASSWORD    keystore password
+#   KEY_ALIAS            key alias
+#   KEY_PASSWORD         key password
+#
+# See docs/RELEASING.md for the full walkthrough.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to release (e.g. v1.0.0); the tag must exist'
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write # create the GitHub Release
+
+jobs:
+  release:
+    name: Build & publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Manual dispatch releases an existing tag; tag pushes use the ref.
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle (with build cache)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run unit tests (gate the release)
+        run: ./gradlew test testDebugUnitTest --stacktrace
+
+      - name: Assemble release APK
+        run: ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Check for signing secrets
+        id: keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No KEYSTORE_BASE64 secret — publishing the unsigned APK."
+          fi
+
+      - name: Sign APK
+        if: steps.keystore.outputs.present == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > /tmp/release.keystore
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks /tmp/release.keystore \
+            --ks-pass env:KEYSTORE_PASSWORD \
+            --ks-key-alias "$KEY_ALIAS" \
+            --key-pass env:KEY_PASSWORD \
+            --out app/build/outputs/apk/release/tempobox-release.apk \
+            app/build/outputs/apk/release/app-release-unsigned.apk
+          "$BUILD_TOOLS/apksigner" verify app/build/outputs/apk/release/tempobox-release.apk
+          rm /tmp/release.keystore
+
+      - name: Prepare unsigned artifact name
+        if: steps.keystore.outputs.present == 'false'
+        run: |
+          cp app/build/outputs/apk/release/app-release-unsigned.apk \
+             app/build/outputs/apk/release/tempobox-release-unsigned.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+          generate_release_notes: true
+          files: |
+            app/build/outputs/apk/release/tempobox-release.apk
+            app/build/outputs/apk/release/tempobox-release-unsigned.apk
+          fail_on_unmatched_files: false

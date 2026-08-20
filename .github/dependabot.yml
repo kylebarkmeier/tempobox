@@ -1,0 +1,18 @@
+# Weekly dependency update PRs for Gradle libraries and GitHub Actions.
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # Batch AndroidX/Kotlin bumps so the inbox stays manageable.
+      androidx:
+        patterns: ["androidx.*", "com.google.dagger*"]
+      kotlin:
+        patterns: ["org.jetbrains.kotlin*", "org.jetbrains.kotlinx*", "com.google.devtools.ksp*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

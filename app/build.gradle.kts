@@ -19,6 +19,12 @@ android {
         vectorDrawables.useSupportLibrary = true
     }
 
+    lint {
+        // CI runs lintDebug and archives the report; findings shouldn't turn
+        // the whole pipeline red until a baseline has been curated.
+        abortOnError = false
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
