@@ -37,6 +37,7 @@ class DataStoreSettingsRepository @Inject constructor(
         val BLUETOOTH = stringPreferencesKey("bluetooth")
         val SHUFFLE = stringPreferencesKey("shuffle")
         val LAST_FM = stringPreferencesKey("last_fm")
+        val ARTWORK = stringPreferencesKey("artwork")
         val THEME = stringPreferencesKey("theme")
     }
 
@@ -49,6 +50,7 @@ class DataStoreSettingsRepository @Inject constructor(
             bluetooth = prefs.decode(Keys.BLUETOOTH, BluetoothSettings.serializer()) ?: BluetoothSettings(),
             shuffle = prefs.decode(Keys.SHUFFLE, ShuffleSettings.serializer()) ?: ShuffleSettings(),
             lastFm = prefs.decode(Keys.LAST_FM, LastFmSettings.serializer()) ?: LastFmSettings(),
+            artwork = prefs.decode(Keys.ARTWORK, ArtworkSettings.serializer()) ?: ArtworkSettings(),
             theme = prefs.decode(Keys.THEME, ThemeConfig.serializer()) ?: ThemeConfig(),
         )
     }
@@ -73,6 +75,9 @@ class DataStoreSettingsRepository @Inject constructor(
 
     override suspend fun updateLastFm(transform: (LastFmSettings) -> LastFmSettings) =
         updateGroup(Keys.LAST_FM, LastFmSettings.serializer(), { LastFmSettings() }, transform)
+
+    override suspend fun updateArtwork(transform: (ArtworkSettings) -> ArtworkSettings) =
+        updateGroup(Keys.ARTWORK, ArtworkSettings.serializer(), { ArtworkSettings() }, transform)
 
     override suspend fun updateTheme(transform: (ThemeConfig) -> ThemeConfig) =
         updateGroup(Keys.THEME, ThemeConfig.serializer(), { ThemeConfig() }, transform)

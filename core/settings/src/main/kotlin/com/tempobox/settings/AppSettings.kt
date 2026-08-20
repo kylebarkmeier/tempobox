@@ -27,7 +27,19 @@ data class AppSettings(
     val bluetooth: BluetoothSettings = BluetoothSettings(),
     val shuffle: ShuffleSettings = ShuffleSettings(),
     val lastFm: LastFmSettings = LastFmSettings(),
+    val artwork: ArtworkSettings = ArtworkSettings(),
     val theme: ThemeConfig = ThemeConfig(),
+)
+
+@Serializable
+data class ArtworkSettings(
+    /**
+     * Personal access token for discogs.com (Settings ▸ UI ▸ Artist images).
+     * Empty = skip Discogs and always use the album-art collage fallback.
+     */
+    val discogsToken: String = "",
+    /** Card view: prefer fetched artist photos over the album-art collage. */
+    val preferArtistImages: Boolean = true,
 )
 
 @Serializable
