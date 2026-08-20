@@ -4,7 +4,7 @@
 
 [versions]
 # --- Build tooling ---
-agp = "8.10.1"                     # Android Gradle Plugin (needs Gradle >= 8.11)
+agp = "9.3.1"                     # Android Gradle Plugin (needs Gradle >= 8.11)
 kotlin = "2.0.21"
 ksp = "2.0.21-1.0.28"              # Kotlin Symbol Processing (must match Kotlin version prefix)
 
