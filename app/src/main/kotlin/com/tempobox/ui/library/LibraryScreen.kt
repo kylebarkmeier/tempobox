@@ -25,7 +25,7 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -171,7 +171,7 @@ fun LibraryScreen(
 private fun LayoutToggle(current: ViewLayout, onToggle: () -> Unit) {
     IconButton(onClick = onToggle) {
         Icon(
-            if (current == ViewLayout.CARD) Icons.Filled.ViewList else Icons.Filled.GridView,
+            if (current == ViewLayout.CARD) Icons.AutoMirrored.Filled.ViewList else Icons.Filled.GridView,
             contentDescription = if (current == ViewLayout.CARD) "Switch to list" else "Switch to cards",
         )
     }

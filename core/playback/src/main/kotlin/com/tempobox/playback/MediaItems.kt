@@ -35,7 +35,13 @@ object MediaItems {
     fun artworkUri(path: String): Uri = "$ARTWORK_SCHEME:///${Uri.encode(path)}".toUri()
 
     fun pathFromArtworkUri(uri: Uri): String? =
-        if (uri.scheme == ARTWORK_SCHEME) Uri.decode(uri.path?.removePrefix("/")) else null
+        // Use encodedPath: uri.path is already decoded, and decoding twice
+        // corrupts file names that legitimately contain percent signs.
+        if (uri.scheme == ARTWORK_SCHEME) {
+            uri.encodedPath?.removePrefix("/")?.let(Uri::decode)
+        } else {
+            null
+        }
 
     fun toMediaItem(track: Track, uid: Long): MediaItem {
         val extras = Bundle().apply {

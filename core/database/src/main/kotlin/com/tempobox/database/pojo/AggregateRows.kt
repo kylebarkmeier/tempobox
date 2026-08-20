@@ -66,8 +66,11 @@ data class AlbumArtistRow(
     )
 
     companion object {
-        /** Separator unlikely to appear in genres or file paths. */
-        const val GROUP_CONCAT_SEP = ""
+        /**
+         * U+001F (unit separator) — matches CHAR(31) used by the DAO's
+         * GROUP_CONCAT calls; cannot appear in genres or file paths.
+         */
+        const val GROUP_CONCAT_SEP = "\u001F"
     }
 }
 

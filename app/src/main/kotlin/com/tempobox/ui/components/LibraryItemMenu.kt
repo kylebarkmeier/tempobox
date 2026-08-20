@@ -29,58 +29,72 @@ fun LibraryItemMenu(
 ) {
     var open by remember { mutableStateOf(false) }
 
-    IconButton(onClick = { open = true }) {
-        Icon(Icons.Filled.MoreVert, contentDescription = "More options for ${item.title}")
+    // Box anchors the menu to the button (not the whole row).
+    androidx.compose.foundation.layout.Box {
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Filled.MoreVert, contentDescription = "More options for ${item.title}")
+        }
+        MenuContent(item, actions, extras, open, onDismiss = { open = false })
     }
-    DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+}
+
+@Composable
+private fun MenuContent(
+    item: LibraryItem,
+    actions: LibraryActionsViewModel,
+    extras: List<Pair<String, () -> Unit>>,
+    open: Boolean,
+    onDismiss: () -> Unit,
+) {
+    DropdownMenu(expanded = open, onDismissRequest = onDismiss) {
         if (item.isCollection) {
             DropdownMenuItem(
                 text = { Text("Shuffle") },
-                onClick = { open = false; actions.shuffle(item) },
+                onClick = { onDismiss(); actions.shuffle(item) },
             )
         }
         DropdownMenuItem(
             text = { Text("Add to queue") },
-            onClick = { open = false; actions.addToQueue(item) },
+            onClick = { onDismiss(); actions.addToQueue(item) },
         )
         DropdownMenuItem(
             text = { Text("Play next") },
-            onClick = { open = false; actions.playNext(item) },
+            onClick = { onDismiss(); actions.playNext(item) },
         )
         DropdownMenuItem(
             text = { Text("Add to playlist") },
-            onClick = { open = false; actions.requestAddToPlaylist(item) },
+            onClick = { onDismiss(); actions.requestAddToPlaylist(item) },
         )
         if (item !is LibraryItem.PlaylistItem) {
             DropdownMenuItem(
                 text = { Text("Create auto playlist") },
-                onClick = { open = false; actions.requestCreateAutoPlaylist(item) },
+                onClick = { onDismiss(); actions.requestCreateAutoPlaylist(item) },
             )
             DropdownMenuItem(
                 text = { Text("Edit ID3 tags") },
-                onClick = { open = false; actions.requestEditTags(item) },
+                onClick = { onDismiss(); actions.requestEditTags(item) },
             )
         }
         if (item is LibraryItem.TrackItem) {
             DropdownMenuItem(
                 text = { Text("Rate") },
-                onClick = { open = false; actions.requestRate(item.track) },
+                onClick = { onDismiss(); actions.requestRate(item.track) },
             )
         }
         extras.forEach { (label, action) ->
             DropdownMenuItem(
                 text = { Text(label) },
-                onClick = { open = false; action() },
+                onClick = { onDismiss(); action() },
             )
         }
         DropdownMenuItem(
             text = { Text("Remove from library") },
-            onClick = { open = false; actions.requestRemoveFromLibrary(item) },
+            onClick = { onDismiss(); actions.requestRemoveFromLibrary(item) },
         )
         if (item !is LibraryItem.PlaylistItem || item.playlist.filePath != null) {
             DropdownMenuItem(
                 text = { Text("Delete permanently") },
-                onClick = { open = false; actions.requestDelete(item) },
+                onClick = { onDismiss(); actions.requestDelete(item) },
             )
         }
     }

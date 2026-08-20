@@ -107,29 +107,41 @@ class LibraryActionsViewModel @Inject constructor(
 
     // ------------------------------------------------------------------ dialog completions
 
-    fun confirmRemoveFromLibrary(item: LibraryItem) = withTracks(item) { tracks ->
+    fun confirmRemoveFromLibrary(item: LibraryItem) {
+        // Playlists are removed directly — an EMPTY playlist must still be
+        // removable, so this can't go through withTracks.
         if (item is LibraryItem.PlaylistItem) {
-            playlistRepository.deletePlaylist(item.playlist.id)
-            toast("Removed playlist \"${item.title}\"")
-        } else {
+            viewModelScope.launch {
+                playlistRepository.deletePlaylist(item.playlist.id)
+                toast("Removed playlist \"${item.title}\"")
+                _dialog.value = null
+            }
+            return
+        }
+        withTracks(item) { tracks ->
             libraryRepository.removeFromLibrary(tracks.map { it.id })
             toast("Removed ${countLabel(tracks.size)} from library")
+            _dialog.value = null
         }
-        _dialog.value = null
     }
 
-    fun confirmDelete(item: LibraryItem) = withTracks(item) { tracks ->
+    fun confirmDelete(item: LibraryItem) {
         if (item is LibraryItem.PlaylistItem) {
-            playlistRepository.deletePlaylist(item.playlist.id)
-            toast("Deleted playlist \"${item.title}\"")
-        } else {
+            viewModelScope.launch {
+                playlistRepository.deletePlaylist(item.playlist.id)
+                toast("Deleted playlist \"${item.title}\"")
+                _dialog.value = null
+            }
+            return
+        }
+        withTracks(item) { tracks ->
             val failed = libraryRepository.deleteFromDevice(tracks.map { it.id })
             toast(
                 if (failed.isEmpty()) "Deleted ${countLabel(tracks.size)} from device"
                 else "Could not delete ${failed.size} file(s) — grant All files access in Settings ▸ Library",
             )
+            _dialog.value = null
         }
-        _dialog.value = null
     }
 
     fun addToExistingPlaylist(item: LibraryItem, playlistId: Long, playlistName: String) =

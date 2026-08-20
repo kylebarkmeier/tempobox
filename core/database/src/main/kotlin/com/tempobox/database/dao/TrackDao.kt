@@ -128,8 +128,8 @@ interface TrackDao {
         SELECT albumArtist AS name,
                COUNT(DISTINCT album) AS albumCount,
                COUNT(*) AS trackCount,
-               GROUP_CONCAT(CASE WHEN genre = '' THEN 'Unknown Genre' ELSE genre END, '') AS genresConcat,
-               GROUP_CONCAT(CASE WHEN hasEmbeddedArt THEN filePath ELSE NULL END, '') AS artPathsConcat,
+               GROUP_CONCAT(CASE WHEN genre = '' THEN 'Unknown Genre' ELSE genre END, CHAR(31)) AS genresConcat,
+               GROUP_CONCAT(CASE WHEN hasEmbeddedArt THEN filePath ELSE NULL END, CHAR(31)) AS artPathsConcat,
                MAX(dateAddedMs) AS dateAddedMs,
                MAX(dateModifiedMs) AS dateModifiedMs
         FROM tracks

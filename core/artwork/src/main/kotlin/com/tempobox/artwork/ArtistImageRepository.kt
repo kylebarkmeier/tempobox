@@ -52,23 +52,29 @@ class ArtistImageRepository @Inject constructor(
     suspend fun imageUrl(artistName: String): String? = withContext(ioDispatcher) {
         if (artistName.isBlank()) return@withContext null
         val key = artistName.trim().lowercase()
+        val now = System.currentTimeMillis()
+
+        // Cache check under the lock…
+        mutex.withLock {
+            val hit = loadCache()[key]
+            if (hit != null && now - hit.fetchedAtMs < CACHE_TTL_MS) return@withContext hit.url
+        }
+
+        val token = settingsRepository.settings.first().artwork.discogsToken
+        if (token.isBlank()) return@withContext null
+
+        // …but the network call happens OUTSIDE it, so one slow request
+        // can't stall every other artist card's image load.
+        val url = runCatching { queryDiscogs(artistName, token) }
+            .onFailure { Log.w(TAG, "Discogs lookup failed for $artistName: ${it.message}") }
+            .getOrNull()
 
         mutex.withLock {
             val map = loadCache()
-            val hit = map[key]
-            val now = System.currentTimeMillis()
-            if (hit != null && now - hit.fetchedAtMs < CACHE_TTL_MS) return@withContext hit.url
-
-            val token = settingsRepository.settings.first().artwork.discogsToken
-            if (token.isBlank()) return@withContext null
-
-            val url = runCatching { queryDiscogs(artistName, token) }
-                .onFailure { Log.w(TAG, "Discogs lookup failed for $artistName: ${it.message}") }
-                .getOrNull()
             map[key] = CacheEntry(url, now)
             persistCache(map)
-            url
         }
+        url
     }
 
     /** Settings ▸ "Clear artist image cache". */

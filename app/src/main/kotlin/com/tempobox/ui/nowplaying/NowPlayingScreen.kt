@@ -316,18 +316,33 @@ private fun SeekBar(
     onToggleElapsed: () -> Unit,
     onSeek: (Long) -> Unit,
 ) {
+    // Track the drag locally; only issue the seek when the finger lifts, so
+    // scrubbing doesn't spam seeks or fight the position ticker.
+    var dragFraction by remember { mutableStateOf<Float?>(null) }
+    val playedFraction = if (durationMs > 0) {
+        (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    val shownFraction = dragFraction ?: playedFraction
+    val shownPositionMs = (shownFraction * durationMs).toLong()
+
     Column(Modifier.fillMaxWidth()) {
         Slider(
-            value = if (durationMs > 0) positionMs.toFloat() / durationMs else 0f,
-            onValueChange = { fraction -> onSeek((fraction * durationMs).toLong()) },
+            value = shownFraction,
+            onValueChange = { dragFraction = it },
+            onValueChangeFinished = {
+                dragFraction?.let { onSeek((it * durationMs).toLong()) }
+                dragFraction = null
+            },
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             // Tapping elapsed flips to "-remaining" (spec).
             Text(
                 if (showRemaining) {
-                    TimeFormat.remaining(positionMs, durationMs)
+                    TimeFormat.remaining(shownPositionMs, durationMs)
                 } else {
-                    TimeFormat.duration(positionMs)
+                    TimeFormat.duration(shownPositionMs)
                 },
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier

@@ -5,7 +5,7 @@ import com.tempobox.model.Track
 import java.io.File
 
 /**
- * Reads metadata from audio files. Implemented by [JAudioTaggerReader];
+ * Reads metadata from audio files. Implemented by [JAudioTaggerIO];
  * interface kept small so `core:library` tests can use an in-memory fake.
  */
 interface TagReader {

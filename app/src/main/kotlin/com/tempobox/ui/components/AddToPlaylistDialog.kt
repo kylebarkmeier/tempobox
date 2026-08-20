@@ -9,7 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -73,7 +73,7 @@ fun AddToPlaylistDialog(
                                 headlineContent = { Text(playlist.name) },
                                 supportingContent = { Text("${playlist.trackCount} tracks") },
                                 leadingContent = {
-                                    Icon(Icons.Filled.PlaylistPlay, contentDescription = null)
+                                    Icon(Icons.AutoMirrored.Filled.PlaylistPlay, contentDescription = null)
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()

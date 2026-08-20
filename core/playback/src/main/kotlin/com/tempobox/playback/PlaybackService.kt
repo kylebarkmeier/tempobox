@@ -118,7 +118,7 @@ class PlaybackService : MediaSessionService() {
                 val item = runCatching {
                     eventTime.timeline.getWindow(eventTime.windowIndex, window).mediaItem
                 }.getOrNull() ?: return@PlaybackStatsListener
-                onPlaybackSessionEnded(item, stats.totalPlayTimeMs, stats.firstReportedTimeMs)
+                onPlaybackSessionEnded(item, stats.totalPlayTimeMs)
             },
         )
 
@@ -237,12 +237,15 @@ class PlaybackService : MediaSessionService() {
         )
     }
 
-    private fun onPlaybackSessionEnded(item: MediaItem, playedMs: Long, startedAtMs: Long) {
+    private fun onPlaybackSessionEnded(item: MediaItem, playedMs: Long) {
         val track = MediaItems.toTrack(item)
         if (!PlayedThreshold.shouldCount(track.durationMs, playedMs)) return
+        // Wall-clock start estimate (PlaybackStats times are elapsed-realtime,
+        // which Last.fm would reject as a ~1970 timestamp).
+        val startedAtEpochSec = (System.currentTimeMillis() - playedMs) / 1000
         scope.launch {
             if (track.id > 0) libraryRepository.incrementPlayCount(track.id)
-            scrobbler.scrobble(track, startedAtEpochSec = startedAtMs / 1000)
+            scrobbler.scrobble(track, startedAtEpochSec = startedAtEpochSec)
         }
     }
 
@@ -312,6 +315,9 @@ class PlaybackService : MediaSessionService() {
     private fun registerBluetoothReceiver() {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
+                // ACTION_HEADSET_PLUG is sticky: registration replays the last
+                // plug event immediately — ignore it, only react to real ones.
+                if (isInitialStickyBroadcast) return
                 val startOnConnect = settingsState.value?.bluetooth?.startOnConnect ?: false
                 if (!startOnConnect) return
                 val isConnect = intent.action == BluetoothDevice.ACTION_ACL_CONNECTED ||

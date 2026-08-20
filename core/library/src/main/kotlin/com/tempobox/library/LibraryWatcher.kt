@@ -46,6 +46,8 @@ class LibraryWatcher @Inject constructor(
         observers.forEach { it.startWatching() }
         Log.i(TAG, "Watching ${observers.size} directories")
 
+        synchronized(pending) { pending.clear() }
+
         // Debounce: batch changes, rescan 2s after the last event settles.
         dirty
             .onEach { path -> synchronized(pending) { pending += path } }
@@ -71,7 +73,19 @@ class LibraryWatcher @Inject constructor(
         // Named handler (not `onEvent`) to avoid recursively calling the override.
         val handle: (Int, String?) -> Unit = { event, childName ->
             if (childName != null && event and WATCH_MASK != 0) {
-                dirty.tryEmit(File(dir, childName).absolutePath)
+                val changed = File(dir, childName)
+                if (changed.isDirectory) {
+                    // New folder (e.g. an album copied in): watch its whole
+                    // tree and queue every audio file inside it for scanning.
+                    val subDirs = changed.walkTopDown().filter { it.isDirectory }.toList()
+                    val newObservers = subDirs.map { newObserver(it) }
+                    newObservers.forEach { it.startWatching() }
+                    synchronized(this) { observers = observers + newObservers }
+                    changed.walkTopDown().filter { it.isFile }
+                        .forEach { dirty.tryEmit(it.absolutePath) }
+                } else {
+                    dirty.tryEmit(changed.absolutePath)
+                }
             }
         }
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
