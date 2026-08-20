@@ -1,0 +1,189 @@
+# TempoBox 🎵
+
+A modern, local-first Android music player built with Kotlin, Jetpack Compose,
+and Media3/ExoPlayer.
+
+TempoBox is built for people with real music libraries on their device:
+lossless formats, careful tags, ratings, smart playlists, and proper
+Bluetooth behavior — no cloud account, no ads, no telemetry.
+
+## Features
+
+**Playback**
+- MP3, FLAC, OGG (Vorbis/Opus), and ALAC playback (see [Codecs](#codecs))
+- Gapless-friendly Media3/ExoPlayer engine with audio-focus handling and
+  pause-on-unplug
+- Lockscreen & notification controls with embedded album art, plus AVRCP
+  metadata for car head units and Bluetooth displays
+- Repeat off / all / one, and three shuffle flavors:
+  plain random, **anti-repeat** (spreads out repeats of the same track, album
+  and artist as far as possible — the default), and **rating-biased**
+  (favors your 5★ tracks)
+- Play queue that survives restarts (configurable), with multi-select,
+  swipe-to-remove, and an animated now-playing indicator
+
+**Library**
+- Fast scanner over your chosen folders: only new/changed files get their tags
+  re-read; ratings and play counts always survive rescans
+- Automatic rescan on startup + live folder watching (default on, configurable)
+- Browse by Album Artist, Album, Genre, Tracks, Playlists, and Recently Added
+  (each with sub-browsing, card/list switches, and 5-way sorting in both
+  directions)
+- Per-track 1–5★ ratings and play counts
+- In-app ID3/Vorbis/MP4 tag editing — single track or bulk
+- Remove-from-library and delete-from-device (both behind confirmations)
+- Artist images from Discogs (optional, bring your own token) with an
+  album-art collage fallback
+
+**Playlists**
+- Native M3U and M3U8 support; playlists found in your library folders are
+  imported automatically
+- Everything the app creates or modifies is written as UTF-8 **M3U8**
+- **Auto (smart) playlists** built from Album Artist / Artist / Genre / Year /
+  Rating conditions with AND/OR combinations and `<` / `>` for Year & Rating —
+  they update themselves as your library changes and are exported as `.m3u8`
+
+**Integrations**
+- Last.fm scrobbling (bring your own API key) with an offline queue
+- Home screen widget: art, artist, title, shuffle/prev/play/next/repeat
+- "Set album art as wallpaper" corner action
+- Bluetooth: start-on-connect, media-button remapping, and triple-tap volume
+  gestures that work with the screen off
+
+**Customization**
+- Custom theme colors, dark mode, optional Material You
+- Configurable swipe gestures (left/right) on every library row
+- Configurable corner buttons around the Now Playing artwork
+- Configurable track-info lines in Now Playing
+- Add your own library shortcuts to the navigation drawer
+
+## Requirements
+
+- **Android Studio** Ladybug (2024.2)+ / **IntelliJ IDEA** 2024.2+ with the
+  Android plugin, or VS Code (see below)
+- **JDK 17+** (the Gradle toolchain targets 17)
+- **Android SDK** with platform 35 (`compileSdk 35`); minimum device API is 26
+  (Android 8.0)
+- First build needs network access for Gradle/Maven dependencies
+
+## Building
+
+```bash
+git clone https://github.com/kbarkmeier/tempobox.git
+cd tempobox
+
+# Debug APK
+./gradlew assembleDebug          # → app/build/outputs/apk/debug/app-debug.apk
+
+# Release APK (unsigned unless you configure signing)
+./gradlew assembleRelease
+```
+
+If `local.properties` doesn't exist, the IDE creates it; on a plain CLI set
+`sdk.dir=/path/to/Android/sdk` in it (or export `ANDROID_HOME`).
+
+## Running in development
+
+### Android Studio / IntelliJ IDEA
+1. **File ▸ Open** the project root; let Gradle sync.
+2. Pick the shared **`app`** run configuration (checked in under `.run/`) and
+   press Run ▶ with a device or emulator connected. Debugging (breakpoints,
+   Compose Layout Inspector) works out of the box.
+
+### VS Code
+1. Install the recommended extensions (VS Code will prompt; see
+   `.vscode/extensions.json`).
+2. Use the built-in tasks (**Terminal ▸ Run Task…**): *Assemble debug APK*,
+   *Install & launch on device*, *Run all unit tests*.
+3. For debugging, use the *Launch TempoBox (Android)* configuration in
+   `.vscode/launch.json` (requires the `adelphes.android-dev-ext` extension
+   and a connected device).
+
+### Command line
+```bash
+./gradlew installDebug
+adb shell am start -n com.tempobox/.MainActivity
+```
+
+### First run on a device
+1. Grant the media/notification permissions the app requests.
+2. Go to **Settings ▸ Library** and add your music folder(s).
+3. A scan starts automatically (or tap *Rescan library*).
+4. For **tag editing and file deletion**, grant *All files access* from
+   Settings ▸ Library (Android requires this for modifying files in arbitrary
+   folders on API 30+).
+
+## Running tests
+
+```bash
+# JVM unit tests for every module (fast; includes Robolectric tests)
+./gradlew testDebugUnitTest test
+
+# One module
+./gradlew :core:playback:testDebugUnitTest
+
+# Instrumented UI tests (device/emulator required)
+./gradlew :app:connectedDebugAndroidTest
+```
+
+Shared IDE run configurations exist for both suites (*All unit tests*,
+*Instrumented tests*).
+
+The unit suite covers the smart-playlist rule engine, M3U/M3U8 codec, shuffle
+algorithms (including statistical anti-repeat/rating-bias properties), scrobble
+signing + offline queue, the library scanner's diffing, Room DAOs, DataStore
+settings, and the shared UI action layer. The instrumented suite drives the
+real app: navigation drawer, tabs, settings flows, and the double-confirmation
+reset.
+
+## Project structure
+
+```
+app/               Compose UI, navigation, widget, DI wiring
+core/model         Pure Kotlin domain models (rules, sorting — no Android)
+core/common        Small shared utilities
+core/database      Room: tracks, playlists, aggregates
+core/settings      Typed DataStore settings repository
+core/tags          jaudiotagger read/write (the only tag-IO module)
+core/playlist      M3U/M3U8 codec + smart playlist engine (pure Kotlin)
+core/library       Scanner, folder watcher, repositories, file ops
+core/playback      Media3 service, queue, shuffle engines, Bluetooth glue
+core/scrobble      Last.fm client + offline scrobble queue
+core/artwork       Embedded-art Coil fetcher + Discogs artist images
+build-logic/       Gradle convention plugins shared by all modules
+docs/              Architecture notes
+```
+
+See `docs/ARCHITECTURE.md` for the module graph and key design decisions, and
+`CLAUDE.md` for the condensed contributor guiderails.
+
+## Codecs
+
+MP3, FLAC, and OGG (Vorbis/Opus) decode with ExoPlayer's bundled software
+decoders on every supported device. ALAC (`.m4a`) plays through the device's
+`MediaCodec` ALAC decoder, present on Android 12+ and most vendor builds; on
+the rare device without one, ALAC files are scanned into the library but can't
+be decoded. (Media3's FFmpeg extension can be added for universal ALAC
+support, but it must be built from source and is intentionally not a default
+dependency.)
+
+**Bluetooth quality:** Android negotiates the Bluetooth codec (LDAC, aptX/HD,
+AAC, LC3/LE Audio) at the OS level — apps can't pick it. TempoBox outputs
+bit-perfect PCM to the audio stack so the system can use the best codec your
+headphones support, and speaks AVRCP through its MediaSession for metadata and
+controls.
+
+## Notes & limitations
+
+- `MANAGE_EXTERNAL_STORAGE` ("All files access") is requested only for tag
+  editing/deleting in arbitrary user-chosen folders. Sideloaded/F-Droid style
+  distribution is unaffected; Play Store distribution of this permission
+  requires a declaration.
+- Last.fm and Discogs integrations need your own (free) API credentials —
+  the app ships with none.
+- Volume triple-tap gestures can't begin when the volume is already at its
+  minimum/maximum (Android emits no volume-change event to observe).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
