@@ -52,7 +52,7 @@ androidxTestRules = "1.6.1"
 androidxJunit = "1.2.1"
 espresso = "3.6.1"
 uiautomator = "2.3.0"
-truth = "1.4.4"
+truth = "1.4.5"
 okhttpMockWebServer = "4.12.0"
 
 [libraries]
