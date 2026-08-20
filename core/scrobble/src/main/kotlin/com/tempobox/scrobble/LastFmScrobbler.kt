@@ -34,6 +34,9 @@ class LastFmScrobbler @Inject constructor(
 
     private val flushMutex = Mutex()
 
+    /** Overridable for tests (MockWebServer); production uses the real API. */
+    internal var apiBaseUrl: String = LastFmApi.BASE_URL
+
     override suspend fun updateNowPlaying(track: Track) {
         val cfg = config() ?: return
         if (!cfg.updateNowPlaying) return
@@ -135,7 +138,7 @@ class LastFmScrobbler @Inject constructor(
         val form = FormBody.Builder().apply {
             signed.forEach { (k, v) -> add(k, v) }
         }.build()
-        val request = Request.Builder().url(LastFmApi.BASE_URL).post(form).build()
+        val request = Request.Builder().url(apiBaseUrl).post(form).build()
         client.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
             check(response.isSuccessful || text.isNotBlank()) { "HTTP ${response.code}" }

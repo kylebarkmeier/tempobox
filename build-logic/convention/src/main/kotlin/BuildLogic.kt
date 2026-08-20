@@ -78,3 +78,12 @@ internal fun Project.addCommonTestDependencies() {
         add("testImplementation", libs.findLibrary("kotlinx-coroutines-test").get())
     }
 }
+
+/** Robolectric + AndroidX test runner deps for Android modules' JVM tests. */
+internal fun Project.addAndroidUnitTestDependencies() {
+    dependencies {
+        add("testImplementation", libs.findLibrary("robolectric").get())
+        add("testImplementation", libs.findLibrary("androidx-test-core").get())
+        add("testImplementation", libs.findLibrary("androidx-test-junit").get())
+    }
+}

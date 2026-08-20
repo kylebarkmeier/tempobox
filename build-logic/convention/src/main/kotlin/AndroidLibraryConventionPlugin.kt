@@ -22,6 +22,7 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
             }
 
             addCommonTestDependencies()
+            addAndroidUnitTestDependencies()
         }
     }
 }
