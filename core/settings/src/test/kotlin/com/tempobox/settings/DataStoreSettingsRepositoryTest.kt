@@ -9,11 +9,15 @@ import com.tempobox.model.DrawerItem
 import com.tempobox.model.LibraryTab
 import com.tempobox.model.SwipeAction
 import com.tempobox.model.ThemeConfig
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -30,14 +34,28 @@ class DataStoreSettingsRepositoryTest {
 
     private val dispatcher = StandardTestDispatcher()
     private val scope = TestScope(dispatcher)
+
+    /**
+     * DataStore keeps worker coroutines alive for the lifetime of the scope it
+     * is given. Handing it the TestScope would make runTest fail with
+     * UncompletedCoroutinesError (it waits for all children to finish), so the
+     * store gets its own Job-rooted scope on the same test dispatcher —
+     * cancelled in tearDown.
+     */
+    private val storeScope = CoroutineScope(dispatcher + Job())
     private lateinit var file: File
     private lateinit var repository: DataStoreSettingsRepository
 
     @Before
     fun setUp() {
         file = File(tmp.root, "settings.preferences_pb")
-        val dataStore = PreferenceDataStoreFactory.create(scope = scope) { file }
+        val dataStore = PreferenceDataStoreFactory.create(scope = storeScope) { file }
         repository = DataStoreSettingsRepository(dataStore)
+    }
+
+    @After
+    fun tearDown() {
+        storeScope.cancel()
     }
 
     @Test
