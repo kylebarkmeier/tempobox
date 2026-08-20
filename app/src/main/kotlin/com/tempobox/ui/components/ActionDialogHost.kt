@@ -19,6 +19,12 @@ import com.tempobox.ui.library.PlaylistsViewModel
  */
 @Composable
 fun ActionDialogHost(actions: LibraryActionsViewModel) {
+    // Surface one-shot action feedback in the app-wide snackbar.
+    val snackbar = com.tempobox.ui.LocalSnackbar.current
+    androidx.compose.runtime.LaunchedEffect(actions) {
+        actions.messages.collect { snackbar.showSnackbar(it) }
+    }
+
     val dialog by actions.dialog.collectAsState()
     val current = dialog ?: return
 

@@ -43,4 +43,10 @@ sealed interface LibraryItem {
         override val title: String get() = playlist.name
         override val isCollection: Boolean get() = true
     }
+
+    /** An ad-hoc set of tracks (e.g. a queue multi-selection). */
+    data class TracksItem(val label: String, val tracks: List<Track>) : LibraryItem {
+        override val title: String get() = label
+        override val isCollection: Boolean get() = tracks.size > 1
+    }
 }

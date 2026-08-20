@@ -195,6 +195,7 @@ class LibraryActionsViewModel @Inject constructor(
             libraryRepository.observeGenreTracks(item.genre.name).first()
         is LibraryItem.PlaylistItem ->
             playlistRepository.getPlaylistTracks(item.playlist)
+        is LibraryItem.TracksItem -> item.tracks
     }
 
     /** Smart-rule seed for "Create auto playlist" from the item's paradigm. */
@@ -208,6 +209,7 @@ class LibraryActionsViewModel @Inject constructor(
         is LibraryItem.TrackItem ->
             SmartRule.Condition(RuleField.ARTIST, RuleOp.IS, item.track.artist)
         is LibraryItem.PlaylistItem -> null
+        is LibraryItem.TracksItem -> null
     }
 
     private fun withTracks(item: LibraryItem, block: suspend (List<Track>) -> Unit) {

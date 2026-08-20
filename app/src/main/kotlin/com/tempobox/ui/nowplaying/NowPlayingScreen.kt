@@ -1,0 +1,447 @@
+package com.tempobox.ui.nowplaying
+
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Wallpaper
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.tempobox.common.TimeFormat
+import com.tempobox.model.Corner
+import com.tempobox.model.CornerAction
+import com.tempobox.model.RepeatMode
+import com.tempobox.model.ShuffleMode
+import com.tempobox.model.Track
+import com.tempobox.model.TrackInfoField
+import com.tempobox.ui.LocalSnackbar
+import com.tempobox.ui.components.ActionDialogHost
+import com.tempobox.ui.components.TrackArt
+import com.tempobox.ui.library.LibraryActionsViewModel
+import com.tempobox.ui.library.LibraryItem
+
+/**
+ * Full Now Playing view (product spec): scrolling "artist – track" header,
+ * "album (year)" line, zoomable album art with configurable corner buttons,
+ * configurable track info, seek bar with elapsed/remaining toggle, shuffle
+ * mode picker, repeat cycle, and a slide-up queue sheet.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NowPlayingScreen(onBack: () -> Unit) {
+    val viewModel: NowPlayingViewModel = hiltViewModel()
+    val actions: LibraryActionsViewModel = hiltViewModel()
+
+    val state by viewModel.state.collectAsState()
+    val npSettings by viewModel.nowPlayingSettings.collectAsState()
+    val track = state.track
+
+    var showQueueSheet by rememberSaveable { mutableStateOf(false) }
+    var showRemaining by rememberSaveable { mutableStateOf(false) }
+
+    val snackbar = LocalSnackbar.current
+    LaunchedEffect(viewModel) {
+        viewModel.messages.collect { snackbar.showSnackbar(it) }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = { Text("Now Playing") },
+            navigationIcon = {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+            },
+            actions = {
+                IconButton(onClick = { showQueueSheet = true }) {
+                    Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "Show queue")
+                }
+            },
+        )
+
+        if (track == null) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Nothing playing — pick something from the Library")
+            }
+            return@Column
+        }
+
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            // "artist - track name", scrolling when too wide (spec).
+            Text(
+                "${track.artist.ifBlank { track.effectiveAlbumArtist }} – ${track.title}",
+                style = MaterialTheme.typography.titleLarge,
+                maxLines = 1,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .basicMarquee(),
+                textAlign = TextAlign.Center,
+            )
+            // "album (year)" below (spec).
+            Text(
+                track.effectiveAlbum + (track.year?.let { " ($it)" } ?: ""),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+
+            // Zoomable album art with configurable corner buttons.
+            ZoomableArt(
+                track = track,
+                cornerActions = npSettings.cornerActions,
+                onCorner = { action ->
+                    handleCornerAction(
+                        action, track, viewModel, actions,
+                        openQueue = { showQueueSheet = true },
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .padding(vertical = 12.dp),
+            )
+
+            // Configurable track info lines (Settings ▸ Now Playing).
+            npSettings.trackInfoFields.forEach { field ->
+                trackInfoLine(field, track)?.let { line ->
+                    Text(
+                        line,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            SeekBar(
+                positionMs = state.positionMs,
+                durationMs = state.durationMs,
+                showRemaining = showRemaining,
+                onToggleElapsed = { showRemaining = !showRemaining },
+                onSeek = viewModel.player::seekTo,
+            )
+
+            // Transport controls: shuffle · previous · play/pause · next · repeat.
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ShuffleButton(current = state.shuffleMode, onPick = viewModel.player::setShuffleMode)
+                IconButton(onClick = viewModel.player::previous) {
+                    Icon(
+                        Icons.Filled.SkipPrevious,
+                        contentDescription = "Previous",
+                        modifier = Modifier.size(40.dp),
+                    )
+                }
+                FilledIconButton(
+                    onClick = viewModel.player::togglePlayPause,
+                    modifier = Modifier.size(64.dp),
+                ) {
+                    Icon(
+                        if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (state.isPlaying) "Pause" else "Play",
+                        modifier = Modifier.size(36.dp),
+                    )
+                }
+                IconButton(onClick = viewModel.player::next) {
+                    Icon(
+                        Icons.Filled.SkipNext,
+                        contentDescription = "Next",
+                        modifier = Modifier.size(40.dp),
+                    )
+                }
+                RepeatButton(current = state.repeatMode, onCycle = viewModel.player::cycleRepeatMode)
+            }
+        }
+    }
+
+    // Slide-up queue drawer (spec).
+    if (showQueueSheet) {
+        val queue by viewModel.player.queue.collectAsState()
+        ModalBottomSheet(onDismissRequest = { showQueueSheet = false }) {
+            Text(
+                "Play queue (${queue.size})",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            LazyColumn {
+                itemsIndexed(queue, key = { _, q -> q.uid }) { index, queueItem ->
+                    val isCurrent = index == state.queueIndex
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                "${queueItem.track.title} — " +
+                                    queueItem.track.artist.ifBlank { queueItem.track.effectiveAlbumArtist },
+                                maxLines = 1,
+                                color = if (isCurrent) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                            )
+                        },
+                        onClick = { viewModel.player.playQueueItem(queueItem.uid) },
+                    )
+                }
+            }
+        }
+    }
+
+    ActionDialogHost(actions)
+}
+
+// --------------------------------------------------------------------- pieces
+
+/** Pinch-to-zoom album art with up to four configurable corner buttons. */
+@Composable
+private fun ZoomableArt(
+    track: Track,
+    cornerActions: Map<Corner, CornerAction>,
+    onCorner: (CornerAction) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    var offsetY by remember { mutableFloatStateOf(0f) }
+
+    Box(modifier) {
+        TrackArt(
+            trackPath = if (track.hasEmbeddedArt) track.filePath else null,
+            cornerRadius = 16,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale,
+                    translationX = offsetX,
+                    translationY = offsetY,
+                )
+                .pointerInput(track.filePath) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        val newScale = (scale * zoom).coerceIn(1f, 5f)
+                        scale = newScale
+                        if (newScale <= 1.01f) {
+                            offsetX = 0f
+                            offsetY = 0f
+                        } else {
+                            offsetX += pan.x
+                            offsetY += pan.y
+                        }
+                    }
+                },
+        )
+        cornerActions.forEach { (corner, action) ->
+            if (action != CornerAction.NONE) {
+                val alignment = when (corner) {
+                    Corner.TOP_LEFT -> Alignment.TopStart
+                    Corner.TOP_RIGHT -> Alignment.TopEnd
+                    Corner.BOTTOM_LEFT -> Alignment.BottomStart
+                    Corner.BOTTOM_RIGHT -> Alignment.BottomEnd
+                }
+                IconButton(
+                    onClick = { onCorner(action) },
+                    modifier = Modifier.align(alignment),
+                ) {
+                    Icon(
+                        cornerIcon(action),
+                        contentDescription = cornerLabel(action),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SeekBar(
+    positionMs: Long,
+    durationMs: Long,
+    showRemaining: Boolean,
+    onToggleElapsed: () -> Unit,
+    onSeek: (Long) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Slider(
+            value = if (durationMs > 0) positionMs.toFloat() / durationMs else 0f,
+            onValueChange = { fraction -> onSeek((fraction * durationMs).toLong()) },
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            // Tapping elapsed flips to "-remaining" (spec).
+            Text(
+                if (showRemaining) {
+                    TimeFormat.remaining(positionMs, durationMs)
+                } else {
+                    TimeFormat.duration(positionMs)
+                },
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier
+                    .padding(4.dp)
+                    .clickable(onClick = onToggleElapsed),
+            )
+            Text(TimeFormat.duration(durationMs), style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+/** Shuffle button: opens a picker with every shuffle mode (spec). */
+@Composable
+private fun ShuffleButton(current: ShuffleMode, onPick: (ShuffleMode) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(
+                Icons.Filled.Shuffle,
+                contentDescription = "Shuffle mode",
+                tint = if (current != ShuffleMode.OFF) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            listOf(
+                ShuffleMode.OFF to "Shuffle off",
+                ShuffleMode.ALL to "Shuffle (random)",
+                ShuffleMode.ANTI_REPEAT to "Shuffle (anti-repeat)",
+                ShuffleMode.RATING_BIASED to "Shuffle (favor high ratings)",
+            ).forEach { (mode, label) ->
+                DropdownMenuItem(
+                    text = { Text(if (mode == current) "✓ $label" else label) },
+                    onClick = {
+                        open = false
+                        onPick(mode)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** Repeat button cycling OFF → ALL → ONE (spec). */
+@Composable
+private fun RepeatButton(current: RepeatMode, onCycle: () -> Unit) {
+    IconButton(onClick = onCycle) {
+        Icon(
+            if (current == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+            contentDescription = "Repeat mode: $current",
+            tint = if (current != RepeatMode.OFF) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        )
+    }
+}
+
+// --------------------------------------------------------------------- helpers
+
+private fun handleCornerAction(
+    action: CornerAction,
+    track: Track,
+    viewModel: NowPlayingViewModel,
+    actions: LibraryActionsViewModel,
+    openQueue: () -> Unit,
+) {
+    when (action) {
+        CornerAction.NONE -> Unit
+        CornerAction.SHUFFLE_TOGGLE -> viewModel.player.toggleShuffle()
+        CornerAction.REPEAT_TOGGLE -> viewModel.player.cycleRepeatMode()
+        CornerAction.OPEN_QUEUE -> openQueue()
+        CornerAction.ADD_TO_PLAYLIST -> actions.requestAddToPlaylist(LibraryItem.TrackItem(track))
+        CornerAction.RATE_TRACK -> actions.requestRate(track)
+        CornerAction.EDIT_TAGS -> actions.requestEditTags(LibraryItem.TrackItem(track))
+        CornerAction.SET_AS_WALLPAPER -> viewModel.setCurrentArtAsWallpaper()
+    }
+}
+
+fun cornerIcon(action: CornerAction): ImageVector = when (action) {
+    CornerAction.SHUFFLE_TOGGLE -> Icons.Filled.Shuffle
+    CornerAction.REPEAT_TOGGLE -> Icons.Filled.Repeat
+    CornerAction.OPEN_QUEUE -> Icons.AutoMirrored.Filled.QueueMusic
+    CornerAction.ADD_TO_PLAYLIST -> Icons.AutoMirrored.Filled.PlaylistAdd
+    CornerAction.RATE_TRACK -> Icons.Filled.Star
+    CornerAction.EDIT_TAGS -> Icons.Filled.Edit
+    CornerAction.SET_AS_WALLPAPER -> Icons.Filled.Wallpaper
+    CornerAction.NONE -> Icons.Filled.Star
+}
+
+/** Human labels reused by the corner-button settings screen. */
+fun cornerLabel(action: CornerAction): String = when (action) {
+    CornerAction.NONE -> "Nothing"
+    CornerAction.SHUFFLE_TOGGLE -> "Toggle shuffle"
+    CornerAction.REPEAT_TOGGLE -> "Cycle repeat"
+    CornerAction.OPEN_QUEUE -> "Open queue"
+    CornerAction.ADD_TO_PLAYLIST -> "Add to playlist"
+    CornerAction.RATE_TRACK -> "Rate track"
+    CornerAction.EDIT_TAGS -> "Edit ID3 tags"
+    CornerAction.SET_AS_WALLPAPER -> "Set art as wallpaper"
+}
+
+private fun trackInfoLine(field: TrackInfoField, track: Track): String? = when (field) {
+    TrackInfoField.ARTIST -> track.artist.ifBlank { null }?.let { "Artist: $it" }
+    TrackInfoField.ALBUM -> track.album.ifBlank { null }?.let { "Album: $it" }
+    TrackInfoField.YEAR -> track.year?.let { "Year: $it" }
+    TrackInfoField.GENRE -> track.genre.ifBlank { null }?.let { "Genre: $it" }
+    TrackInfoField.FORMAT -> "Format: ${track.format.name}" +
+        if (track.sampleRateHz > 0) " · ${track.sampleRateHz / 1000f} kHz" else ""
+    TrackInfoField.BITRATE -> if (track.bitrateKbps > 0) "Bitrate: ${track.bitrateKbps} kbps" else null
+    TrackInfoField.RATING -> if (track.rating > 0) "Rating: ${"★".repeat(track.rating)}" else null
+    TrackInfoField.PLAY_COUNT -> "Plays: ${track.playCount}"
+}
