@@ -35,7 +35,7 @@ jobs:
           java-version: '17'
 
       - name: Set up Gradle (with build cache)
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Run all unit tests
         run: ./gradlew test testDebugUnitTest --stacktrace
@@ -62,7 +62,7 @@ jobs:
           java-version: '17'
 
       - name: Set up Gradle (with build cache)
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Android Lint
         run: ./gradlew :app:lintDebug --stacktrace
@@ -108,7 +108,7 @@ jobs:
           java-version: '17'
 
       - name: Set up Gradle (with build cache)
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Run instrumented tests
         uses: reactivecircus/android-emulator-runner@v2
