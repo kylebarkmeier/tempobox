@@ -36,7 +36,7 @@ coroutines = "1.9.0"
 kotlinxSerialization = "1.7.3"
 
 # --- IO / networking / media ---
-okhttp = "4.12.0"
+okhttp = "5.5.0"
 coil = "2.7.0"
 jaudiotagger = "3.0.1"             # ID3/Vorbis/MP4 tag read & write
 
