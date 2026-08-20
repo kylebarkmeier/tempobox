@@ -221,11 +221,20 @@ class PlaybackService : MediaSessionService() {
             mediaItem ?: return
             scope.launch { scrobbler.updateNowPlaying(MediaItems.toTrack(mediaItem)) }
             scheduleSnapshot()
+            refreshWidget()
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             scheduleSnapshot()
+            refreshWidget()
         }
+    }
+
+    /** Tells the app's home-screen widget to re-render (receiver in :app). */
+    private fun refreshWidget() {
+        sendBroadcast(
+            Intent(WIDGET_REFRESH_ACTION).setPackage(packageName),
+        )
     }
 
     private fun onPlaybackSessionEnded(item: MediaItem, playedMs: Long, startedAtMs: Long) {
@@ -398,6 +407,9 @@ class PlaybackService : MediaSessionService() {
 
     companion object {
         private const val TAG = "PlaybackService"
+
+        /** Must match TempoBoxWidgetReceiver.ACTION_REFRESH in :app. */
+        private const val WIDGET_REFRESH_ACTION = "com.tempobox.action.WIDGET_REFRESH"
 
         // Hidden-but-stable AudioManager broadcast constants.
         private const val VOLUME_CHANGED_ACTION = "android.media.VOLUME_CHANGED_ACTION"
