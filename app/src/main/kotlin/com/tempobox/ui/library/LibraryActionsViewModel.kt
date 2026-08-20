@@ -112,7 +112,8 @@ class LibraryActionsViewModel @Inject constructor(
         // removable, so this can't go through withTracks.
         if (item is LibraryItem.PlaylistItem) {
             viewModelScope.launch {
-                playlistRepository.deletePlaylist(item.playlist.id)
+                // Remove keeps the .m3u8 on disk; only Delete erases it.
+                playlistRepository.deletePlaylist(item.playlist.id, deleteFile = false)
                 toast("Removed playlist \"${item.title}\"")
                 _dialog.value = null
             }

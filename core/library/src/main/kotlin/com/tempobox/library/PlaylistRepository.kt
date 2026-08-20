@@ -144,12 +144,18 @@ class PlaylistRepository @Inject constructor(
             exportStatic(playlistId)
         }
 
-    /** Deletes the playlist row and its app-managed `.m3u8` file. */
-    suspend fun deletePlaylist(playlistId: Long) = withContext(ioDispatcher) {
-        val playlist = playlistDao.getById(playlistId) ?: return@withContext
-        playlist.filePath?.let { path -> File(path).takeIf { it.exists() }?.delete() }
-        playlistDao.delete(playlistId)
-    }
+    /**
+     * Deletes the playlist row. "Remove from library" keeps the `.m3u8` file
+     * on disk ([deleteFile] = false); "Delete permanently" removes it too.
+     */
+    suspend fun deletePlaylist(playlistId: Long, deleteFile: Boolean = true) =
+        withContext(ioDispatcher) {
+            val playlist = playlistDao.getById(playlistId) ?: return@withContext
+            if (deleteFile) {
+                playlist.filePath?.let { path -> File(path).takeIf { it.exists() }?.delete() }
+            }
+            playlistDao.delete(playlistId)
+        }
 
     // ------------------------------------------------------------------ file sync
 
