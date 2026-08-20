@@ -1,0 +1,42 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Assemble debug APK",
+      "type": "shell",
+      "command": "./gradlew assembleDebug",
+      "windows": { "command": ".\\gradlew.bat assembleDebug" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Install & launch on device",
+      "type": "shell",
+      "command": "./gradlew installDebug && adb shell am start -n com.tempobox/.MainActivity",
+      "windows": { "command": ".\\gradlew.bat installDebug; adb shell am start -n com.tempobox/.MainActivity" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run all unit tests",
+      "type": "shell",
+      "command": "./gradlew testDebugUnitTest test",
+      "windows": { "command": ".\\gradlew.bat testDebugUnitTest test" },
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run instrumented tests (device required)",
+      "type": "shell",
+      "command": "./gradlew :app:connectedDebugAndroidTest",
+      "windows": { "command": ".\\gradlew.bat :app:connectedDebugAndroidTest" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Clean",
+      "type": "shell",
+      "command": "./gradlew clean",
+      "windows": { "command": ".\\gradlew.bat clean" },
+      "problemMatcher": []
+    }
+  ]
+}

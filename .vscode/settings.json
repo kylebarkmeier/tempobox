@@ -1,0 +1,18 @@
+{
+  // VS Code support for TempoBox. Install the extensions in extensions.json,
+  // set ANDROID_HOME (or sdk.dir in local.properties), then use the tasks in
+  // tasks.json to build/test and launch.json to attach/debug.
+  "java.import.gradle.enabled": true,
+  "java.import.gradle.wrapper.enabled": true,
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "kotlin.languageServer.enabled": true,
+  "files.exclude": {
+    "**/.gradle": true,
+    "**/build": true,
+    "**/.kotlin": true
+  },
+  "files.watcherExclude": {
+    "**/.gradle/**": true,
+    "**/build/**": true
+  }
+}

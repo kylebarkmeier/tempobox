@@ -1,0 +1,36 @@
+# Gradle
+.gradle/
+build/
+**/build/
+!**/src/**/build/
+
+# Local configuration (SDK path, signing secrets)
+local.properties
+keystore.properties
+*.keystore
+*.jks
+
+# IntelliJ IDEA / Android Studio
+.idea/
+*.iml
+captures/
+.navigation/
+output-metadata.json
+
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+
+# Kotlin
+.kotlin/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Logs & profiling
+*.log
+*.hprof
