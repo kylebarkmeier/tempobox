@@ -49,8 +49,6 @@ data class LibrarySettings(
     val locations: List<String> = emptyList(),
     /** Rescan on app start AND watch locations for changes while running. */
     val autoRescanAndWatch: Boolean = true, // product default: ON
-    /** Window (days) for the "Recently Added" views. */
-    val recentlyAddedDays: Int = 14,
 )
 
 @Serializable
@@ -76,12 +74,12 @@ data class UiSettings(
 
 @Serializable
 data class NowPlayingSettings(
-    /** Action bound to each corner of the album art. */
+    /** Action bound to each corner of the album art (track/artist/album only). */
     val cornerActions: Map<Corner, CornerAction> = mapOf(
-        Corner.TOP_LEFT to CornerAction.NONE,
-        Corner.TOP_RIGHT to CornerAction.OPEN_QUEUE,
-        Corner.BOTTOM_LEFT to CornerAction.SHUFFLE_TOGGLE,
-        Corner.BOTTOM_RIGHT to CornerAction.REPEAT_TOGGLE,
+        Corner.TOP_LEFT to CornerAction.GO_TO_ARTIST,
+        Corner.TOP_RIGHT to CornerAction.GO_TO_ALBUM,
+        Corner.BOTTOM_LEFT to CornerAction.RATE_TRACK,
+        Corner.BOTTOM_RIGHT to CornerAction.ADD_TO_PLAYLIST,
     ),
     /** Metadata lines shown under the title, in order. */
     val trackInfoFields: List<TrackInfoField> = listOf(

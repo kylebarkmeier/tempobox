@@ -13,7 +13,7 @@ object Routes {
     const val QUEUE = "queue"
     const val SETTINGS = "settings"
     const val SETTINGS_SECTION = "settings/{section}"
-    const val ARTIST = "artist/{name}"
+    const val ARTIST = "artist/{name}?by={by}"
     const val ALBUM = "album/{artist}/{album}"
     const val GENRE = "genre/{name}"
     const val PLAYLIST = "playlist/{id}"
@@ -22,7 +22,10 @@ object Routes {
         if (tab != null) "library?tab=${tab.name}" else "library"
 
     fun settingsSection(section: String) = "settings/$section"
-    fun artist(name: String) = "artist/${Uri.encode(name)}"
+
+    /** Artist detail; [byAlbumArtist] false browses by track artist instead. */
+    fun artist(name: String, byAlbumArtist: Boolean = true) =
+        "artist/${Uri.encode(name)}?by=${if (byAlbumArtist) "album" else "track"}"
     fun album(albumArtist: String, album: String) =
         "album/${Uri.encode(albumArtist)}/${Uri.encode(album)}"
     fun genre(name: String) = "genre/${Uri.encode(name)}"

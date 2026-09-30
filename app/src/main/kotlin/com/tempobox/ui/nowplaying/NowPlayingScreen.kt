@@ -12,14 +12,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
@@ -28,8 +28,6 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Wallpaper
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -68,16 +66,22 @@ import com.tempobox.ui.components.ActionDialogHost
 import com.tempobox.ui.components.TrackArt
 import com.tempobox.ui.library.LibraryActionsViewModel
 import com.tempobox.ui.library.LibraryItem
+import com.tempobox.ui.queue.QueuePanel
 
 /**
  * Full Now Playing view (product spec): scrolling "artist – track" header,
- * "album (year)" line, zoomable album art with configurable corner buttons,
- * configurable track info, seek bar with elapsed/remaining toggle, shuffle
- * mode picker, repeat cycle, and a slide-up queue sheet.
+ * "album (year)" line, zoomable album art with configurable corner buttons
+ * (track/artist/album actions only), configurable track info, seek bar with
+ * elapsed/remaining toggle, shuffle on/off, repeat cycle, and a slide-up queue
+ * drawer that is the same full-featured component as the Queue view.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NowPlayingScreen(onBack: () -> Unit) {
+fun NowPlayingScreen(
+    onBack: () -> Unit,
+    onOpenArtist: (String) -> Unit,
+    onOpenAlbum: (albumArtist: String, album: String) -> Unit,
+) {
     val viewModel: NowPlayingViewModel = hiltViewModel()
     val actions: LibraryActionsViewModel = hiltViewModel()
 
@@ -146,7 +150,8 @@ fun NowPlayingScreen(onBack: () -> Unit) {
                 onCorner = { action ->
                     handleCornerAction(
                         action, track, viewModel, actions,
-                        openQueue = { showQueueSheet = true },
+                        onOpenArtist = onOpenArtist,
+                        onOpenAlbum = onOpenAlbum,
                     )
                 },
                 modifier = Modifier
@@ -180,7 +185,7 @@ fun NowPlayingScreen(onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ShuffleButton(current = state.shuffleMode, onPick = viewModel.player::setShuffleMode)
+                ShuffleButton(current = state.shuffleMode, onToggle = viewModel.player::toggleShuffle)
                 IconButton(onClick = viewModel.player::previous) {
                     Icon(
                         Icons.Filled.SkipPrevious,
@@ -210,35 +215,12 @@ fun NowPlayingScreen(onBack: () -> Unit) {
         }
     }
 
-    // Slide-up queue drawer (spec).
+    // Slide-up queue drawer (spec): the same full component as the Queue view,
+    // including clear, multi-select, bulk actions and swipe-to-remove.
+    // ActionDialogHost below already serves the shared LibraryActionsViewModel.
     if (showQueueSheet) {
-        val queue by viewModel.player.queue.collectAsState()
         ModalBottomSheet(onDismissRequest = { showQueueSheet = false }) {
-            Text(
-                "Play queue (${queue.size})",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-            LazyColumn {
-                itemsIndexed(queue, key = { _, q -> q.uid }) { index, queueItem ->
-                    val isCurrent = index == state.queueIndex
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                "${queueItem.track.title} — " +
-                                    queueItem.track.artist.ifBlank { queueItem.track.effectiveAlbumArtist },
-                                maxLines = 1,
-                                color = if (isCurrent) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                },
-                            )
-                        },
-                        onClick = { viewModel.player.playQueueItem(queueItem.uid) },
-                    )
-                }
-            }
+            QueuePanel(onBack = null, hostActionDialogs = false)
         }
     }
 
@@ -354,38 +336,22 @@ private fun SeekBar(
     }
 }
 
-/** Shuffle button: opens a picker with every shuffle mode (spec). */
+/**
+ * Shuffle on/off toggle. The shuffle *flavor* (anti-repeat, rating bias) is
+ * configured in Settings ▸ Shuffle, not here.
+ */
 @Composable
-private fun ShuffleButton(current: ShuffleMode, onPick: (ShuffleMode) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        IconButton(onClick = { open = true }) {
-            Icon(
-                Icons.Filled.Shuffle,
-                contentDescription = "Shuffle mode",
-                tint = if (current != ShuffleMode.OFF) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            listOf(
-                ShuffleMode.OFF to "Shuffle off",
-                ShuffleMode.ALL to "Shuffle (random)",
-                ShuffleMode.ANTI_REPEAT to "Shuffle (anti-repeat)",
-                ShuffleMode.RATING_BIASED to "Shuffle (favor high ratings)",
-            ).forEach { (mode, label) ->
-                DropdownMenuItem(
-                    text = { Text(if (mode == current) "✓ $label" else label) },
-                    onClick = {
-                        open = false
-                        onPick(mode)
-                    },
-                )
-            }
-        }
+private fun ShuffleButton(current: ShuffleMode, onToggle: () -> Unit) {
+    IconButton(onClick = onToggle) {
+        Icon(
+            Icons.Filled.Shuffle,
+            contentDescription = if (current != ShuffleMode.OFF) "Shuffle off" else "Shuffle on",
+            tint = if (current != ShuffleMode.OFF) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        )
     }
 }
 
@@ -412,13 +378,15 @@ private fun handleCornerAction(
     track: Track,
     viewModel: NowPlayingViewModel,
     actions: LibraryActionsViewModel,
-    openQueue: () -> Unit,
+    onOpenArtist: (String) -> Unit,
+    onOpenAlbum: (albumArtist: String, album: String) -> Unit,
 ) {
     when (action) {
         CornerAction.NONE -> Unit
-        CornerAction.SHUFFLE_TOGGLE -> viewModel.player.toggleShuffle()
-        CornerAction.REPEAT_TOGGLE -> viewModel.player.cycleRepeatMode()
-        CornerAction.OPEN_QUEUE -> openQueue()
+        CornerAction.GO_TO_ARTIST ->
+            onOpenArtist(track.artist.ifBlank { track.effectiveAlbumArtist })
+        CornerAction.GO_TO_ALBUM ->
+            onOpenAlbum(track.effectiveAlbumArtist, track.effectiveAlbum)
         CornerAction.ADD_TO_PLAYLIST -> actions.requestAddToPlaylist(LibraryItem.TrackItem(track))
         CornerAction.RATE_TRACK -> actions.requestRate(track)
         CornerAction.EDIT_TAGS -> actions.requestEditTags(LibraryItem.TrackItem(track))
@@ -427,9 +395,8 @@ private fun handleCornerAction(
 }
 
 fun cornerIcon(action: CornerAction): ImageVector = when (action) {
-    CornerAction.SHUFFLE_TOGGLE -> Icons.Filled.Shuffle
-    CornerAction.REPEAT_TOGGLE -> Icons.Filled.Repeat
-    CornerAction.OPEN_QUEUE -> Icons.AutoMirrored.Filled.QueueMusic
+    CornerAction.GO_TO_ARTIST -> Icons.Filled.Person
+    CornerAction.GO_TO_ALBUM -> Icons.Filled.Album
     CornerAction.ADD_TO_PLAYLIST -> Icons.AutoMirrored.Filled.PlaylistAdd
     CornerAction.RATE_TRACK -> Icons.Filled.Star
     CornerAction.EDIT_TAGS -> Icons.Filled.Edit
@@ -440,9 +407,8 @@ fun cornerIcon(action: CornerAction): ImageVector = when (action) {
 /** Human labels reused by the corner-button settings screen. */
 fun cornerLabel(action: CornerAction): String = when (action) {
     CornerAction.NONE -> "Nothing"
-    CornerAction.SHUFFLE_TOGGLE -> "Toggle shuffle"
-    CornerAction.REPEAT_TOGGLE -> "Cycle repeat"
-    CornerAction.OPEN_QUEUE -> "Open queue"
+    CornerAction.GO_TO_ARTIST -> "Go to artist"
+    CornerAction.GO_TO_ALBUM -> "Go to album"
     CornerAction.ADD_TO_PLAYLIST -> "Add to playlist"
     CornerAction.RATE_TRACK -> "Rate track"
     CornerAction.EDIT_TAGS -> "Edit ID3 tags"

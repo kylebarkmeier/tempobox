@@ -66,9 +66,22 @@ import com.tempobox.ui.library.LibraryItem
  * via toggle button or long-press, exposing remove / save-to-playlist /
  * edit-tags bulk actions. The playing row gets a highlight + animated bars.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun QueueScreen(openDrawer: () -> Unit, onBack: () -> Unit) {
+    QueuePanel(onBack = onBack)
+}
+
+/**
+ * The queue UI itself — one component shared by the Queue screen and the Now
+ * Playing slide-up queue drawer, so both have identical controls.
+ *
+ * @param onBack null hides the back arrow (e.g. inside a bottom sheet).
+ * @param hostActionDialogs false when the caller already hosts an
+ *   [ActionDialogHost] for the same (shared) [LibraryActionsViewModel].
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun QueuePanel(onBack: (() -> Unit)? = null, hostActionDialogs: Boolean = true) {
     val viewModel: QueueViewModel = hiltViewModel()
     val actions: LibraryActionsViewModel = hiltViewModel()
 
@@ -84,8 +97,10 @@ fun QueueScreen(openDrawer: () -> Unit, onBack: () -> Unit) {
         TopAppBar(
             title = { Text(if (multiSelect) "${selection?.size ?: 0} selected" else "Queue (${queue.size})") },
             navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                if (onBack != null) {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
                 }
             },
             actions = {
@@ -159,7 +174,9 @@ fun QueueScreen(openDrawer: () -> Unit, onBack: () -> Unit) {
         )
     }
 
-    ActionDialogHost(actions)
+    if (hostActionDialogs) {
+        ActionDialogHost(actions)
+    }
 }
 
 // --------------------------------------------------------------------- rows

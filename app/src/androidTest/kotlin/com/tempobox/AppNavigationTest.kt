@@ -53,6 +53,7 @@ class AppNavigationTest {
         // are asserted instead of the ambiguous screen title. The tab row is a
         // ScrollableTabRow, so later tabs start off-screen on narrow displays —
         // scroll each into view before asserting visibility.
+        composeRule.onNodeWithText("Album Artists").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Artists").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Albums").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Genres").performScrollTo().assertIsDisplayed()

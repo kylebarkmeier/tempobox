@@ -33,7 +33,7 @@ import com.tempobox.ui.components.swipeLabel
 
 /**
  * Settings ▸ Library: locations, rescan, auto-rescan/watch toggle (default
- * ON), recently-added window, All-files access, and double-confirmed reset.
+ * ON), All-files access, and double-confirmed reset.
  */
 @Composable
 fun LibrarySection(viewModel: SettingsViewModel) {
@@ -86,13 +86,6 @@ fun LibrarySection(viewModel: SettingsViewModel) {
             checked = settings.library.autoRescanAndWatch,
             onToggle = { on -> viewModel.updateLibrary { it.copy(autoRescanAndWatch = on) } },
         )
-        DropdownRow(
-            title = "\"Recently added\" window",
-            currentLabel = "${settings.library.recentlyAddedDays} days",
-            options = RECENT_DAY_CHOICES.map { "$it days" },
-        ) { picked ->
-            viewModel.updateLibrary { it.copy(recentlyAddedDays = RECENT_DAY_CHOICES[picked]) }
-        }
     }
 
     SettingsDivider()
@@ -154,8 +147,6 @@ fun LibrarySection(viewModel: SettingsViewModel) {
         )
     }
 }
-
-private val RECENT_DAY_CHOICES = listOf(7, 14, 30, 60, 90)
 
 /**
  * Best-effort conversion of an OpenDocumentTree URI to a filesystem path:
@@ -328,9 +319,9 @@ private fun AddDrawerItemDialog(
 
 fun tabName(tab: LibraryTab): String = when (tab) {
     LibraryTab.ALBUM_ARTISTS -> "Album Artists"
+    LibraryTab.ARTISTS -> "Artists"
     LibraryTab.ALBUMS -> "Albums"
     LibraryTab.GENRES -> "Genres"
     LibraryTab.TRACKS -> "Tracks"
     LibraryTab.PLAYLISTS -> "Playlists"
-    LibraryTab.RECENTLY_ADDED -> "Recently Added"
 }

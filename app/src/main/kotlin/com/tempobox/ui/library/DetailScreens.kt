@@ -93,6 +93,7 @@ fun ArtistDetailScreen(
                 albumCount = albums.size,
                 trackCount = tracks.size,
             ),
+            byAlbumArtist = viewModel.byAlbumArtist,
         )
     }
 
@@ -163,7 +164,7 @@ fun AlbumDetailScreen(
 
 // --------------------------------------------------------------------- genre
 
-/** Genre page, sub-browsable by Artists / Albums / Recently Added / Tracks. */
+/** Genre page, sub-browsable by Artists / Albums / Tracks. */
 @Composable
 fun GenreDetailScreen(
     name: String,
@@ -178,7 +179,6 @@ fun GenreDetailScreen(
     val artists by viewModel.artists.collectAsState()
     val albums by viewModel.albums.collectAsState()
     val tracks by viewModel.tracks.collectAsState()
-    val recentTracks by viewModel.recentTracks.collectAsState()
     val ui by libraryViewModel.uiSettings.collectAsState()
     var tab by rememberSaveable { mutableIntStateOf(0) }
 
@@ -188,7 +188,7 @@ fun GenreDetailScreen(
 
     DetailScaffold(title = viewModel.name, item = genreItem, actions = actions, onBack = onBack) {
         TabRow(selectedTabIndex = tab) {
-            listOf("Artists", "Albums", "Recent", "Tracks").forEachIndexed { index, label ->
+            listOf("Artists", "Albums", "Tracks").forEachIndexed { index, label ->
                 Tab(selected = tab == index, onClick = { tab = index }, text = { Text(label) })
             }
         }
@@ -219,7 +219,6 @@ fun GenreDetailScreen(
                 swipeRight = ui.swipeRight,
                 onOpenAlbum = onOpenAlbum,
             )
-            2 -> TracksTab(recentTracks, actions, ui.swipeLeft, ui.swipeRight)
             else -> TracksTab(tracks, actions, ui.swipeLeft, ui.swipeRight)
         }
     }

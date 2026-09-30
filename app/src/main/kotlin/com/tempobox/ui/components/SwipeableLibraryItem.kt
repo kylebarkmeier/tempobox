@@ -70,26 +70,34 @@ fun SwipeableLibraryItem(
         enableDismissFromStartToEnd = swipeRight != SwipeAction.NONE,
         enableDismissFromEndToStart = swipeLeft != SwipeAction.NONE,
         backgroundContent = {
+            // Only paint while a swipe is actually revealing the background —
+            // rows are transparent, so a settled-state color/icon would show
+            // through the whole list.
             val (action, alignment) = when (state.dismissDirection) {
                 SwipeToDismissBoxValue.StartToEnd -> swipeRight to Alignment.CenterStart
                 SwipeToDismissBoxValue.EndToStart -> swipeLeft to Alignment.CenterEnd
                 else -> SwipeAction.NONE to Alignment.Center
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(swipeColor(action)),
-                contentAlignment = alignment,
-            ) {
-                Icon(
-                    imageVector = swipeIcon(action),
-                    contentDescription = swipeLabel(action),
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                )
+            if (action != SwipeAction.NONE) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(swipeColor(action)),
+                    contentAlignment = alignment,
+                ) {
+                    Icon(
+                        imageVector = swipeIcon(action),
+                        contentDescription = swipeLabel(action),
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                }
             }
         },
-        content = { content() },
+        content = {
+            // Opaque surface so the swipe background never bleeds through.
+            Box(Modifier.background(MaterialTheme.colorScheme.surface)) { content() }
+        },
     )
 }
 
