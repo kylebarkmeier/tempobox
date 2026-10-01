@@ -3,8 +3,8 @@
 Concise context for AI agents (and humans) working on this repo. Full details: `docs/ARCHITECTURE.md`.
 
 ## What this is
-Android music player. Kotlin 2.0 / Jetpack Compose / Material 3 / Media3 (ExoPlayer) / Room / Hilt / DataStore.
-Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 36. Gradle 8.14.3 + AGP 8.10.1, convention plugins in `build-logic/`.
+Android music player. Kotlin 2.2 / Jetpack Compose / Material 3 / Media3 (ExoPlayer) / Room / Hilt / DataStore.
+Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.5.0 + AGP 9.3.1 (built-in Kotlin — no kotlin-android plugin), convention plugins in `build-logic/`.
 
 ## Module map (dependencies point downward only)
 - `core:model` — pure Kotlin data types. No Android deps. Everything depends on it.

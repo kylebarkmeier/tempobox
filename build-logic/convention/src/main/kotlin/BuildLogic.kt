@@ -6,7 +6,7 @@ import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.kotlin.dsl.dependencies
 import org.gradle.kotlin.dsl.getByType
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension
+import org.jetbrains.kotlin.gradle.dsl.KotlinAndroidExtension
 
 /**
  * Shared helpers used by every TempoBox convention plugin.
@@ -26,39 +26,46 @@ internal fun VersionCatalog.versionInt(alias: String): Int =
  * Baseline Android configuration shared by the application module and every
  * Android library module: SDK levels, Java/Kotlin targets, and unit-test options.
  */
-internal fun Project.configureAndroidCommon(extension: CommonExtension<*, *, *, *, *, *>) {
+internal fun Project.configureAndroidCommon(extension: CommonExtension) {
+    // AGP 9's non-generic CommonExtension exposes nested blocks as plain
+    // properties (the typed `defaultConfig { }`-style members moved to the
+    // Application/Library subinterfaces), so configure via property access.
     extension.apply {
         compileSdk = libs.versionInt("compileSdk")
 
-        defaultConfig {
+        defaultConfig.apply {
             minSdk = libs.versionInt("minSdk")
             testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         }
 
-        compileOptions {
+        compileOptions.apply {
             sourceCompatibility = JavaVersion.VERSION_17
             targetCompatibility = JavaVersion.VERSION_17
         }
 
-        testOptions {
-            unitTests {
-                // Robolectric needs Android resources; harmless for plain JVM tests.
-                isIncludeAndroidResources = true
-                // Deterministic tests: unmocked framework calls return defaults
-                // instead of throwing, but our tests use Robolectric/MockK anyway.
-                isReturnDefaultValues = true
-            }
+        testOptions.unitTests {
+            // Robolectric needs Android resources; harmless for plain JVM tests.
+            isIncludeAndroidResources = true
+            // Deterministic tests: unmocked framework calls return defaults
+            // instead of throwing, but our tests use Robolectric/MockK anyway.
+            isReturnDefaultValues = true
         }
 
-        packaging {
-            resources {
-                // Duplicate license files from jaudiotagger & friends.
-                excludes += "/META-INF/{AL2.0,LGPL2.1,LICENSE.md,LICENSE-notice.md}"
-            }
+        packaging.resources {
+            // Duplicate license files from jaudiotagger & friends.
+            excludes += "/META-INF/{AL2.0,LGPL2.1,LICENSE.md,LICENSE-notice.md}"
         }
     }
 
-    extensions.getByType<KotlinAndroidProjectExtension>().compilerOptions {
+    // Gradle 9 fails test tasks that discover zero tests by default. Android unit
+    // test tasks always have inputs here (Robolectric resources), so a module
+    // without tests yet (e.g. :core:artwork) would fail the build. Opt out.
+    tasks.withType(org.gradle.api.tasks.testing.Test::class.java).configureEach {
+        failOnNoDiscoveredTests.set(false)
+    }
+
+    // AGP 9 built-in Kotlin registers the `kotlin` extension itself.
+    extensions.getByType<KotlinAndroidExtension>().compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
         freeCompilerArgs.addAll(
             // Opt in to APIs we use deliberately across modules.

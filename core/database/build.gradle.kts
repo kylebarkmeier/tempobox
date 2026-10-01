@@ -12,8 +12,8 @@ dependencies {
     api(projects.core.model)
     implementation(projects.core.common)
 
+    // room-ktx merged into room-runtime in Room 2.7 (the ktx artifact is now empty).
     api(libs.androidx.room.runtime)
-    api(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.kotlinx.coroutines.android)

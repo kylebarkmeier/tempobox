@@ -12,8 +12,8 @@ import org.gradle.kotlin.dsl.configure
 class AndroidLibraryConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {
         with(target) {
+            // AGP 9 built-in Kotlin: no separate kotlin-android plugin needed.
             pluginManager.apply("com.android.library")
-            pluginManager.apply("org.jetbrains.kotlin.android")
 
             extensions.configure<LibraryExtension> {
                 configureAndroidCommon(this)

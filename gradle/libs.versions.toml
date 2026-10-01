@@ -4,26 +4,32 @@
 
 [versions]
 # --- Build tooling ---
-agp = "8.10.1"                     # Android Gradle Plugin (needs Gradle >= 8.11)
-kotlin = "2.0.21"
-ksp = "2.0.21-1.0.28"              # Kotlin Symbol Processing (must match Kotlin version prefix)
+agp = "9.3.1"                     # Android Gradle Plugin (needs Gradle >= 9.5.0)
+# AGP 9 ships built-in Kotlin with a hard minimum KGP of 2.2.10 (older versions are
+# force-upgraded on the build classpath), so 2.2.10 is the smallest workable bump.
+kotlin = "2.2.10"
+# KSP 2.3.x is versioned independently of Kotlin (no version-prefix matching anymore);
+# 2.3.1+ is required for AGP 9 built-in Kotlin, with AGP-9 fixes landing through 2.3.10.
+ksp = "2.3.12"                     # Kotlin Symbol Processing
 
 # --- Android SDK levels ---
-compileSdk = "36"                  # media3 1.10 / core 1.18 need 36; 36 is the max AGP 8.10 supports
+compileSdk = "37"                  # core 1.19 / Compose 1.12 / navigation 2.10 require 37
 targetSdk = "35"
 minSdk = "26"                      # java.nio (jaudiotagger) requires 26+
 
 # --- AndroidX / Jetpack ---
-coreKtx = "1.18.0"                 # 1.19+ requires compileSdk 37 + AGP 9.1
+coreKtx = "1.19.1"
 activityCompose = "1.9.3"
 lifecycle = "2.8.7"
-navigationCompose = "2.9.8"        # 2.10+ requires compileSdk 37 + AGP 9.1
-composeBom = "2026.06.01"          # 2026.08+ (Compose 1.12) requires compileSdk 37 + AGP 9.1
+navigationCompose = "2.10.2"
+composeBom = "2026.09.00"
+# Room 2.6.x predates KSP2 and fails under KSP 2.3.x ("unexpected jvm signature V").
 room = "2.8.5"
 datastore = "1.1.1"
-hilt = "2.57.2"                    # 2.58+ is built with Kotlin 2.2 / needs newer AGP; newest usable with Kotlin 2.0 + AGP 8.10
-hiltNavigationCompose = "1.3.0"    # 1.4.0 requires compileSdk 37 + AGP 9.1
-media3 = "1.10.1"                  # 1.11+ is built with Kotlin 2.2 (incompatible with Kotlin 2.0)
+# Hilt < 2.59 fails under AGP 9 ("Android BaseExtension not found").
+hilt = "2.60.1"
+hiltNavigationCompose = "1.4.0"
+media3 = "1.11.1"
 glance = "1.1.1"
 workManager = "2.12.0"
 hiltWork = "1.4.0"
@@ -84,7 +90,7 @@ androidx-navigation-compose = { group = "androidx.navigation", name = "navigatio
 
 # Room
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
-androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+# room-ktx removed: merged into room-runtime as of Room 2.7.
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
 
@@ -155,7 +161,7 @@ compose-compiler-gradle-plugin = { group = "org.jetbrains.kotlin", name = "compo
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+# kotlin-android removed: AGP 9's built-in Kotlin replaces org.jetbrains.kotlin.android.
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

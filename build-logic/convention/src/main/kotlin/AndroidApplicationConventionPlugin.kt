@@ -6,14 +6,14 @@ import org.gradle.kotlin.dsl.configure
 /**
  * Convention for the single :app module.
  *
- * Applies the Android application + Kotlin plugins and the shared Android
- * configuration (SDK levels, JVM target, test options).
+ * Applies the Android application plugin (AGP 9 built-in Kotlin — no separate
+ * kotlin-android plugin) and the shared Android configuration (SDK levels,
+ * JVM target, test options).
  */
 class AndroidApplicationConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {
         with(target) {
             pluginManager.apply("com.android.application")
-            pluginManager.apply("org.jetbrains.kotlin.android")
 
             extensions.configure<ApplicationExtension> {
                 configureAndroidCommon(this)
