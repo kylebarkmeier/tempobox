@@ -5,8 +5,14 @@
 [versions]
 # --- Build tooling ---
 agp = "8.10.1"                     # Android Gradle Plugin (needs Gradle >= 8.11)
-kotlin = "2.4.20"
-ksp = "2.3.12"              # Kotlin Symbol Processing (must match Kotlin version prefix)
+kotlin = "2.1.21"
+ksp = "2.1.21-2.0.2"               # Kotlin Symbol Processing (must match Kotlin version prefix)
+# ^ Kotlin is capped at 2.1.21 for now:
+#   - Hilt 2.53.1's shaded kotlin-metadata-jvm reads metadata <= 2.1.0, so classes
+#     compiled by Kotlin 2.2+ break hiltJavaCompile ("maximum supported version is 2.1.0").
+#   - KSP >= 2.3.0 (needed for Kotlin 2.3+) drops the KSP1 integration Hilt 2.53.1
+#     expects, and KSP 2.3.12+ requires AGP >= 8.12.
+#   Revisit after the AGP 9 and Hilt/Room bumps land.
 
 # --- Android SDK levels ---
 compileSdk = "35"
@@ -33,7 +39,7 @@ palette = "1.0.0"
 
 # --- Kotlin ecosystem ---
 coroutines = "1.11.0"
-kotlinxSerialization = "1.11.0"
+kotlinxSerialization = "1.9.0"     # 1.10+ is built with Kotlin 2.3 (metadata 2.3.0) — unreadable until the Kotlin cap above is lifted
 
 # --- IO / networking / media ---
 okhttp = "4.12.0"
@@ -149,8 +155,6 @@ androidx-uiautomator = { group = "androidx.test.uiautomator", name = "uiautomato
 # Used inside build-logic convention plugins (not by app code)
 android-gradle-plugin = { group = "com.android.tools.build", name = "gradle", version.ref = "agp" }
 kotlin-gradle-plugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
-ksp-gradle-plugin = { group = "com.google.devtools.ksp", name = "com.google.devtools.ksp.gradle.plugin", version.ref = "ksp" }
-compose-compiler-gradle-plugin = { group = "org.jetbrains.kotlin", name = "compose-compiler-gradle-plugin", version.ref = "kotlin" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
