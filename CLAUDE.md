@@ -4,7 +4,7 @@ Concise context for AI agents (and humans) working on this repo. Full details: `
 
 ## What this is
 Android music player. Kotlin 2.0 / Jetpack Compose / Material 3 / Media3 (ExoPlayer) / Room / Hilt / DataStore.
-Package root: `com.tempobox`. minSdk 26, target/compile 35. Gradle 8.14.3 + AGP 8.10.1, convention plugins in `build-logic/`.
+Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 36. Gradle 8.14.3 + AGP 8.10.1, convention plugins in `build-logic/`.
 
 ## Module map (dependencies point downward only)
 - `core:model` — pure Kotlin data types. No Android deps. Everything depends on it.
@@ -31,7 +31,7 @@ Package root: `com.tempobox`. minSdk 26, target/compile 35. Gradle 8.14.3 + AGP 
 
 ## Gotchas
 - jaudiotagger: use `AndroidArtwork` (never awt-based artwork classes); requires `minSdk 26` (java.nio).
-- Robolectric tests need `@Config(sdk = [35])` max — keep in sync with compileSdk.
+- Robolectric tests need `@Config(sdk = [35])` max — Robolectric 4.14 supports up to SDK 35.
 - Media3: service side uses `MediaLibraryService`; UI side always goes through `PlayerConnection` (never a raw ExoPlayer reference in composables).
 - ALAC plays via device MediaCodec; see README "Codecs".
 - The queue is persisted across restarts in DataStore (see `QueuePersistence`).
