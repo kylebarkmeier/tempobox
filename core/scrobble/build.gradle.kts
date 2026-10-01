@@ -1,8 +1,7 @@
-// Last.fm scrobbling: signed API client + durable offline scrobble queue.
+// Scrobbling: hands played tracks to the user's scrobbler app (SLS broadcast).
 plugins {
     alias(libs.plugins.tempobox.android.library)
     alias(libs.plugins.tempobox.hilt)
-    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -14,11 +13,5 @@ dependencies {
     implementation(projects.core.common)
     implementation(projects.core.settings)
 
-    implementation(libs.okhttp)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.kotlinx.serialization.json)
-
-    testImplementation(libs.okhttp.mockwebserver)
-    testImplementation(libs.robolectric)
-    testImplementation(libs.androidx.test.core)
 }

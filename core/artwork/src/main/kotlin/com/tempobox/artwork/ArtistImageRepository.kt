@@ -123,7 +123,7 @@ class ArtistImageRepository @Inject constructor(
 
     companion object {
         private const val TAG = "ArtistImageRepository"
-        private const val USER_AGENT = "TempoBox/1.0 +https://github.com/kbarkmeier/tempobox"
+        private const val USER_AGENT = "TempoBox/1.0 +https://github.com/kylebarkmeier/tempobox"
         private const val CACHE_TTL_MS = 1000L * 60 * 60 * 24 * 30 // 30 days
     }
 }

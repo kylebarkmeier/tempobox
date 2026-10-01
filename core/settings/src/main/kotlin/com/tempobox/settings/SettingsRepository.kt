@@ -21,7 +21,7 @@ interface SettingsRepository {
     suspend fun updateQueue(transform: (QueueSettings) -> QueueSettings)
     suspend fun updateBluetooth(transform: (BluetoothSettings) -> BluetoothSettings)
     suspend fun updateShuffle(transform: (ShuffleSettings) -> ShuffleSettings)
-    suspend fun updateLastFm(transform: (LastFmSettings) -> LastFmSettings)
+    suspend fun updateScrobble(transform: (ScrobbleSettings) -> ScrobbleSettings)
     suspend fun updateArtwork(transform: (ArtworkSettings) -> ArtworkSettings)
     suspend fun updateTheme(transform: (ThemeConfig) -> ThemeConfig)
 }

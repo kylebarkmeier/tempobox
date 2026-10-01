@@ -10,19 +10,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.tempobox.model.Corner
 import com.tempobox.model.CornerAction
@@ -236,118 +230,21 @@ fun ShuffleSection(viewModel: SettingsViewModel) {
     }
 }
 
-// ---------------------------------------------------------------- Last.fm
+// ---------------------------------------------------------------- Scrobbling
 
 @Composable
-fun LastFmSection(viewModel: SettingsViewModel) {
+fun ScrobblingSection(viewModel: SettingsViewModel) {
     val settings by viewModel.settings.collectAsState()
-    val status by viewModel.lastFmStatus.collectAsState()
 
-    SettingsSection("Scrobble via another app") {
+    SettingsSection("Scrobbling") {
         SwitchRow(
             title = "Hand scrobbles to a scrobbler app",
-            subtitle = "Broadcast played tracks for apps like Pano Scrobbler or Simple " +
-                "Scrobbler to pick up — no Last.fm login needed in TempoBox. (The official " +
-                "Last.fm app only watches its own list of players, so use a scrobbler app.)",
-            checked = settings.lastFm.broadcastScrobbles,
-            onToggle = { on -> viewModel.updateLastFm { it.copy(broadcastScrobbles = on) } },
+            subtitle = "Broadcast played tracks for your scrobbler app to pick up — the " +
+                "Last.fm app, Pano Scrobbler, Simple Scrobbler, … TempoBox itself needs " +
+                "no account or credentials.",
+            checked = settings.scrobble.broadcastScrobbles,
+            onToggle = { on -> viewModel.updateScrobble { it.copy(broadcastScrobbles = on) } },
         )
-    }
-
-    SettingsDivider()
-    SettingsSection("Built-in scrobbling") {
-        SwitchRow(
-            title = "Enable scrobbling",
-            subtitle = "Send played tracks to Last.fm directly (offline plays are queued); " +
-                "needs the API credentials and sign-in below",
-            checked = settings.lastFm.scrobbleEnabled,
-            onToggle = { on -> viewModel.updateLastFm { it.copy(scrobbleEnabled = on) } },
-        )
-        SwitchRow(
-            title = "Update \"Now Playing\"",
-            subtitle = "Also show the current track live on your profile",
-            checked = settings.lastFm.updateNowPlaying,
-            onToggle = { on -> viewModel.updateLastFm { it.copy(updateNowPlaying = on) } },
-        )
-    }
-
-    SettingsDivider()
-    SettingsSection("API credentials") {
-        Text(
-            "Create a free API account at last.fm/api/account/create, then paste the key and secret here.",
-            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
-        var apiKey by rememberSaveable(settings.lastFm.apiKey) { mutableStateOf(settings.lastFm.apiKey) }
-        var apiSecret by rememberSaveable(settings.lastFm.apiSecret) { mutableStateOf(settings.lastFm.apiSecret) }
-        OutlinedTextField(
-            value = apiKey,
-            onValueChange = { apiKey = it },
-            label = { Text("API key") },
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-        )
-        OutlinedTextField(
-            value = apiSecret,
-            onValueChange = { apiSecret = it },
-            label = { Text("Shared secret") },
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-        )
-        TextButton(
-            onClick = {
-                viewModel.updateLastFm { it.copy(apiKey = apiKey.trim(), apiSecret = apiSecret.trim()) }
-            },
-            modifier = Modifier.padding(horizontal = 8.dp),
-        ) { Text("Save credentials") }
-    }
-
-    SettingsDivider()
-    SettingsSection("Account") {
-        if (settings.lastFm.sessionKey.isNotBlank()) {
-            ListItem(
-                headlineContent = { Text("Signed in as ${settings.lastFm.username}") },
-                supportingContent = { Text("Tap to sign out") },
-                modifier = Modifier.clickable { viewModel.lastFmLogout() },
-            )
-        } else {
-            var username by rememberSaveable { mutableStateOf("") }
-            var password by rememberSaveable { mutableStateOf("") }
-            OutlinedTextField(
-                value = username,
-                onValueChange = { username = it },
-                label = { Text("Last.fm username") },
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-            )
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                label = { Text("Password") },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-            )
-            TextButton(
-                onClick = { viewModel.lastFmLogin(username.trim(), password) },
-                modifier = Modifier.padding(horizontal = 8.dp),
-            ) { Text("Sign in") }
-        }
-        status?.let {
-            Text(
-                it,
-                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-        }
     }
 }
 

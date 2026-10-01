@@ -67,7 +67,7 @@ class DataStoreSettingsRepositoryTest {
         assertThat(settings.shuffle.antiRepeat).isTrue() // spec: default ON
         assertThat(settings.shuffle.ratingBias).isFalse()
         assertThat(settings.queue.persistQueue).isTrue()
-        assertThat(settings.lastFm.scrobbleEnabled).isFalse()
+        assertThat(settings.scrobble.broadcastScrobbles).isTrue() // spec: default ON
     }
 
     @Test

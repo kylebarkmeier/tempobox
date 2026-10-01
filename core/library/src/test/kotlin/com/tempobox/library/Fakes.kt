@@ -7,7 +7,7 @@ import com.tempobox.model.Track
 import com.tempobox.settings.AppSettings
 import com.tempobox.settings.ArtworkSettings
 import com.tempobox.settings.BluetoothSettings
-import com.tempobox.settings.LastFmSettings
+import com.tempobox.settings.ScrobbleSettings
 import com.tempobox.settings.LibrarySettings
 import com.tempobox.settings.NowPlayingSettings
 import com.tempobox.settings.QueueSettings
@@ -111,8 +111,8 @@ class FakeSettingsRepository(
     override suspend fun updateShuffle(transform: (ShuffleSettings) -> ShuffleSettings) {
         state.value = state.value.copy(shuffle = transform(state.value.shuffle))
     }
-    override suspend fun updateLastFm(transform: (LastFmSettings) -> LastFmSettings) {
-        state.value = state.value.copy(lastFm = transform(state.value.lastFm))
+    override suspend fun updateScrobble(transform: (ScrobbleSettings) -> ScrobbleSettings) {
+        state.value = state.value.copy(scrobble = transform(state.value.scrobble))
     }
     override suspend fun updateArtwork(transform: (ArtworkSettings) -> ArtworkSettings) {
         state.value = state.value.copy(artwork = transform(state.value.artwork))
