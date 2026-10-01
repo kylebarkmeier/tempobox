@@ -28,8 +28,8 @@ import javax.inject.Inject
 
 /**
  * State for the tabbed Library screen: per-tab sort specs, card/list layout
- * toggles, the genre sub-filter for the artist tab, and the recently-added
- * window — all feeding reactive repository queries.
+ * toggles, and the genre sub-filters for the artist tabs — all feeding
+ * reactive repository queries.
  */
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
@@ -53,6 +53,9 @@ class LibraryViewModel @Inject constructor(
     /** Genre sub-filter for the Album Artists tab (null = all genres). */
     val artistGenreFilter = MutableStateFlow<String?>(null)
 
+    /** Genre sub-filter for the (track) Artists tab (null = all genres). */
+    val trackArtistGenreFilter = MutableStateFlow<String?>(null)
+
     val uiSettings: StateFlow<UiSettings> = settingsRepository.settings
         .map { it.ui }
         .stateIn(viewModelScope, SharingStarted.Eagerly, UiSettings())
@@ -69,10 +72,6 @@ class LibraryViewModel @Inject constructor(
     private fun toggleLayout(transform: (UiSettings) -> UiSettings) {
         viewModelScope.launch { settingsRepository.updateUi(transform) }
     }
-
-    /** Epoch-ms cutoff for "Recently Added" (Settings ▸ Library ▸ window). */
-    private val recentCutoffMs: kotlinx.coroutines.flow.Flow<Long> = settingsRepository.settings
-        .map { System.currentTimeMillis() - it.library.recentlyAddedDays * DAY_MS }
 
     // ------------------------------------------------------------------ data flows
 
@@ -91,6 +90,14 @@ class LibraryViewModel @Inject constructor(
             }
             .stateInList()
 
+    /** Track-artist aggregation for the Artists tab. */
+    val trackArtists: StateFlow<List<AlbumArtist>> =
+        combine(sortFlow(LibraryTab.ARTISTS), trackArtistGenreFilter) { sort, genre -> sort to genre }
+            .flatMapLatest { (sort, genre) ->
+                libraryRepository.observeTrackArtists(genre = genre, sort = sort)
+            }
+            .stateInList()
+
     val genres: StateFlow<List<Genre>> = sortFlow(LibraryTab.GENRES)
         .flatMapLatest { libraryRepository.observeGenres(sort = it) }
         .stateInList()
@@ -103,37 +110,10 @@ class LibraryViewModel @Inject constructor(
         .map { list -> list.map { it.name } }
         .stateInList()
 
-    // --- Recently added (own sub-tabs, spec) ---
-
-    val recentTracks: StateFlow<List<Track>> = recentCutoffMs
-        .flatMapLatest { libraryRepository.observeRecentlyAddedTracks(it) }
-        .stateInList()
-
-    val recentAlbums: StateFlow<List<Album>> = recentCutoffMs
-        .flatMapLatest { libraryRepository.observeAlbums(sinceMs = it) }
-        .stateInList()
-
-    val recentArtists: StateFlow<List<AlbumArtist>> = recentCutoffMs
-        .flatMapLatest { libraryRepository.observeAlbumArtists(sinceMs = it) }
-        .stateInList()
-
-    val recentGenres: StateFlow<List<Genre>> = recentCutoffMs
-        .flatMapLatest { libraryRepository.observeGenres(sinceMs = it) }
-        .stateInList()
-
-    val recentPlaylists: StateFlow<List<Playlist>> =
-        combine(playlists, recentCutoffMs) { lists, cutoff ->
-            lists.filter { it.dateAddedMs >= cutoff }
-        }.stateInList()
-
     // ------------------------------------------------------------------ helpers
 
     private fun sortFlow(tab: LibraryTab) = _sorts.map { it[tab] ?: SortSpec() }
 
     private fun <T> kotlinx.coroutines.flow.Flow<List<T>>.stateInList(): StateFlow<List<T>> =
         stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    companion object {
-        private const val DAY_MS = 24L * 60 * 60 * 1000
-    }
 }

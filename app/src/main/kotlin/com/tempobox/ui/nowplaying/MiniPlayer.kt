@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -44,7 +45,9 @@ fun MiniPlayer(
         Column(
             Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onOpen),
+                .clickable(onClick = onOpen)
+                // Surface color extends under the gesture bar; content doesn't.
+                .navigationBarsPadding(),
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),

@@ -52,6 +52,10 @@ class LibraryRepository @Inject constructor(
     fun observeArtistTracks(albumArtist: String): Flow<List<Track>> =
         trackDao.observeArtistTracks(albumArtist).map { rows -> rows.map { it.toModel() } }
 
+    /** Tracks whose track artist (not album artist) is [artist]. */
+    fun observeTrackArtistTracks(artist: String): Flow<List<Track>> =
+        trackDao.observeTrackArtistTracks(artist).map { rows -> rows.map { it.toModel() } }
+
     fun observeGenreTracks(genre: String): Flow<List<Track>> =
         trackDao.observeGenreTracks(genre).map { rows -> rows.map { it.toModel() } }
 
@@ -76,11 +80,12 @@ class LibraryRepository @Inject constructor(
 
     fun observeAlbums(
         albumArtist: String? = null,
+        artist: String? = null,
         genre: String? = null,
         sinceMs: Long? = null,
         sort: SortSpec = SortSpec(),
     ): Flow<List<Album>> =
-        trackDao.observeAlbums(albumArtist, genre, sinceMs).map { rows ->
+        trackDao.observeAlbums(albumArtist, artist, genre, sinceMs).map { rows ->
             rows.map { it.toModel() }.sortedWith(albumComparator(sort))
         }
 
@@ -90,6 +95,15 @@ class LibraryRepository @Inject constructor(
         sort: SortSpec = SortSpec(),
     ): Flow<List<AlbumArtist>> =
         trackDao.observeAlbumArtists(genre, sinceMs).map { rows ->
+            rows.map { it.toModel() }.sortedWith(artistComparator(sort))
+        }
+
+    /** Track-artist aggregation (the Artists tab; album artists are separate). */
+    fun observeTrackArtists(
+        genre: String? = null,
+        sort: SortSpec = SortSpec(),
+    ): Flow<List<AlbumArtist>> =
+        trackDao.observeTrackArtists(genre).map { rows ->
             rows.map { it.toModel() }.sortedWith(artistComparator(sort))
         }
 

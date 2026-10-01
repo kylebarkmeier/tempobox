@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
 import dagger.hilt.android.testing.HiltAndroidRule
@@ -49,17 +50,20 @@ class AppNavigationTest {
     @Test
     fun launches_intoLibraryWithAllTabs() {
         // NOTE: "Library" also exists as a (closed) drawer item, so tab labels
-        // are asserted instead of the ambiguous screen title.
-        composeRule.onNodeWithText("Artists").assertIsDisplayed()
-        composeRule.onNodeWithText("Albums").assertIsDisplayed()
-        composeRule.onNodeWithText("Genres").assertIsDisplayed()
-        composeRule.onNodeWithText("Tracks").assertIsDisplayed()
-        composeRule.onNodeWithText("Playlists").assertIsDisplayed()
+        // are asserted instead of the ambiguous screen title. The tab row is a
+        // ScrollableTabRow, so later tabs start off-screen on narrow displays —
+        // scroll each into view before asserting visibility.
+        composeRule.onNodeWithText("Album Artists").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Artists").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Albums").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Genres").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Tracks").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Playlists").performScrollTo().assertIsDisplayed()
     }
 
     @Test
     fun tabs_switchContent() {
-        composeRule.onNodeWithText("Playlists").performClick()
+        composeRule.onNodeWithText("Playlists").performScrollTo().performClick()
         // Playlist tab exposes its creation buttons.
         composeRule.onNodeWithText("New playlist").assertIsDisplayed()
         composeRule.onNodeWithText("New auto playlist").assertIsDisplayed()

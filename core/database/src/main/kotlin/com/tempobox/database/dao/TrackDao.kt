@@ -89,6 +89,12 @@ interface TrackDao {
     fun observeArtistTracks(albumArtist: String): Flow<List<TrackEntity>>
 
     @Query(
+        "SELECT * FROM tracks WHERE (CASE WHEN artist = '' THEN albumArtist ELSE artist END) = :artist " +
+            "ORDER BY album COLLATE NOCASE, discNumber, trackNumber",
+    )
+    fun observeTrackArtistTracks(artist: String): Flow<List<TrackEntity>>
+
+    @Query(
         "SELECT * FROM tracks WHERE (CASE WHEN genre = '' THEN 'Unknown Genre' ELSE genre END) = :genre " +
             "ORDER BY albumArtist COLLATE NOCASE, album COLLATE NOCASE, discNumber, trackNumber",
     )
@@ -112,6 +118,7 @@ interface TrackDao {
                MAX(rating) AS maxRating
         FROM tracks
         WHERE (:albumArtist IS NULL OR albumArtist = :albumArtist)
+          AND (:artist IS NULL OR (CASE WHEN artist = '' THEN albumArtist ELSE artist END) = :artist)
           AND (:genre IS NULL OR (CASE WHEN genre = '' THEN 'Unknown Genre' ELSE genre END) = :genre)
           AND (:sinceMs IS NULL OR dateAddedMs >= :sinceMs)
         GROUP BY album, albumArtist
@@ -119,6 +126,7 @@ interface TrackDao {
     )
     fun observeAlbums(
         albumArtist: String? = null,
+        artist: String? = null,
         genre: String? = null,
         sinceMs: Long? = null,
     ): Flow<List<AlbumRow>>
@@ -142,6 +150,23 @@ interface TrackDao {
         genre: String? = null,
         sinceMs: Long? = null,
     ): Flow<List<AlbumArtistRow>>
+
+    /** Track-artist aggregation (falls back to albumArtist when artist is empty). */
+    @Query(
+        """
+        SELECT (CASE WHEN artist = '' THEN albumArtist ELSE artist END) AS name,
+               COUNT(DISTINCT album) AS albumCount,
+               COUNT(*) AS trackCount,
+               GROUP_CONCAT(CASE WHEN genre = '' THEN 'Unknown Genre' ELSE genre END, CHAR(31)) AS genresConcat,
+               GROUP_CONCAT(CASE WHEN hasEmbeddedArt THEN filePath ELSE NULL END, CHAR(31)) AS artPathsConcat,
+               MAX(dateAddedMs) AS dateAddedMs,
+               MAX(dateModifiedMs) AS dateModifiedMs
+        FROM tracks
+        WHERE (:genre IS NULL OR (CASE WHEN genre = '' THEN 'Unknown Genre' ELSE genre END) = :genre)
+        GROUP BY name
+        """,
+    )
+    fun observeTrackArtists(genre: String? = null): Flow<List<AlbumArtistRow>>
 
     @Query(
         """

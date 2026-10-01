@@ -203,7 +203,11 @@ class LibraryActionsViewModel @Inject constructor(
         is LibraryItem.AlbumItem ->
             libraryRepository.observeAlbumTracks(item.album.name, item.album.albumArtist).first()
         is LibraryItem.ArtistItem ->
-            libraryRepository.observeArtistTracks(item.artist.name).first()
+            if (item.byAlbumArtist) {
+                libraryRepository.observeArtistTracks(item.artist.name).first()
+            } else {
+                libraryRepository.observeTrackArtistTracks(item.artist.name).first()
+            }
         is LibraryItem.GenreItem ->
             libraryRepository.observeGenreTracks(item.genre.name).first()
         is LibraryItem.PlaylistItem ->
@@ -214,7 +218,11 @@ class LibraryActionsViewModel @Inject constructor(
     /** Smart-rule seed for "Create auto playlist" from the item's paradigm. */
     private fun autoRuleFor(item: LibraryItem): SmartRule? = when (item) {
         is LibraryItem.ArtistItem ->
-            SmartRule.Condition(RuleField.ALBUM_ARTIST, RuleOp.IS, item.artist.name)
+            SmartRule.Condition(
+                if (item.byAlbumArtist) RuleField.ALBUM_ARTIST else RuleField.ARTIST,
+                RuleOp.IS,
+                item.artist.name,
+            )
         is LibraryItem.GenreItem ->
             SmartRule.Condition(RuleField.GENRE, RuleOp.IS, item.genre.name)
         is LibraryItem.AlbumItem ->

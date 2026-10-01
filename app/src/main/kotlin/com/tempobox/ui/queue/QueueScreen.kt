@@ -34,10 +34,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -66,9 +64,22 @@ import com.tempobox.ui.library.LibraryItem
  * via toggle button or long-press, exposing remove / save-to-playlist /
  * edit-tags bulk actions. The playing row gets a highlight + animated bars.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun QueueScreen(openDrawer: () -> Unit, onBack: () -> Unit) {
+    QueuePanel(onBack = onBack)
+}
+
+/**
+ * The queue UI itself — one component shared by the Queue screen and the Now
+ * Playing slide-up queue drawer, so both have identical controls.
+ *
+ * @param onBack null hides the back arrow (e.g. inside a bottom sheet).
+ * @param hostActionDialogs false when the caller already hosts an
+ *   [ActionDialogHost] for the same (shared) [LibraryActionsViewModel].
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+fun QueuePanel(onBack: (() -> Unit)? = null, hostActionDialogs: Boolean = true) {
     val viewModel: QueueViewModel = hiltViewModel()
     val actions: LibraryActionsViewModel = hiltViewModel()
 
@@ -84,8 +95,10 @@ fun QueueScreen(openDrawer: () -> Unit, onBack: () -> Unit) {
         TopAppBar(
             title = { Text(if (multiSelect) "${selection?.size ?: 0} selected" else "Queue (${queue.size})") },
             navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                if (onBack != null) {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
                 }
             },
             actions = {
@@ -159,7 +172,9 @@ fun QueueScreen(openDrawer: () -> Unit, onBack: () -> Unit) {
         )
     }
 
-    ActionDialogHost(actions)
+    if (hostActionDialogs) {
+        ActionDialogHost(actions)
+    }
 }
 
 // --------------------------------------------------------------------- rows
@@ -177,20 +192,18 @@ private fun QueueRow(
     onLongPress: () -> Unit,
     onSwipedAway: () -> Unit,
 ) {
-    // Swiping an item removes it from the queue (spec).
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value != SwipeToDismissBoxValue.Settled) {
-                onSwipedAway()
-                true
-            } else {
-                false
-            }
+    // Swiping an item removes it from the queue (spec) — but only after a
+    // deliberate half-width drag, so scroll flicks don't remove tracks.
+    val swipe = com.tempobox.ui.components.rememberDeliberateSwipeState(
+        confirmDismiss = { _ ->
+            onSwipedAway()
+            true
         },
     )
 
     SwipeToDismissBox(
-        state = dismissState,
+        state = swipe.state,
+        modifier = swipe.sizeModifier,
         backgroundContent = {
             Box(
                 Modifier

@@ -9,16 +9,22 @@ import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
 import androidx.glance.Image
 import androidx.glance.ImageProvider
+import androidx.glance.LocalSize
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.SizeMode
+import androidx.glance.appwidget.appWidgetBackground
+import androidx.glance.appwidget.cornerRadius
+import androidx.glance.background
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.action.actionStartActivity
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.updateAll
 import androidx.glance.layout.Alignment
+import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
@@ -30,6 +36,10 @@ import androidx.glance.layout.size
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import com.tempobox.MainActivity
 import com.tempobox.R
 import com.tempobox.model.NowPlayingState
@@ -55,6 +65,9 @@ import java.io.File
  */
 class TempoBoxWidget : GlanceAppWidget() {
 
+    /** Re-compose with the real widget size so everything scales on resize. */
+    override val sizeMode: SizeMode = SizeMode.Exact
+
     /** Hilt access from non-injectable Glance classes. */
     @EntryPoint
     @InstallIn(SingletonComponent::class)
@@ -68,16 +81,19 @@ class TempoBoxWidget : GlanceAppWidget() {
         val player = entry.playerConnection()
         val tagReader = entry.tagReader()
 
-        val state = player.state.value
-        val art: Bitmap? = state.track
-            ?.takeIf { it.hasEmbeddedArt }
-            ?.let { track ->
-                tagReader.readEmbeddedArtwork(File(track.filePath))?.let { bytes ->
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                }
-            }
-
         provideContent {
+            // Collect INSIDE the composition: a snapshot taken before
+            // provideContent would never change on re-render, so the widget
+            // would be stuck on whatever was playing when it was first drawn.
+            val state by player.state.collectAsState()
+            val art: Bitmap? = remember(state.track?.filePath, state.track?.hasEmbeddedArt) {
+                state.track
+                    ?.takeIf { it.hasEmbeddedArt }
+                    ?.let { track ->
+                        tagReader.readEmbeddedArtwork(File(track.filePath))
+                            ?.let(::decodeScaledBitmap)
+                    }
+            }
             GlanceTheme {
                 WidgetContent(state, art)
             }
@@ -86,9 +102,22 @@ class TempoBoxWidget : GlanceAppWidget() {
 
     @androidx.compose.runtime.Composable
     private fun WidgetContent(state: NowPlayingState, art: Bitmap?) {
+        // SizeMode.Exact: LocalSize is the widget's real size, so everything
+        // below scales as the user resizes the widget on the home screen.
+        val widgetSize = LocalSize.current
+        val artSize = (widgetSize.height.value - 28f).coerceIn(56f, 140f).dp
+        val controlSize = (widgetSize.height.value * 0.26f).coerceIn(22f, 44f).sp
+        val titleSize = (widgetSize.height.value * 0.13f).coerceIn(13f, 20f).sp
+        val subtitleSize = (widgetSize.height.value * 0.10f).coerceIn(11f, 16f).sp
+
         Row(
             modifier = GlanceModifier
                 .fillMaxSize()
+                .appWidgetBackground()
+                // Material You: follows the wallpaper/home theme (and dark
+                // mode) on Android 12+; theme surface color before that.
+                .background(GlanceTheme.colors.widgetBackground)
+                .cornerRadius(24.dp)
                 .padding(12.dp)
                 .clickable(actionStartActivity<MainActivity>()),
             verticalAlignment = Alignment.CenterVertically,
@@ -97,45 +126,81 @@ class TempoBoxWidget : GlanceAppWidget() {
                 provider = art?.let { ImageProvider(it) }
                     ?: ImageProvider(R.drawable.ic_launcher_foreground),
                 contentDescription = "Album art",
-                modifier = GlanceModifier.size(72.dp),
+                modifier = GlanceModifier.size(artSize),
             )
             Column(GlanceModifier.padding(start = 12.dp).fillMaxWidth()) {
                 Text(
                     state.track?.title ?: "TempoBox",
-                    style = TextStyle(color = GlanceTheme.colors.onSurface),
+                    style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = titleSize),
                     maxLines = 1,
                 )
                 Text(
                     state.track?.effectiveAlbumArtist ?: "Nothing playing",
-                    style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant),
+                    style = TextStyle(
+                        color = GlanceTheme.colors.onSurfaceVariant,
+                        fontSize = subtitleSize,
+                    ),
                     maxLines = 1,
                 )
                 Spacer(GlanceModifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    ControlText("⇄", actionRunCallback<ShuffleAction>())
-                    ControlText("⏮", actionRunCallback<PreviousAction>())
+                Row(
+                    modifier = GlanceModifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // defaultWeight() spreads the controls evenly, so each one
+                    // is a big tap target that grows with the widget.
+                    ControlText("⇄", controlSize, actionRunCallback<ShuffleAction>(), GlanceModifier.defaultWeight())
+                    ControlText("⏮", controlSize, actionRunCallback<PreviousAction>(), GlanceModifier.defaultWeight())
                     ControlText(
                         if (state.isPlaying) "⏸" else "▶",
+                        controlSize,
                         actionRunCallback<PlayPauseAction>(),
+                        GlanceModifier.defaultWeight(),
                     )
-                    ControlText("⏭", actionRunCallback<NextAction>())
-                    ControlText("🔁", actionRunCallback<RepeatAction>())
+                    ControlText("⏭", controlSize, actionRunCallback<NextAction>(), GlanceModifier.defaultWeight())
+                    ControlText("🔁", controlSize, actionRunCallback<RepeatAction>(), GlanceModifier.defaultWeight())
                 }
             }
         }
     }
 
+    /** One control glyph; the caller passes a defaultWeight() modifier. */
     @androidx.compose.runtime.Composable
-    private fun ControlText(glyph: String, action: androidx.glance.action.Action) {
-        Text(
-            glyph,
-            style = TextStyle(color = GlanceTheme.colors.primary),
-            modifier = GlanceModifier
-                .padding(horizontal = 8.dp)
-                .clickable(action),
-        )
+    private fun ControlText(
+        glyph: String,
+        fontSize: androidx.compose.ui.unit.TextUnit,
+        action: androidx.glance.action.Action,
+        modifier: GlanceModifier,
+    ) {
+        Box(
+            modifier = modifier.clickable(action),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                glyph,
+                style = TextStyle(color = GlanceTheme.colors.primary, fontSize = fontSize),
+            )
+        }
     }
 
+}
+
+/**
+ * Decodes embedded art capped at ~512px: RemoteViews has a hard per-widget
+ * bitmap memory budget, and full-size art can make the host silently drop
+ * the update (a widget that "never updates").
+ */
+private fun decodeScaledBitmap(bytes: ByteArray, maxDim: Int = 512): Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    var sampleSize = 1
+    while (bounds.outWidth / (sampleSize * 2) >= maxDim ||
+        bounds.outHeight / (sampleSize * 2) >= maxDim
+    ) {
+        sampleSize *= 2
+    }
+    val opts = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
 }
 
 // ---------------------------------------------------------------- actions

@@ -18,19 +18,34 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-/** Artist detail: the artist's albums + an all-tracks tab (product spec). */
+/**
+ * Artist detail: the artist's albums + an all-tracks tab (product spec).
+ * Serves both paradigms: by album artist (default) or by track artist
+ * (route arg `by=track`).
+ */
 @HiltViewModel
 class ArtistDetailViewModel @Inject constructor(
     savedState: SavedStateHandle,
     libraryRepository: LibraryRepository,
 ) : ViewModel() {
     val name: String = savedState.get<String>("name").orEmpty()
+    val byAlbumArtist: Boolean = savedState.get<String>("by") != "track"
 
-    val albums: StateFlow<List<Album>> = libraryRepository.observeAlbums(albumArtist = name)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val albums: StateFlow<List<Album>> = (
+        if (byAlbumArtist) {
+            libraryRepository.observeAlbums(albumArtist = name)
+        } else {
+            libraryRepository.observeAlbums(artist = name)
+        }
+        ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val tracks: StateFlow<List<Track>> = libraryRepository.observeArtistTracks(name)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val tracks: StateFlow<List<Track>> = (
+        if (byAlbumArtist) {
+            libraryRepository.observeArtistTracks(name)
+        } else {
+            libraryRepository.observeTrackArtistTracks(name)
+        }
+        ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 }
 
 /** Album detail: ordered track list. */
@@ -47,12 +62,11 @@ class AlbumDetailViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 }
 
-/** Genre detail: sub-browsable by artists, albums, recently added, tracks. */
+/** Genre detail: sub-browsable by artists, albums, tracks. */
 @HiltViewModel
 class GenreDetailViewModel @Inject constructor(
     savedState: SavedStateHandle,
     libraryRepository: LibraryRepository,
-    settingsRepository: com.tempobox.settings.SettingsRepository,
 ) : ViewModel() {
     val name: String = savedState.get<String>("name").orEmpty()
 
@@ -63,19 +77,6 @@ class GenreDetailViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val tracks = libraryRepository.observeGenreTracks(name)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    /** Genre ∩ recently-added window. */
-    val recentTracks: StateFlow<List<Track>> = settingsRepository.settings
-        .flatMapLatest { settings ->
-            val cutoff = System.currentTimeMillis() -
-                settings.library.recentlyAddedDays * 24L * 60 * 60 * 1000
-            libraryRepository.observeGenreTracks(name).let { base ->
-                kotlinx.coroutines.flow.combine(base, flowOf(cutoff)) { list, c ->
-                    list.filter { it.dateAddedMs >= c }
-                }
-            }
-        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 }
 
