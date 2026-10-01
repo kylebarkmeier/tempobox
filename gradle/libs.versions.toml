@@ -5,9 +5,7 @@
 [versions]
 # --- Build tooling ---
 agp = "9.3.1"                     # Android Gradle Plugin (needs Gradle >= 9.5.0)
-# AGP 9 ships built-in Kotlin with a hard minimum KGP of 2.2.10 (older versions are
-# force-upgraded on the build classpath), so 2.2.10 is the smallest workable bump.
-kotlin = "2.2.10"
+kotlin = "2.4.20"
 # KSP 2.3.x is versioned independently of Kotlin (no version-prefix matching anymore);
 # 2.3.1+ is required for AGP 9 built-in Kotlin, with AGP-9 fixes landing through 2.3.10.
 ksp = "2.3.12"                     # Kotlin Symbol Processing
@@ -38,8 +36,8 @@ appcompat = "1.8.0"
 palette = "1.0.0"
 
 # --- Kotlin ecosystem ---
-coroutines = "1.9.0"
-kotlinxSerialization = "1.7.3"
+coroutines = "1.11.0"
+kotlinxSerialization = "1.11.0"
 
 # --- IO / networking / media ---
 okhttp = "5.5.0"
@@ -51,7 +49,7 @@ junit = "4.13.2"
 mockk = "1.13.13"
 turbine = "1.2.0"
 robolectric = "4.14.1"
-coroutinesTest = "1.9.0"
+coroutinesTest = "1.11.0"
 androidxTestCore = "1.7.0"
 androidxTestRunner = "1.7.0"
 androidxTestRules = "1.7.0"
@@ -155,8 +153,6 @@ androidx-uiautomator = { group = "androidx.test.uiautomator", name = "uiautomato
 # Used inside build-logic convention plugins (not by app code)
 android-gradle-plugin = { group = "com.android.tools.build", name = "gradle", version.ref = "agp" }
 kotlin-gradle-plugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
-ksp-gradle-plugin = { group = "com.google.devtools.ksp", name = "com.google.devtools.ksp.gradle.plugin", version.ref = "ksp" }
-compose-compiler-gradle-plugin = { group = "org.jetbrains.kotlin", name = "compose-compiler-gradle-plugin", version.ref = "kotlin" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
