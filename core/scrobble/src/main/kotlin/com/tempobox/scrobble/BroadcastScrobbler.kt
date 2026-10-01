@@ -10,9 +10,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * [Scrobbler] that hands tracks to an external scrobbler app on the device
- * via the SLS broadcast API ([ScrobbleBroadcast]) instead of talking to
- * Last.fm directly. Gated by Settings ▸ Last.fm ▸ "Scrobble via another app".
+ * [Scrobbler] that hands tracks to a scrobbler app on the device via the SLS
+ * broadcast API ([ScrobbleBroadcast]); that app owns credentials, submission
+ * and any offline queue. Gated by Settings ▸ Scrobbling.
  */
 @Singleton
 class BroadcastScrobbler @Inject constructor(
@@ -26,11 +26,8 @@ class BroadcastScrobbler @Inject constructor(
     override suspend fun scrobble(track: Track, startedAtEpochSec: Long) =
         broadcast(track, ScrobbleBroadcast.State.COMPLETE)
 
-    /** Nothing queued locally — the scrobbler app owns the offline queue. */
-    override suspend fun flushPending() = Unit
-
     private suspend fun broadcast(track: Track, state: ScrobbleBroadcast.State) {
-        if (!settingsRepository.settings.first().lastFm.broadcastScrobbles) return
+        if (!settingsRepository.settings.first().scrobble.broadcastScrobbles) return
         val intent = Intent(ScrobbleBroadcast.ACTION)
         ScrobbleBroadcast.extras(
             track = track,

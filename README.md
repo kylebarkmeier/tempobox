@@ -1,7 +1,7 @@
 # TempoBox 🎵
 
-[![CI](https://github.com/kbarkmeier/tempobox/actions/workflows/ci.yml/badge.svg)](https://github.com/kbarkmeier/tempobox/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/kbarkmeier/tempobox?include_prereleases)](https://github.com/kbarkmeier/tempobox/releases)
+[![CI](https://github.com/kylebarkmeier/tempobox/actions/workflows/ci.yml/badge.svg)](https://github.com/kylebarkmeier/tempobox/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/kylebarkmeier/tempobox?include_prereleases)](https://github.com/kylebarkmeier/tempobox/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A modern, local-first Android music player built with Kotlin, Jetpack Compose,
@@ -30,7 +30,7 @@ Bluetooth behavior — no cloud account, no ads, no telemetry.
 - Fast scanner over your chosen folders: only new/changed files get their tags
   re-read; ratings and play counts always survive rescans
 - Automatic rescan on startup + live folder watching (default on, configurable)
-- Browse by Album Artist, Album, Genre, Tracks, Playlists, and Recently Added
+- Browse by Album Artist, Artist, Album, Genre, Tracks, and Playlists
   (each with sub-browsing, card/list switches, and 5-way sorting in both
   directions)
 - Per-track 1–5★ ratings and play counts
@@ -48,7 +48,9 @@ Bluetooth behavior — no cloud account, no ads, no telemetry.
   they update themselves as your library changes and are exported as `.m3u8`
 
 **Integrations**
-- Last.fm scrobbling (bring your own API key) with an offline queue
+- Scrobbling through your scrobbler app: TempoBox broadcasts played tracks in
+  the standard SLS format, which the Last.fm app, Pano Scrobbler, Simple
+  Scrobbler, etc. pick up — no account or API keys in TempoBox
 - Home screen widget: art, artist, title, shuffle/prev/play/next/repeat
 - "Set album art as wallpaper" corner action
 - Bluetooth: start-on-connect, media-button remapping, and triple-tap volume
@@ -63,21 +65,21 @@ Bluetooth behavior — no cloud account, no ads, no telemetry.
 
 ## Requirements
 
-- **Android Studio** Ladybug (2024.2)+ / **IntelliJ IDEA** 2024.2+ with the
-  Android plugin, or VS Code (see below)
+- **Android Studio** / **IntelliJ IDEA** recent enough for AGP 9.3 (2025.2+),
+  or VS Code (see below)
 - **JDK 17+** (the Gradle toolchain targets 17)
-- **Android SDK** with platform 35 (`compileSdk 35`); minimum device API is 26
+- **Android SDK** with platform 37 (`compileSdk 37`); minimum device API is 26
   (Android 8.0)
 - First build needs network access for Gradle/Maven dependencies
 
 ## Building
 
 ```bash
-git clone https://github.com/kbarkmeier/tempobox.git
+git clone https://github.com/kylebarkmeier/tempobox.git
 cd tempobox
 
 # Debug APK
-./gradlew assembleDebug          # → app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleDebug          # → app/build/outputs/apk/debug/TempoBox-debug.apk
 
 # Release APK (unsigned unless you configure signing)
 ./gradlew assembleRelease
@@ -106,7 +108,8 @@ If `local.properties` doesn't exist, the IDE creates it; on a plain CLI set
 ### Command line
 ```bash
 ./gradlew installDebug
-adb shell am start -n com.tempobox/.MainActivity
+# Debug builds install side-by-side with the release app as com.tempobox.debug
+adb shell am start -n com.tempobox.debug/com.tempobox.MainActivity
 ```
 
 ### First run on a device
@@ -134,8 +137,8 @@ Shared IDE run configurations exist for both suites (*All unit tests*,
 *Instrumented tests*).
 
 The unit suite covers the smart-playlist rule engine, M3U/M3U8 codec, shuffle
-algorithms (including statistical anti-repeat/rating-bias properties), scrobble
-signing + offline queue, the library scanner's diffing, Room DAOs, DataStore
+algorithms (including statistical anti-repeat/rating-bias properties), the SLS
+scrobble broadcast, the library scanner's diffing, Room DAOs, DataStore
 settings, and the shared UI action layer. The instrumented suite drives the
 real app: navigation drawer, tabs, settings flows, and the double-confirmation
 reset.
@@ -152,7 +155,7 @@ core/tags          jaudiotagger read/write (the only tag-IO module)
 core/playlist      M3U/M3U8 codec + smart playlist engine (pure Kotlin)
 core/library       Scanner, folder watcher, repositories, file ops
 core/playback      Media3 service, queue, shuffle engines, Bluetooth glue
-core/scrobble      Last.fm client + offline scrobble queue
+core/scrobble      SLS broadcasts to the user's scrobbler app
 core/artwork       Embedded-art Coil fetcher + Discogs artist images
 build-logic/       Gradle convention plugins shared by all modules
 docs/              Architecture notes
@@ -198,8 +201,9 @@ controls.
   editing/deleting in arbitrary user-chosen folders. Sideloaded/F-Droid style
   distribution is unaffected; Play Store distribution of this permission
   requires a declaration.
-- Last.fm and Discogs integrations need your own (free) API credentials —
-  the app ships with none.
+- Scrobbling needs a scrobbler app on the device (the Last.fm app or a
+  dedicated scrobbler); the Discogs artist-image integration needs your own
+  (free) Discogs token — TempoBox ships with no credentials.
 - Volume triple-tap gestures can't begin when the volume is already at its
   minimum/maximum (Android emits no volume-change event to observe).
 

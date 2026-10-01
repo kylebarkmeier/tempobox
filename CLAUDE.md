@@ -3,7 +3,7 @@
 Concise context for AI agents (and humans) working on this repo. Full details: `docs/ARCHITECTURE.md`.
 
 ## What this is
-Android music player. Kotlin 2.2 / Jetpack Compose / Material 3 / Media3 (ExoPlayer) / Room / Hilt / DataStore.
+Android music player. Kotlin 2.4 / Jetpack Compose / Material 3 / Media3 (ExoPlayer) / Room / Hilt / DataStore.
 Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.5.0 + AGP 9.3.1 (built-in Kotlin — no kotlin-android plugin), convention plugins in `build-logic/`.
 
 ## Module map (dependencies point downward only)
@@ -15,7 +15,7 @@ Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.5
 - `core:playlist` — M3U/M3U8 parse+write (writes are always M3U8), smart-playlist rule engine.
 - `core:library` — scanner, file watcher, `LibraryRepository`, file delete/remove ops.
 - `core:playback` — `PlaybackService` (MediaLibraryService), queue manager, shuffle engines, Bluetooth glue.
-- `core:scrobble` — Last.fm client + offline scrobble cache.
+- `core:scrobble` — SLS broadcasts handing played tracks to the user's scrobbler app.
 - `core:artwork` — Discogs artist images + album-art collage fallback.
 - `app` — all Compose UI, navigation drawer/tabs, widget (Glance), DI wiring.
 

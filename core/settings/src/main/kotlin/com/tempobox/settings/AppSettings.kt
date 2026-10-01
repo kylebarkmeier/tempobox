@@ -27,7 +27,7 @@ data class AppSettings(
     val queue: QueueSettings = QueueSettings(),
     val bluetooth: BluetoothSettings = BluetoothSettings(),
     val shuffle: ShuffleSettings = ShuffleSettings(),
-    val lastFm: LastFmSettings = LastFmSettings(),
+    val scrobble: ScrobbleSettings = ScrobbleSettings(),
     val artwork: ArtworkSettings = ArtworkSettings(),
     val theme: ThemeConfig = ThemeConfig(),
 )
@@ -128,21 +128,11 @@ data class ShuffleSettings(
 )
 
 @Serializable
-data class LastFmSettings(
+data class ScrobbleSettings(
     /**
      * Broadcast track changes in the Simple Last.fm Scrobbler (SLS) intent
-     * format, so an installed scrobbler app (Pano Scrobbler, Simple
-     * Scrobbler, …) handles Last.fm — no credentials needed in TempoBox.
+     * format, so an installed scrobbler app (the Last.fm app, Pano Scrobbler,
+     * Simple Scrobbler, …) handles scrobbling — no credentials in TempoBox.
      */
     val broadcastScrobbles: Boolean = true,
-    /** Built-in direct Last.fm scrobbling (needs API credentials + login). */
-    val scrobbleEnabled: Boolean = false,
-    /** User-provided API credentials (create at last.fm/api/account/create). */
-    val apiKey: String = "",
-    val apiSecret: String = "",
-    val username: String = "",
-    /** Obtained via mobile auth; empty = not authenticated. */
-    val sessionKey: String = "",
-    /** Also send Now Playing updates (not just scrobbles). */
-    val updateNowPlaying: Boolean = true,
 )

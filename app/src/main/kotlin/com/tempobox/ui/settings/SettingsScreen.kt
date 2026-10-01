@@ -50,7 +50,7 @@ fun SettingsScreen(
             SectionRow("queue", "Queue", "Persistence, confirmations", Icons.AutoMirrored.Filled.QueueMusic, onOpenSection)
             SectionRow("bluetooth", "Bluetooth & buttons", "Autoplay, volume gestures, remapping", Icons.Filled.Bluetooth, onOpenSection)
             SectionRow("shuffle", "Shuffle", "Anti-repeat, rating bias", Icons.Filled.Shuffle, onOpenSection)
-            SectionRow("lastfm", "Last.fm scrobbling", "Account, API keys", Icons.Filled.CloudSync, onOpenSection)
+            SectionRow("scrobbling", "Scrobbling", "Hand played tracks to your scrobbler app", Icons.Filled.CloudSync, onOpenSection)
             SectionRow("theme", "Theme", "Colors, dark mode", Icons.Filled.Palette, onOpenSection)
         }
     }
@@ -85,7 +85,7 @@ fun SettingsSectionScreen(section: String, onBack: () -> Unit) {
         "queue" -> "Queue"
         "bluetooth" -> "Bluetooth & buttons"
         "shuffle" -> "Shuffle"
-        "lastfm" -> "Last.fm"
+        "scrobbling" -> "Scrobbling"
         "theme" -> "Theme"
         else -> "Settings"
     }
@@ -107,7 +107,7 @@ fun SettingsSectionScreen(section: String, onBack: () -> Unit) {
                 "queue" -> QueueSection(viewModel)
                 "bluetooth" -> BluetoothSection(viewModel)
                 "shuffle" -> ShuffleSection(viewModel)
-                "lastfm" -> LastFmSection(viewModel)
+                "scrobbling" -> ScrobblingSection(viewModel)
                 "theme" -> ThemeSection(viewModel)
             }
         }

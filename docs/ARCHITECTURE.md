@@ -76,8 +76,10 @@ the UI can point users at the All-files-access grant.
 - Play counting + scrobbling share one rule (`PlayedThreshold`): >30s track,
   half played or 4 minutes. `PlaybackStatsListener` reports per-item play time
   when a playback session ends.
-- Failed scrobbles queue in `PendingScrobbleStore` (JSON file, capped at 500)
-  and drain on app start or the next success.
+- Scrobbling is delegated to the user's scrobbler app: `BroadcastScrobbler`
+  emits SLS-format broadcasts (Now Playing + complete) that the Last.fm app,
+  Pano Scrobbler, etc. pick up. TempoBox holds no scrobbling credentials and
+  no offline queue — the scrobbler app owns both.
 - The queue snapshot (track ids, index, position, repeat) persists to its own
   DataStore, debounced plus every 15s while playing; restore happens in
   `onCreate` with `playWhenReady = false`.
@@ -90,10 +92,9 @@ the UI can point users at the All-files-access grant.
 
 - Pure logic (rules, sorting, codec, shuffle, thresholds, signing) → plain
   JUnit on the JVM.
-- Anything needing a Context/DB (DAOs, scanner, repositories, DataStore,
-  scrobbler HTTP) → Robolectric with in-memory Room / MockWebServer / temp
-  dirs; the fake tag IO derives tags from file names so no real audio is
-  needed.
+- Anything needing a Context/DB (DAOs, scanner, repositories, DataStore) →
+  Robolectric with in-memory Room / temp dirs; the fake tag IO derives tags
+  from file names so no real audio is needed.
 - Statistical properties (anti-repeat spacing, rating bias) are asserted over
   many seeded runs with documented safety margins, not single flaky samples.
 - End-to-end behavior (navigation, settings flows, confirmations) →

@@ -36,7 +36,7 @@ class DataStoreSettingsRepository @Inject constructor(
         val QUEUE = stringPreferencesKey("queue")
         val BLUETOOTH = stringPreferencesKey("bluetooth")
         val SHUFFLE = stringPreferencesKey("shuffle")
-        val LAST_FM = stringPreferencesKey("last_fm")
+        val SCROBBLE = stringPreferencesKey("scrobble")
         val ARTWORK = stringPreferencesKey("artwork")
         val THEME = stringPreferencesKey("theme")
     }
@@ -49,7 +49,7 @@ class DataStoreSettingsRepository @Inject constructor(
             queue = prefs.decode(Keys.QUEUE, QueueSettings.serializer()) ?: QueueSettings(),
             bluetooth = prefs.decode(Keys.BLUETOOTH, BluetoothSettings.serializer()) ?: BluetoothSettings(),
             shuffle = prefs.decode(Keys.SHUFFLE, ShuffleSettings.serializer()) ?: ShuffleSettings(),
-            lastFm = prefs.decode(Keys.LAST_FM, LastFmSettings.serializer()) ?: LastFmSettings(),
+            scrobble = prefs.decode(Keys.SCROBBLE, ScrobbleSettings.serializer()) ?: ScrobbleSettings(),
             artwork = prefs.decode(Keys.ARTWORK, ArtworkSettings.serializer()) ?: ArtworkSettings(),
             theme = prefs.decode(Keys.THEME, ThemeConfig.serializer()) ?: ThemeConfig(),
         )
@@ -73,8 +73,8 @@ class DataStoreSettingsRepository @Inject constructor(
     override suspend fun updateShuffle(transform: (ShuffleSettings) -> ShuffleSettings) =
         updateGroup(Keys.SHUFFLE, ShuffleSettings.serializer(), { ShuffleSettings() }, transform)
 
-    override suspend fun updateLastFm(transform: (LastFmSettings) -> LastFmSettings) =
-        updateGroup(Keys.LAST_FM, LastFmSettings.serializer(), { LastFmSettings() }, transform)
+    override suspend fun updateScrobble(transform: (ScrobbleSettings) -> ScrobbleSettings) =
+        updateGroup(Keys.SCROBBLE, ScrobbleSettings.serializer(), { ScrobbleSettings() }, transform)
 
     override suspend fun updateArtwork(transform: (ArtworkSettings) -> ArtworkSettings) =
         updateGroup(Keys.ARTWORK, ArtworkSettings.serializer(), { ArtworkSettings() }, transform)

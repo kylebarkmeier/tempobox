@@ -9,11 +9,10 @@ import com.tempobox.library.LibraryPermissions
 import com.tempobox.library.LibraryRepository
 import com.tempobox.library.ScanState
 import com.tempobox.model.ThemeConfig
-import com.tempobox.scrobble.LastFmScrobbler
 import com.tempobox.settings.AppSettings
 import com.tempobox.settings.ArtworkSettings
 import com.tempobox.settings.BluetoothSettings
-import com.tempobox.settings.LastFmSettings
+import com.tempobox.settings.ScrobbleSettings
 import com.tempobox.settings.LibrarySettings
 import com.tempobox.settings.NowPlayingSettings
 import com.tempobox.settings.QueueSettings
@@ -22,10 +21,8 @@ import com.tempobox.settings.ShuffleSettings
 import com.tempobox.settings.UiSettings
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -41,7 +38,6 @@ class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val libraryInitializer: LibraryInitializer,
     private val libraryRepository: LibraryRepository,
-    private val scrobbler: LastFmScrobbler,
     private val artistImageRepository: ArtistImageRepository,
 ) : ViewModel() {
 
@@ -49,9 +45,6 @@ class SettingsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
 
     val scanState: StateFlow<ScanState> = libraryInitializer.scanState
-
-    private val _lastFmStatus = MutableStateFlow<String?>(null)
-    val lastFmStatus: StateFlow<String?> = _lastFmStatus.asStateFlow()
 
     // ------------------------------------------------------------------ updaters
 
@@ -73,8 +66,8 @@ class SettingsViewModel @Inject constructor(
     fun updateShuffle(transform: (ShuffleSettings) -> ShuffleSettings) =
         launch { settingsRepository.updateShuffle(transform) }
 
-    fun updateLastFm(transform: (LastFmSettings) -> LastFmSettings) =
-        launch { settingsRepository.updateLastFm(transform) }
+    fun updateScrobble(transform: (ScrobbleSettings) -> ScrobbleSettings) =
+        launch { settingsRepository.updateScrobble(transform) }
 
     fun updateArtwork(transform: (ArtworkSettings) -> ArtworkSettings) =
         launch { settingsRepository.updateArtwork(transform) }
@@ -106,17 +99,6 @@ class SettingsViewModel @Inject constructor(
     fun allFilesAccessIntent() = LibraryPermissions.allFilesAccessIntent(context)
 
     fun clearArtistImageCache() = launch { artistImageRepository.clearCache() }
-
-    /** Last.fm login; result lands in [lastFmStatus]. */
-    fun lastFmLogin(username: String, password: String) {
-        _lastFmStatus.value = "Signing in…"
-        viewModelScope.launch {
-            val error = scrobbler.authenticate(username, password)
-            _lastFmStatus.value = error ?: "Signed in as $username"
-        }
-    }
-
-    fun lastFmLogout() = updateLastFm { it.copy(sessionKey = "", username = "") }
 
     private fun launch(block: suspend () -> Unit) {
         viewModelScope.launch { block() }
