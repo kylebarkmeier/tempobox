@@ -129,6 +129,13 @@ data class ShuffleSettings(
 
 @Serializable
 data class LastFmSettings(
+    /**
+     * Broadcast track changes in the Simple Last.fm Scrobbler (SLS) intent
+     * format, so an installed scrobbler app (Pano Scrobbler, Simple
+     * Scrobbler, …) handles Last.fm — no credentials needed in TempoBox.
+     */
+    val broadcastScrobbles: Boolean = true,
+    /** Built-in direct Last.fm scrobbling (needs API credentials + login). */
     val scrobbleEnabled: Boolean = false,
     /** User-provided API credentials (create at last.fm/api/account/create). */
     val apiKey: String = "",

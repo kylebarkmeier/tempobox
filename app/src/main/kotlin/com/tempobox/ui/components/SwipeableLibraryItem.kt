@@ -16,7 +16,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -45,10 +44,10 @@ fun SwipeableLibraryItem(
         return
     }
 
-    val state = rememberSwipeToDismissBoxState(
-        // Require a deliberate drag: 50% of the row width.
-        positionalThreshold = { totalDistance -> totalDistance * 0.5f },
-    )
+    // Deliberate drag required (50% of the row width) — a fast flick while
+    // scrolling must not fire.
+    val swipe = rememberDeliberateSwipeState()
+    val state = swipe.state
 
     LaunchedEffect(state.currentValue) {
         when (state.currentValue) {
@@ -67,6 +66,7 @@ fun SwipeableLibraryItem(
 
     SwipeToDismissBox(
         state = state,
+        modifier = swipe.sizeModifier,
         enableDismissFromStartToEnd = swipeRight != SwipeAction.NONE,
         enableDismissFromEndToStart = swipeLeft != SwipeAction.NONE,
         backgroundContent = {
