@@ -4,9 +4,13 @@
 
 [versions]
 # --- Build tooling ---
-agp = "8.10.1"                     # Android Gradle Plugin (needs Gradle >= 8.11)
-kotlin = "2.0.21"
-ksp = "2.0.21-1.0.28"              # Kotlin Symbol Processing (must match Kotlin version prefix)
+agp = "9.3.1"                     # Android Gradle Plugin (needs Gradle >= 9.5.0)
+# AGP 9 ships built-in Kotlin with a hard minimum KGP of 2.2.10 (older versions are
+# force-upgraded on the build classpath), so 2.2.10 is the smallest workable bump.
+kotlin = "2.2.10"
+# KSP 2.3.x is versioned independently of Kotlin (no version-prefix matching anymore);
+# 2.3.1+ is required for AGP 9 built-in Kotlin, with AGP-9 fixes landing through 2.3.10.
+ksp = "2.3.12"                     # Kotlin Symbol Processing
 
 # --- Android SDK levels ---
 compileSdk = "35"
@@ -19,9 +23,13 @@ activityCompose = "1.9.3"
 lifecycle = "2.8.7"
 navigationCompose = "2.8.5"
 composeBom = "2024.12.01"
-room = "2.6.1"
+# Room 2.6.x predates KSP2 and fails under KSP 2.3.x ("unexpected jvm signature V");
+# 2.7.0 added KSP2 support, 2.7.2 is the last 2.7.x patch (smallest workable bump).
+room = "2.7.2"
 datastore = "1.1.1"
-hilt = "2.53.1"
+# Hilt < 2.59 fails under AGP 9 ("Android BaseExtension not found"); 2.59.2 is the
+# smallest release with working AGP 9 support (2.59/2.59.1 had follow-up fixes).
+hilt = "2.59.2"
 hiltNavigationCompose = "1.2.0"
 media3 = "1.5.0"
 glance = "1.1.1"
@@ -84,7 +92,7 @@ androidx-navigation-compose = { group = "androidx.navigation", name = "navigatio
 
 # Room
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
-androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+# room-ktx removed: merged into room-runtime as of Room 2.7.
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
 
@@ -155,7 +163,7 @@ compose-compiler-gradle-plugin = { group = "org.jetbrains.kotlin", name = "compo
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+# kotlin-android removed: AGP 9's built-in Kotlin replaces org.jetbrains.kotlin.android.
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
