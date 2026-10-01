@@ -6,7 +6,7 @@ import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.kotlin.dsl.dependencies
 import org.gradle.kotlin.dsl.getByType
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension
+import org.jetbrains.kotlin.gradle.dsl.KotlinAndroidExtension
 
 /**
  * Shared helpers used by every TempoBox convention plugin.
@@ -26,55 +26,46 @@ internal fun VersionCatalog.versionInt(alias: String): Int =
  * Baseline Android configuration shared by the application module and every
  * Android library module: SDK levels, Java/Kotlin targets, and unit-test options.
  */
-internal fun Project.configureAndroidCommon(extension: CommonExtension<*, *, *, *, *, *>) {
+internal fun Project.configureAndroidCommon(extension: CommonExtension) {
+    // AGP 9's non-generic CommonExtension exposes nested blocks as plain
+    // properties (the typed `defaultConfig { }`-style members moved to the
+    // Application/Library subinterfaces), so configure via property access.
     extension.apply {
         compileSdk = libs.versionInt("compileSdk")
 
-        defaultConfig {
+        defaultConfig.apply {
             minSdk = libs.versionInt("minSdk")
             testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         }
 
-        compileOptions {
+        compileOptions.apply {
             sourceCompatibility = JavaVersion.VERSION_17
             targetCompatibility = JavaVersion.VERSION_17
         }
 
-        testOptions {
-            unitTests {
-                // Robolectric needs Android resources; harmless for plain JVM tests.
-                isIncludeAndroidResources = true
-                // Deterministic tests: unmocked framework calls return defaults
-                // instead of throwing, but our tests use Robolectric/MockK anyway.
-                isReturnDefaultValues = true
-            }
+        testOptions.unitTests {
+            // Robolectric needs Android resources; harmless for plain JVM tests.
+            isIncludeAndroidResources = true
+            // Deterministic tests: unmocked framework calls return defaults
+            // instead of throwing, but our tests use Robolectric/MockK anyway.
+            isReturnDefaultValues = true
         }
 
-        packaging {
-            resources {
-                // Duplicate license files from jaudiotagger & friends.
-                excludes += "/META-INF/{AL2.0,LGPL2.1,LICENSE.md,LICENSE-notice.md}"
-                // OkHttp 5 (okhttp-jvm) and jspecify both ship this multi-release
-                // jar manifest; neither matters in an APK.
-                excludes += "/META-INF/versions/9/OSGI-INF/MANIFEST.MF"
-            }
+        packaging.resources {
+            // Duplicate license files from jaudiotagger & friends.
+            excludes += "/META-INF/{AL2.0,LGPL2.1,LICENSE.md,LICENSE-notice.md}"
         }
     }
 
-    // OkHttp 5's generic `okhttp` module resolves to okhttp-android on Android
-    // builds, which requires compileSdk >= 37 (we compile against 35). Map every
-    // dependency on it — ours and transitive ones (Coil, MockWebServer) — to the
-    // JVM artifact, which provides the same API/classes.
-    val okhttpVersion = libs.findVersion("okhttp").get().requiredVersion
-    configurations.all {
-        resolutionStrategy.dependencySubstitution {
-            substitute(module("com.squareup.okhttp3:okhttp"))
-                .using(module("com.squareup.okhttp3:okhttp-jvm:$okhttpVersion"))
-                .because("okhttp-android requires compileSdk 37")
-        }
+    // Gradle 9 fails test tasks that discover zero tests by default. Android unit
+    // test tasks always have inputs here (Robolectric resources), so a module
+    // without tests yet (e.g. :core:artwork) would fail the build. Opt out.
+    tasks.withType(org.gradle.api.tasks.testing.Test::class.java).configureEach {
+        failOnNoDiscoveredTests.set(false)
     }
 
-    extensions.getByType<KotlinAndroidProjectExtension>().compilerOptions {
+    // AGP 9 built-in Kotlin registers the `kotlin` extension itself.
+    extensions.getByType<KotlinAndroidExtension>().compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
         freeCompilerArgs.addAll(
             // Opt in to APIs we use deliberately across modules.
