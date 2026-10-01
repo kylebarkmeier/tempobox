@@ -54,7 +54,23 @@ internal fun Project.configureAndroidCommon(extension: CommonExtension<*, *, *, 
             resources {
                 // Duplicate license files from jaudiotagger & friends.
                 excludes += "/META-INF/{AL2.0,LGPL2.1,LICENSE.md,LICENSE-notice.md}"
+                // OkHttp 5 (okhttp-jvm) and jspecify both ship this multi-release
+                // jar manifest; neither matters in an APK.
+                excludes += "/META-INF/versions/9/OSGI-INF/MANIFEST.MF"
             }
+        }
+    }
+
+    // OkHttp 5's generic `okhttp` module resolves to okhttp-android on Android
+    // builds, which requires compileSdk >= 37 (we compile against 35). Map every
+    // dependency on it — ours and transitive ones (Coil, MockWebServer) — to the
+    // JVM artifact, which provides the same API/classes.
+    val okhttpVersion = libs.findVersion("okhttp").get().requiredVersion
+    configurations.all {
+        resolutionStrategy.dependencySubstitution {
+            substitute(module("com.squareup.okhttp3:okhttp"))
+                .using(module("com.squareup.okhttp3:okhttp-jvm:$okhttpVersion"))
+                .because("okhttp-android requires compileSdk 37")
         }
     }
 
