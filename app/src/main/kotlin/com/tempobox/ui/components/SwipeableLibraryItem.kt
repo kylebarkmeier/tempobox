@@ -16,7 +16,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -45,10 +44,10 @@ fun SwipeableLibraryItem(
         return
     }
 
-    val state = rememberSwipeToDismissBoxState(
-        // Require a deliberate drag: 50% of the row width.
-        positionalThreshold = { totalDistance -> totalDistance * 0.5f },
-    )
+    // Deliberate drag required (50% of the row width) — a fast flick while
+    // scrolling must not fire.
+    val swipe = rememberDeliberateSwipeState()
+    val state = swipe.state
 
     LaunchedEffect(state.currentValue) {
         when (state.currentValue) {
@@ -67,29 +66,38 @@ fun SwipeableLibraryItem(
 
     SwipeToDismissBox(
         state = state,
+        modifier = swipe.sizeModifier,
         enableDismissFromStartToEnd = swipeRight != SwipeAction.NONE,
         enableDismissFromEndToStart = swipeLeft != SwipeAction.NONE,
         backgroundContent = {
+            // Only paint while a swipe is actually revealing the background —
+            // rows are transparent, so a settled-state color/icon would show
+            // through the whole list.
             val (action, alignment) = when (state.dismissDirection) {
                 SwipeToDismissBoxValue.StartToEnd -> swipeRight to Alignment.CenterStart
                 SwipeToDismissBoxValue.EndToStart -> swipeLeft to Alignment.CenterEnd
                 else -> SwipeAction.NONE to Alignment.Center
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(swipeColor(action)),
-                contentAlignment = alignment,
-            ) {
-                Icon(
-                    imageVector = swipeIcon(action),
-                    contentDescription = swipeLabel(action),
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                )
+            if (action != SwipeAction.NONE) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(swipeColor(action)),
+                    contentAlignment = alignment,
+                ) {
+                    Icon(
+                        imageVector = swipeIcon(action),
+                        contentDescription = swipeLabel(action),
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                }
             }
         },
-        content = { content() },
+        content = {
+            // Opaque surface so the swipe background never bleeds through.
+            Box(Modifier.background(MaterialTheme.colorScheme.surface)) { content() }
+        },
     )
 }
 

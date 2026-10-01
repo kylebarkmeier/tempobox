@@ -20,13 +20,16 @@ enum class SwipeAction {
     DELETE_PERMANENTLY,  // confirmation dialog first
 }
 
-/** Actions bindable to the four corners around the Now Playing album art. */
+/**
+ * Actions bindable to the four corners around the Now Playing album art.
+ * Only track/artist/album-related actions belong here — playback and queue
+ * controls have their own dedicated buttons.
+ */
 @Serializable
 enum class CornerAction {
     NONE,
-    SHUFFLE_TOGGLE,
-    REPEAT_TOGGLE,
-    OPEN_QUEUE,
+    GO_TO_ARTIST,
+    GO_TO_ALBUM,
     ADD_TO_PLAYLIST,
     RATE_TRACK,
     EDIT_TAGS,
@@ -48,9 +51,9 @@ enum class MediaButton { PLAY_PAUSE, NEXT, PREVIOUS, STOP }
 @Serializable
 enum class MediaButtonAction { DEFAULT, PLAY_PAUSE, NEXT_TRACK, PREVIOUS_TRACK, STOP, NONE }
 
-/** Top-level library tabs. RECENTLY_ADDED nests its own sub-tabs. */
+/** Top-level library tabs. ARTISTS groups by track artist, ALBUM_ARTISTS by album artist. */
 @Serializable
-enum class LibraryTab { ALBUM_ARTISTS, ALBUMS, GENRES, TRACKS, PLAYLISTS, RECENTLY_ADDED }
+enum class LibraryTab { ALBUM_ARTISTS, ARTISTS, ALBUMS, GENRES, TRACKS, PLAYLISTS }
 
 /** Card (artwork grid) vs. plain list presentation for artist/album views. */
 @Serializable

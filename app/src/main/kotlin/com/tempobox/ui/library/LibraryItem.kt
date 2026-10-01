@@ -29,7 +29,11 @@ sealed interface LibraryItem {
         override val isCollection: Boolean get() = true
     }
 
-    data class ArtistItem(val artist: AlbumArtist) : LibraryItem {
+    /** [byAlbumArtist] false = a track-artist row (the Artists tab). */
+    data class ArtistItem(
+        val artist: AlbumArtist,
+        val byAlbumArtist: Boolean = true,
+    ) : LibraryItem {
         override val title: String get() = artist.name
         override val isCollection: Boolean get() = true
     }

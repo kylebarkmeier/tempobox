@@ -1,7 +1,11 @@
 package com.tempobox.ui
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -106,6 +110,11 @@ fun AppRoot(navController: NavHostController = rememberNavController()) {
                 },
             ) {
                 Scaffold(
+                    // No top inset here: every screen has its own TopAppBar,
+                    // which already applies the status-bar inset — padding it
+                    // twice leaves a blank band above the header.
+                    contentWindowInsets = WindowInsets.systemBars
+                        .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
                     snackbarHost = { SnackbarHost(snackbarHostState) },
                     bottomBar = {
                         // Mini player everywhere except the full Now Playing view.
@@ -143,9 +152,9 @@ private fun drawerEntry(item: DrawerItem): Triple<String, ImageVector, String> =
 
 fun tabIcon(tab: LibraryTab): ImageVector = when (tab) {
     LibraryTab.ALBUM_ARTISTS -> Icons.Filled.MusicNote
+    LibraryTab.ARTISTS -> Icons.Filled.MusicNote
     LibraryTab.ALBUMS -> Icons.Filled.LibraryMusic
     LibraryTab.GENRES -> Icons.Filled.MusicNote
     LibraryTab.TRACKS -> Icons.Filled.MusicNote
     LibraryTab.PLAYLISTS -> Icons.AutoMirrored.Filled.QueueMusic
-    LibraryTab.RECENTLY_ADDED -> Icons.Filled.MusicNote
 }

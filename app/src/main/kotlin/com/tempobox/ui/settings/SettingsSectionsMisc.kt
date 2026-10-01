@@ -243,10 +243,23 @@ fun LastFmSection(viewModel: SettingsViewModel) {
     val settings by viewModel.settings.collectAsState()
     val status by viewModel.lastFmStatus.collectAsState()
 
-    SettingsSection("Scrobbling") {
+    SettingsSection("Scrobble via another app") {
+        SwitchRow(
+            title = "Hand scrobbles to a scrobbler app",
+            subtitle = "Broadcast played tracks for apps like Pano Scrobbler or Simple " +
+                "Scrobbler to pick up — no Last.fm login needed in TempoBox. (The official " +
+                "Last.fm app only watches its own list of players, so use a scrobbler app.)",
+            checked = settings.lastFm.broadcastScrobbles,
+            onToggle = { on -> viewModel.updateLastFm { it.copy(broadcastScrobbles = on) } },
+        )
+    }
+
+    SettingsDivider()
+    SettingsSection("Built-in scrobbling") {
         SwitchRow(
             title = "Enable scrobbling",
-            subtitle = "Send played tracks to Last.fm (offline plays are queued)",
+            subtitle = "Send played tracks to Last.fm directly (offline plays are queued); " +
+                "needs the API credentials and sign-in below",
             checked = settings.lastFm.scrobbleEnabled,
             onToggle = { on -> viewModel.updateLastFm { it.copy(scrobbleEnabled = on) } },
         )

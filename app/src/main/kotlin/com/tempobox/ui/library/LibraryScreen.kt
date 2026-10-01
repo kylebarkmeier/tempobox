@@ -63,8 +63,8 @@ import com.tempobox.ui.components.TrackArt
 import com.tempobox.ui.components.TrackRow
 
 /**
- * The tabbed Library: Album Artists / Albums / Genres / Tracks / Playlists /
- * Recently Added. Every list reuses the shared action layer, so play buttons,
+ * The tabbed Library: Album Artists / Artists / Albums / Genres / Tracks /
+ * Playlists. Every list reuses the shared action layer, so play buttons,
  * 3-dot menus, swipe gestures and sorting behave identically everywhere.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -72,7 +72,7 @@ import com.tempobox.ui.components.TrackRow
 fun LibraryScreen(
     initialTab: LibraryTab?,
     openDrawer: () -> Unit,
-    onOpenArtist: (String) -> Unit,
+    onOpenArtist: (name: String, byAlbumArtist: Boolean) -> Unit,
     onOpenAlbum: (albumArtist: String, album: String) -> Unit,
     onOpenGenre: (String) -> Unit,
     onOpenPlaylist: (Long) -> Unit,
@@ -97,7 +97,7 @@ fun LibraryScreen(
             actions = {
                 // Card/list switch for the artist & album tabs (product spec).
                 when (selectedTab) {
-                    LibraryTab.ALBUM_ARTISTS -> LayoutToggle(ui.artistLayout) {
+                    LibraryTab.ALBUM_ARTISTS, LibraryTab.ARTISTS -> LayoutToggle(ui.artistLayout) {
                         viewModel.toggleArtistLayout()
                     }
                     LibraryTab.ALBUMS -> LayoutToggle(ui.albumLayout) {
@@ -123,7 +123,20 @@ fun LibraryScreen(
         }
 
         when (selectedTab) {
-            LibraryTab.ALBUM_ARTISTS -> ArtistsTab(viewModel, actions, ui.artistLayout, onOpenArtist)
+            LibraryTab.ALBUM_ARTISTS -> ArtistsTab(
+                viewModel = viewModel,
+                actions = actions,
+                layout = ui.artistLayout,
+                byAlbumArtist = true,
+                onOpenArtist = onOpenArtist,
+            )
+            LibraryTab.ARTISTS -> ArtistsTab(
+                viewModel = viewModel,
+                actions = actions,
+                layout = ui.artistLayout,
+                byAlbumArtist = false,
+                onOpenArtist = onOpenArtist,
+            )
             LibraryTab.ALBUMS -> AlbumsTab(
                 albums = viewModel.albums.collectAsState().value,
                 layout = ui.albumLayout,
@@ -152,15 +165,6 @@ fun LibraryScreen(
                 swipeRight = ui.swipeRight,
                 onOpenPlaylist = onOpenPlaylist,
             )
-            LibraryTab.RECENTLY_ADDED -> RecentlyAddedTab(
-                viewModel = viewModel,
-                actions = actions,
-                ui = ui,
-                onOpenArtist = onOpenArtist,
-                onOpenAlbum = onOpenAlbum,
-                onOpenGenre = onOpenGenre,
-                onOpenPlaylist = onOpenPlaylist,
-            )
         }
     }
 
@@ -178,26 +182,29 @@ private fun LayoutToggle(current: ViewLayout, onToggle: () -> Unit) {
 }
 
 private fun tabLabel(tab: LibraryTab): String = when (tab) {
-    LibraryTab.ALBUM_ARTISTS -> "Artists"
+    LibraryTab.ALBUM_ARTISTS -> "Album Artists"
+    LibraryTab.ARTISTS -> "Artists"
     LibraryTab.ALBUMS -> "Albums"
     LibraryTab.GENRES -> "Genres"
     LibraryTab.TRACKS -> "Tracks"
     LibraryTab.PLAYLISTS -> "Playlists"
-    LibraryTab.RECENTLY_ADDED -> "Recently Added"
 }
 
 // --------------------------------------------------------------------- artists
 
+/** Shared by the Album Artists ([byAlbumArtist]) and Artists tabs. */
 @Composable
 private fun ArtistsTab(
     viewModel: LibraryViewModel,
     actions: LibraryActionsViewModel,
     layout: ViewLayout,
-    onOpenArtist: (String) -> Unit,
+    byAlbumArtist: Boolean,
+    onOpenArtist: (name: String, byAlbumArtist: Boolean) -> Unit,
 ) {
-    val artists by viewModel.artists.collectAsState()
+    val artists by (if (byAlbumArtist) viewModel.artists else viewModel.trackArtists).collectAsState()
     val genreNames by viewModel.genreNames.collectAsState()
-    val genreFilter by viewModel.artistGenreFilter.collectAsState()
+    val filterState = if (byAlbumArtist) viewModel.artistGenreFilter else viewModel.trackArtistGenreFilter
+    val genreFilter by filterState.collectAsState()
     val preferImages by viewModel.preferArtistImages.collectAsState()
     val ui by viewModel.uiSettings.collectAsState()
 
@@ -212,15 +219,14 @@ private fun ArtistsTab(
             ) {
                 FilterChip(
                     selected = genreFilter == null,
-                    onClick = { viewModel.artistGenreFilter.value = null },
+                    onClick = { filterState.value = null },
                     label = { Text("All genres") },
                 )
                 genreNames.forEach { genre ->
                     FilterChip(
                         selected = genreFilter == genre,
                         onClick = {
-                            viewModel.artistGenreFilter.value =
-                                if (genreFilter == genre) null else genre
+                            filterState.value = if (genreFilter == genre) null else genre
                         },
                         label = { Text(genre) },
                     )
@@ -237,8 +243,8 @@ private fun ArtistsTab(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(artists, key = { it.name }) { artist ->
-                    val item = LibraryItem.ArtistItem(artist)
-                    Column(Modifier.clickable { onOpenArtist(artist.name) }) {
+                    val item = LibraryItem.ArtistItem(artist, byAlbumArtist)
+                    Column(Modifier.clickable { onOpenArtist(artist.name, byAlbumArtist) }) {
                         ArtistImage(
                             artistName = artist.name,
                             collageTrackPaths = artist.artworkTrackPaths,
@@ -275,7 +281,7 @@ private fun ArtistsTab(
         } else {
             LazyColumn(Modifier.fillMaxSize()) {
                 items(artists, key = { it.name }) { artist ->
-                    val item = LibraryItem.ArtistItem(artist)
+                    val item = LibraryItem.ArtistItem(artist, byAlbumArtist)
                     SwipeableLibraryItem(item, ui.swipeLeft, ui.swipeRight, actions) {
                         CollectionRow(
                             item = item,
@@ -289,7 +295,7 @@ private fun ArtistsTab(
                                     cornerRadius = 8,
                                 )
                             },
-                            onOpen = { onOpenArtist(artist.name) },
+                            onOpen = { onOpenArtist(artist.name, byAlbumArtist) },
                         )
                     }
                 }
@@ -511,91 +517,3 @@ fun PlaylistsTab(
     }
 }
 
-// --------------------------------------------------------------------- recently added
-
-/** Recently Added: its own sub-tab row over the same content composables. */
-@Composable
-private fun RecentlyAddedTab(
-    viewModel: LibraryViewModel,
-    actions: LibraryActionsViewModel,
-    ui: com.tempobox.settings.UiSettings,
-    onOpenArtist: (String) -> Unit,
-    onOpenAlbum: (String, String) -> Unit,
-    onOpenGenre: (String) -> Unit,
-    onOpenPlaylist: (Long) -> Unit,
-) {
-    val subTabs = listOf(
-        LibraryTab.ALBUM_ARTISTS,
-        LibraryTab.ALBUMS,
-        LibraryTab.GENRES,
-        LibraryTab.TRACKS,
-        LibraryTab.PLAYLISTS,
-    )
-    var subTab by rememberSaveable { mutableStateOf(LibraryTab.TRACKS) }
-
-    Column(Modifier.fillMaxSize()) {
-        ScrollableTabRow(selectedTabIndex = subTabs.indexOf(subTab)) {
-            subTabs.forEach { tab ->
-                Tab(
-                    selected = tab == subTab,
-                    onClick = { subTab = tab },
-                    text = { Text(tabLabel(tab)) },
-                )
-            }
-        }
-        when (subTab) {
-            LibraryTab.ALBUM_ARTISTS -> {
-                val artists by viewModel.recentArtists.collectAsState()
-                LazyColumn(Modifier.fillMaxSize()) {
-                    items(artists, key = { it.name }) { artist ->
-                        val item = LibraryItem.ArtistItem(artist)
-                        SwipeableLibraryItem(item, ui.swipeLeft, ui.swipeRight, actions) {
-                            CollectionRow(
-                                item = item,
-                                title = artist.name,
-                                subtitle = "${artist.albumCount} albums · ${artist.trackCount} tracks",
-                                actions = actions,
-                                artwork = {
-                                    CollageArt(
-                                        trackPaths = artist.artworkTrackPaths,
-                                        modifier = Modifier.size(48.dp),
-                                        cornerRadius = 8,
-                                    )
-                                },
-                                onOpen = { onOpenArtist(artist.name) },
-                            )
-                        }
-                    }
-                }
-            }
-            LibraryTab.ALBUMS -> AlbumsTab(
-                albums = viewModel.recentAlbums.collectAsState().value,
-                layout = ViewLayout.LIST,
-                actions = actions,
-                swipeLeft = ui.swipeLeft,
-                swipeRight = ui.swipeRight,
-                onOpenAlbum = onOpenAlbum,
-            )
-            LibraryTab.GENRES -> GenresTab(
-                genres = viewModel.recentGenres.collectAsState().value,
-                actions = actions,
-                swipeLeft = ui.swipeLeft,
-                swipeRight = ui.swipeRight,
-                onOpenGenre = onOpenGenre,
-            )
-            LibraryTab.PLAYLISTS -> PlaylistsTab(
-                playlists = viewModel.recentPlaylists.collectAsState().value,
-                actions = actions,
-                swipeLeft = ui.swipeLeft,
-                swipeRight = ui.swipeRight,
-                onOpenPlaylist = onOpenPlaylist,
-            )
-            else -> TracksTab(
-                tracks = viewModel.recentTracks.collectAsState().value,
-                actions = actions,
-                swipeLeft = ui.swipeLeft,
-                swipeRight = ui.swipeRight,
-            )
-        }
-    }
-}

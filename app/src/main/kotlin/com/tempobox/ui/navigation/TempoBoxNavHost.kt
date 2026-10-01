@@ -45,7 +45,9 @@ fun TempoBoxNavHost(
             LibraryScreen(
                 initialTab = tab,
                 openDrawer = openDrawer,
-                onOpenArtist = { navController.navigate(Routes.artist(it)) },
+                onOpenArtist = { name, byAlbumArtist ->
+                    navController.navigate(Routes.artist(name, byAlbumArtist))
+                },
                 onOpenAlbum = { artist, album -> navController.navigate(Routes.album(artist, album)) },
                 onOpenGenre = { navController.navigate(Routes.genre(it)) },
                 onOpenPlaylist = { navController.navigate(Routes.playlist(it)) },
@@ -53,7 +55,11 @@ fun TempoBoxNavHost(
         }
 
         composable(Routes.NOW_PLAYING) {
-            NowPlayingScreen(onBack = { navController.popBackStack() })
+            NowPlayingScreen(
+                onBack = { navController.popBackStack() },
+                onOpenArtist = { navController.navigate(Routes.artist(it, byAlbumArtist = false)) },
+                onOpenAlbum = { artist, album -> navController.navigate(Routes.album(artist, album)) },
+            )
         }
 
         composable(Routes.QUEUE) {
@@ -79,7 +85,13 @@ fun TempoBoxNavHost(
 
         composable(
             route = Routes.ARTIST,
-            arguments = listOf(navArgument("name") { type = NavType.StringType }),
+            arguments = listOf(
+                navArgument("name") { type = NavType.StringType },
+                navArgument("by") {
+                    type = NavType.StringType
+                    defaultValue = "album"
+                },
+            ),
         ) { entry ->
             ArtistDetailScreen(
                 name = entry.arguments?.getString("name").orEmpty(),
