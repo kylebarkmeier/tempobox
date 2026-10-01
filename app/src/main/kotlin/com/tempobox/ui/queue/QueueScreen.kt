@@ -34,10 +34,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -194,20 +192,18 @@ private fun QueueRow(
     onLongPress: () -> Unit,
     onSwipedAway: () -> Unit,
 ) {
-    // Swiping an item removes it from the queue (spec).
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value != SwipeToDismissBoxValue.Settled) {
-                onSwipedAway()
-                true
-            } else {
-                false
-            }
+    // Swiping an item removes it from the queue (spec) — but only after a
+    // deliberate half-width drag, so scroll flicks don't remove tracks.
+    val swipe = com.tempobox.ui.components.rememberDeliberateSwipeState(
+        confirmDismiss = { _ ->
+            onSwipedAway()
+            true
         },
     )
 
     SwipeToDismissBox(
-        state = dismissState,
+        state = swipe.state,
+        modifier = swipe.sizeModifier,
         backgroundContent = {
             Box(
                 Modifier

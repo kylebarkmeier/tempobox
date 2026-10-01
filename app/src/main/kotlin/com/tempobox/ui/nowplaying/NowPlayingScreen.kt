@@ -2,7 +2,10 @@ package com.tempobox.ui.nowplaying
 
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -143,7 +146,8 @@ fun NowPlayingScreen(
                 maxLines = 1,
             )
 
-            // Zoomable album art with configurable corner buttons.
+            // Zoomable album art with configurable corner buttons; swipe
+            // horizontally (unzoomed) to change track.
             ZoomableArt(
                 track = track,
                 cornerActions = npSettings.cornerActions,
@@ -154,6 +158,8 @@ fun NowPlayingScreen(
                         onOpenAlbum = onOpenAlbum,
                     )
                 },
+                onSwipeNext = viewModel.player::next,
+                onSwipePrevious = viewModel.player::previous,
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
@@ -229,12 +235,17 @@ fun NowPlayingScreen(
 
 // --------------------------------------------------------------------- pieces
 
-/** Pinch-to-zoom album art with up to four configurable corner buttons. */
+/**
+ * Pinch-to-zoom album art with up to four configurable corner buttons.
+ * While unzoomed, a horizontal swipe skips to the next/previous track.
+ */
 @Composable
 private fun ZoomableArt(
     track: Track,
     cornerActions: Map<Corner, CornerAction>,
     onCorner: (CornerAction) -> Unit,
+    onSwipeNext: () -> Unit,
+    onSwipePrevious: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
@@ -254,16 +265,33 @@ private fun ZoomableArt(
                     translationY = offsetY,
                 )
                 .pointerInput(track.filePath) {
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        val newScale = (scale * zoom).coerceIn(1f, 5f)
-                        scale = newScale
-                        if (newScale <= 1.01f) {
-                            offsetX = 0f
-                            offsetY = 0f
-                        } else {
-                            offsetX += pan.x
-                            offsetY += pan.y
-                        }
+                    // Hand-rolled transform detector: pinch zooms + pans like
+                    // before, but an unzoomed horizontal drag past the
+                    // threshold skips tracks (left = next, right = previous).
+                    val swipeThresholdPx = 96.dp.toPx()
+                    awaitEachGesture {
+                        var swipeDragX = 0f
+                        var swipeFired = false
+                        awaitFirstDown(requireUnconsumed = false)
+                        do {
+                            val event = awaitPointerEvent()
+                            val zoom = event.calculateZoom()
+                            val pan = event.calculatePan()
+                            val newScale = (scale * zoom).coerceIn(1f, 5f)
+                            scale = newScale
+                            if (newScale <= 1.01f) {
+                                offsetX = 0f
+                                offsetY = 0f
+                                swipeDragX += pan.x
+                                if (!swipeFired && kotlin.math.abs(swipeDragX) > swipeThresholdPx) {
+                                    swipeFired = true
+                                    if (swipeDragX < 0) onSwipeNext() else onSwipePrevious()
+                                }
+                            } else {
+                                offsetX += pan.x
+                                offsetY += pan.y
+                            }
+                        } while (event.changes.any { it.pressed })
                     }
                 },
         )

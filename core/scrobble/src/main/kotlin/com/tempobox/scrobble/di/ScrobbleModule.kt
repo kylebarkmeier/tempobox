@@ -1,6 +1,6 @@
 package com.tempobox.scrobble.di
 
-import com.tempobox.scrobble.LastFmScrobbler
+import com.tempobox.scrobble.CompositeScrobbler
 import com.tempobox.scrobble.Scrobbler
 import dagger.Binds
 import dagger.Module
@@ -17,7 +17,7 @@ import javax.inject.Singleton
 abstract class ScrobbleModule {
 
     @Binds
-    abstract fun bindScrobbler(impl: LastFmScrobbler): Scrobbler
+    abstract fun bindScrobbler(impl: CompositeScrobbler): Scrobbler
 
     companion object {
         @Provides
