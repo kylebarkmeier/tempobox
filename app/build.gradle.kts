@@ -25,17 +25,6 @@ android {
         abortOnError = false
     }
 
-    // Friendlier local artifact name: TempoBox-debug.apk, not app-debug.apk.
-    // Debug only — the release workflow expects AGP's default output names.
-    applicationVariants.all {
-        if (buildType.name == "debug") {
-            outputs.all {
-                (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl)
-                    .outputFileName = "TempoBox-debug.apk"
-            }
-        }
-    }
-
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -47,6 +36,17 @@ android {
         }
         debug {
             applicationIdSuffix = ".debug"
+        }
+    }
+}
+
+// Friendlier local artifact name: TempoBox-debug.apk, not app-debug.apk.
+// Debug only — the release workflow expects AGP's default output names.
+// AGP 9 removed the old applicationVariants API; this is the new Variant API.
+androidComponents {
+    onVariants(selector().withBuildType("debug")) { variant ->
+        variant.outputs.forEach { output ->
+            output.outputFileName.set("TempoBox-debug.apk")
         }
     }
 }
