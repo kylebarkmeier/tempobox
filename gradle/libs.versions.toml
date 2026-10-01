@@ -13,30 +13,28 @@ kotlin = "2.2.10"
 ksp = "2.3.12"                     # Kotlin Symbol Processing
 
 # --- Android SDK levels ---
-compileSdk = "35"
+compileSdk = "37"                  # core 1.19 / Compose 1.12 / navigation 2.10 require 37
 targetSdk = "35"
 minSdk = "26"                      # java.nio (jaudiotagger) requires 26+
 
 # --- AndroidX / Jetpack ---
-coreKtx = "1.15.0"
+coreKtx = "1.19.1"
 activityCompose = "1.9.3"
 lifecycle = "2.8.7"
-navigationCompose = "2.8.5"
-composeBom = "2024.12.01"
-# Room 2.6.x predates KSP2 and fails under KSP 2.3.x ("unexpected jvm signature V");
-# 2.7.0 added KSP2 support, 2.7.2 is the last 2.7.x patch (smallest workable bump).
-room = "2.7.2"
+navigationCompose = "2.10.2"
+composeBom = "2026.09.00"
+# Room 2.6.x predates KSP2 and fails under KSP 2.3.x ("unexpected jvm signature V").
+room = "2.8.5"
 datastore = "1.1.1"
-# Hilt < 2.59 fails under AGP 9 ("Android BaseExtension not found"); 2.59.2 is the
-# smallest release with working AGP 9 support (2.59/2.59.1 had follow-up fixes).
-hilt = "2.59.2"
-hiltNavigationCompose = "1.2.0"
-media3 = "1.5.0"
+# Hilt < 2.59 fails under AGP 9 ("Android BaseExtension not found").
+hilt = "2.60.1"
+hiltNavigationCompose = "1.4.0"
+media3 = "1.11.1"
 glance = "1.1.1"
-workManager = "2.10.0"
-hiltWork = "1.2.0"
-documentfile = "1.0.1"
-appcompat = "1.7.0"
+workManager = "2.12.0"
+hiltWork = "1.4.0"
+documentfile = "1.1.0"
+appcompat = "1.8.0"
 palette = "1.0.0"
 
 # --- Kotlin ecosystem ---
@@ -59,7 +57,7 @@ androidxTestRunner = "1.7.0"
 androidxTestRules = "1.7.0"
 androidxJunit = "1.3.0"
 espresso = "3.7.0"
-uiautomator = "2.3.0"
+uiautomator = "2.4.0"
 truth = "1.4.5"
 okhttpMockWebServer = "4.12.0"
 
