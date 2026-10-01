@@ -5,8 +5,8 @@
 [versions]
 # --- Build tooling ---
 agp = "8.10.1"                     # Android Gradle Plugin (needs Gradle >= 8.11)
-kotlin = "2.0.21"
-ksp = "2.0.21-1.0.28"              # Kotlin Symbol Processing (must match Kotlin version prefix)
+kotlin = "2.4.20"
+ksp = "2.3.12"              # Kotlin Symbol Processing (must match Kotlin version prefix)
 
 # --- Android SDK levels ---
 compileSdk = "35"
@@ -32,8 +32,8 @@ appcompat = "1.7.0"
 palette = "1.0.0"
 
 # --- Kotlin ecosystem ---
-coroutines = "1.9.0"
-kotlinxSerialization = "1.7.3"
+coroutines = "1.11.0"
+kotlinxSerialization = "1.11.0"
 
 # --- IO / networking / media ---
 okhttp = "4.12.0"
@@ -45,7 +45,7 @@ junit = "4.13.2"
 mockk = "1.13.13"
 turbine = "1.2.0"
 robolectric = "4.14.1"
-coroutinesTest = "1.9.0"
+coroutinesTest = "1.11.0"
 androidxTestCore = "1.7.0"
 androidxTestRunner = "1.7.0"
 androidxTestRules = "1.7.0"
