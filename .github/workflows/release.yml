@@ -94,12 +94,27 @@ jobs:
           cp app/build/outputs/apk/release/app-release-unsigned.apk \
              app/build/outputs/apk/release/tempobox-release-unsigned.apk
 
+      # Publishes with the gh CLI (preinstalled, uses the built-in token) so
+      # the repo's Actions allowlist needs no third-party release action.
+      # If the release already exists (created by hand in the UI), only the
+      # APK is uploaded and the hand-written notes are left alone.
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
-          generate_release_notes: true
-          files: |
-            app/build/outputs/apk/release/tempobox-release.apk
-            app/build/outputs/apk/release/tempobox-release-unsigned.apk
-          fail_on_unmatched_files: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          assets=()
+          for f in app/build/outputs/apk/release/tempobox-release.apk \
+                   app/build/outputs/apk/release/tempobox-release-unsigned.apk; do
+            [ -f "$f" ] && assets+=("$f")
+          done
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "::error::No release APK found to upload."
+            exit 1
+          fi
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --generate-notes
+          fi
