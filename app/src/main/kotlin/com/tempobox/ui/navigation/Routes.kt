@@ -9,7 +9,6 @@ import com.tempobox.model.LibraryTab
  */
 object Routes {
     const val LIBRARY = "library?tab={tab}"
-    const val NOW_PLAYING = "nowplaying"
     const val QUEUE = "queue"
     const val SETTINGS = "settings"
     const val SETTINGS_SECTION = "settings/{section}"

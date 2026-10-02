@@ -13,14 +13,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
@@ -33,7 +34,6 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -67,7 +67,6 @@ import com.tempobox.ui.components.ActionDialogHost
 import com.tempobox.ui.components.TrackArt
 import com.tempobox.ui.library.LibraryActionsViewModel
 import com.tempobox.ui.library.LibraryItem
-import com.tempobox.ui.queue.QueuePanel
 
 /**
  * Full Now Playing view (product spec): scrolling "artist – track" header,
@@ -75,11 +74,15 @@ import com.tempobox.ui.queue.QueuePanel
  * (track/artist/album actions only), configurable track info, seek bar with
  * elapsed/remaining toggle, shuffle on/off, repeat cycle, and a slide-up queue
  * drawer that is the same full-featured component as the Queue view.
+ *
+ * Rendered as the expanded layer of [NowPlayingSheet]; the queue drawer and
+ * the drag gestures live there.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NowPlayingScreen(
-    onBack: () -> Unit,
+fun NowPlayingContent(
+    onCollapse: () -> Unit,
+    onOpenQueue: () -> Unit,
     onOpenArtist: (String) -> Unit,
     onOpenAlbum: (albumArtist: String, album: String) -> Unit,
 ) {
@@ -90,7 +93,6 @@ fun NowPlayingScreen(
     val npSettings by viewModel.nowPlayingSettings.collectAsState()
     val track = state.track
 
-    var showQueueSheet by rememberSaveable { mutableStateOf(false) }
     var showRemaining by rememberSaveable { mutableStateOf(false) }
 
     val snackbar = LocalSnackbar.current
@@ -98,16 +100,22 @@ fun NowPlayingScreen(
         viewModel.messages.collect { snackbar.showSnackbar(it) }
     }
 
-    Column(Modifier.fillMaxSize()) {
+    // Hosted in the sheet overlay, outside the Scaffold: apply the gesture
+    // bar inset directly (the TopAppBar already handles the status bar).
+    Column(
+        Modifier
+            .fillMaxSize()
+            .navigationBarsPadding(),
+    ) {
         TopAppBar(
             title = { Text("Now Playing") },
             navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                IconButton(onClick = onCollapse) {
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Collapse")
                 }
             },
             actions = {
-                IconButton(onClick = { showQueueSheet = true }) {
+                IconButton(onClick = onOpenQueue) {
                     Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "Show queue")
                 }
             },
@@ -219,15 +227,8 @@ fun NowPlayingScreen(
         }
     }
 
-    // Slide-up queue drawer (spec): the same full component as the Queue view,
-    // including clear, multi-select, bulk actions and swipe-to-remove.
-    // ActionDialogHost below already serves the shared LibraryActionsViewModel.
-    if (showQueueSheet) {
-        ModalBottomSheet(onDismissRequest = { showQueueSheet = false }) {
-            QueuePanel(onBack = null, hostActionDialogs = false)
-        }
-    }
-
+    // The slide-up queue drawer lives in NowPlayingSheet as a draggable layer.
+    // ActionDialogHost here serves the shared LibraryActionsViewModel for both.
     ActionDialogHost(actions)
 }
 
@@ -288,6 +289,11 @@ private fun ZoomableArt(
                             } else {
                                 offsetX += pan.x
                                 offsetY += pan.y
+                            }
+                            // Pinching or panning zoomed art must not also drag
+                            // the Now Playing sheet, so claim the events.
+                            if (newScale > 1.01f || event.changes.size > 1) {
+                                event.changes.forEach { it.consume() }
                             }
                         } while (event.changes.any { it.pressed })
                     }
