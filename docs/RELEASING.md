@@ -43,7 +43,7 @@ devices won't install it. To publish installable signed builds:
 
    | Secret              | Value                                   |
    |---------------------|-----------------------------------------|
-   | `KEYSTORE_BASE64`   | `base64 -w0 tempobox.keystore` output   |
+   | `KEYSTORE_B64`      | `base64 -w0 tempobox.keystore` output   |
    | `KEYSTORE_PASSWORD` | keystore password                       |
    | `KEY_ALIAS`         | `tempobox` (or whatever you chose)      |
    | `KEY_PASSWORD`      | key password                            |

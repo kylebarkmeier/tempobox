@@ -157,16 +157,18 @@ re-publishing after adding signing secrets). One job:
 1. **Gate**: the whole unit suite runs again.
 2. `./gradlew :app:assembleRelease` → `app-release-unsigned.apk` (the build
    itself has no signing config; signing is CI's job).
-3. **Signing is conditional on repository secrets.** If `KEYSTORE_BASE64`
+3. **Signing is conditional on repository secrets.** If `KEYSTORE_B64`
    exists, the step decodes it to a temp keystore and signs with the newest
    SDK build-tools' **`apksigner`** (passwords via `KEYSTORE_PASSWORD` /
    `KEY_ALIAS` / `KEY_PASSWORD`, fed as env vars, never echoed), verifies the
    signature, and deletes the keystore. Without secrets it publishes the
    unsigned APK under an explicit `-unsigned` name instead of failing, so CI
    validation works on forks with zero setup.
-4. `softprops/action-gh-release` creates the GitHub Release with
-   auto-generated notes and attaches whichever APK exists
-   (`fail_on_unmatched_files: false` is what lets the two names coexist).
+4. A `gh` CLI step publishes the GitHub Release: it uploads whichever APK
+   exists to the release if one already exists for the tag (common for
+   manual dispatch), otherwise creates the release with auto-generated
+   notes. The repo's Actions policy blocks third-party release actions,
+   which is why this is plain `gh` instead of an action.
 
 Why sign in CI with secrets at all: Android app identity is
 *applicationId + signing certificate*. Updates install only if signed with
