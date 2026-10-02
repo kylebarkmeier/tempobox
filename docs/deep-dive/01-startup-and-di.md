@@ -10,7 +10,7 @@ long-running work.
 ## 1. Process start: `TempoBoxApplication`
 
 Android instantiates the `Application` subclass named in the manifest before
-any activity or service —
+any activity or service:
 [`app/src/main/kotlin/com/tempobox/TempoBoxApplication.kt`](../../app/src/main/kotlin/com/tempobox/TempoBoxApplication.kt):
 
 ```kotlin
@@ -29,7 +29,7 @@ class TempoBoxApplication : Application(), ImageLoaderFactory {
 }
 ```
 
-Three things happen here, and only three — the class is deliberately thin:
+Three things happen here, and only three; the class is deliberately thin:
 
 1. **`@HiltAndroidApp` bootstraps the DI container.** At build time Hilt has
    generated the whole object graph; at runtime this annotation makes
@@ -37,11 +37,11 @@ Three things happen here, and only three — the class is deliberately thin:
    scope) and field-inject the three `@Inject lateinit var`s. Everything else
    in the app resolves from this container.
 
-2. **`libraryInitializer.onAppStart()` kicks off the library lifecycle** —
+2. **`libraryInitializer.onAppStart()` kicks off the library lifecycle**:
    startup rescan, folder watching, smart-playlist export refresh (detailed
    in [deep dive 2](02-library-scanning-and-database.md) and
-   [deep dive 6](06-playlists.md)). Note what does *not* happen: no blocking
-   work. `onAppStart()` only launches coroutines on the injected application
+   [deep dive 6](06-playlists.md)). What does *not* happen matters too: no
+   blocking work. `onAppStart()` only launches coroutines on the injected application
    scope; `Application.onCreate` runs on the main thread and anything slow
    here delays the first frame of every launch.
 
@@ -55,7 +55,7 @@ Three things happen here, and only three — the class is deliberately thin:
    `TrackArtworkKeyer`, which keys the cache on `path + file mtime` so
    re-tagged artwork is never served stale. After this, any composable can
    write `AsyncImage(model = TrackArtwork(track.filePath), …)` and album art
-   appears — no manual byte plumbing in the UI.
+   appears, with no manual byte plumbing in the UI.
 
 ### What starts lazily
 
@@ -79,8 +79,8 @@ Hilt modules are provider-registration points. All of TempoBox's install into
 | `ScrobbleModule` | [`core/scrobble/.../di/ScrobbleModule.kt`](../../core/scrobble/src/main/kotlin/com/tempobox/scrobble/di/ScrobbleModule.kt) | binds `Scrobbler` → `BroadcastScrobbler` |
 | `ArtworkModule` | [`core/artwork/.../di/ArtworkModule.kt`](../../core/artwork/src/main/kotlin/com/tempobox/artwork/di/ArtworkModule.kt) | the app-wide `OkHttpClient` (used only by the Discogs artist-image fetcher) |
 
-Everything else — repositories, the scanner, `PlayerConnection`, the shuffle
-engine — needs no module at all: they are concrete `@Singleton class Foo
+Everything else (repositories, the scanner, `PlayerConnection`, the shuffle
+engine) needs no module at all: they are concrete `@Singleton class Foo
 @Inject constructor(…)` classes, which Hilt can construct directly. Modules
 only exist where there's an interface to bind, a third-party type to
 configure, or a qualifier to disambiguate.
@@ -90,13 +90,13 @@ configure, or a qualifier to disambiguate.
 `CoroutinesModule` exists so classes declare *which* dispatcher they need as a
 constructor dependency (`@IoDispatcher private val ioDispatcher`). Production
 injects the real dispatcher; tests construct the class with a
-`TestDispatcher` by hand — no DI involved, no global mocking of
+`TestDispatcher` by hand, with no DI involved and no global mocking of
 `Dispatchers`. The same reasoning applies to `@ApplicationScope`: it's a
 `SupervisorJob`-rooted scope for fire-and-forget process-lifetime work
 (scans, playlist exports), supervisor so one failed child doesn't cancel its
 siblings.
 
-### Two patterns worth pausing on
+### Two patterns that deserve a closer look
 
 **The DataStore delegate, not a plain `@Provides`.** From
 [`SettingsModule`](../../core/settings/src/main/kotlin/com/tempobox/settings/di/SettingsModule.kt):
@@ -112,7 +112,7 @@ private val Context.settingsDataStore: DataStore<Preferences> by preferencesData
 ```
 
 DataStore enforces one live instance per backing file per *process*. Hilt's
-`@Singleton` guarantees one instance per *component* — and the instrumented
+`@Singleton` guarantees one instance per *component*, and the instrumented
 test harness creates a fresh component per test method in the same process.
 The Kotlin property delegate is a true process-level singleton, so the
 `@Provides` function just returns it. This is an embedded lesson: "singleton"
@@ -134,7 +134,7 @@ interface WidgetEntryPoint {
 }
 ```
 
-and looks the graph up via `EntryPointAccessors.fromApplication(...)` —
+and looks the graph up via `EntryPointAccessors.fromApplication(...)`:
 service-locator style, used only where constructor/field injection is
 impossible.
 
@@ -186,10 +186,10 @@ share the process and the container (it's `@AndroidEntryPoint`, so its
 facades. Three ownership rules fall out:
 
 1. **The database is the source of truth for library data**; repositories are
-   the only things that touch DAOs (UI never does — CLAUDE.md rule 2).
+   the only things that touch DAOs (UI never does; CLAUDE.md rule 2).
 2. **The ExoPlayer timeline is the source of truth for the queue**, and it
    lives inside the service. `PlayerConnection` is a singleton *mirror* of it
-   on the UI side — it holds no authoritative state beyond the shuffle mode
+   on the UI side: it holds no authoritative state beyond the shuffle mode
    and the remembered pre-shuffle order ([deep dive 4](04-queue.md)).
 3. **Cross-cutting IO has exactly one implementation each**: one tag IO class,
    one scrobbler, one OkHttp client.
@@ -199,12 +199,12 @@ facades. Three ownership rules fall out:
 The chain for, say, the Library screen:
 
 1. `MainActivity` (annotated `@AndroidEntryPoint`) calls
-   `setContent { AppRoot() }` —
-   [`MainActivity.kt`](../../app/src/main/kotlin/com/tempobox/MainActivity.kt).
+   `setContent { AppRoot() }`
+   ([`MainActivity.kt`](../../app/src/main/kotlin/com/tempobox/MainActivity.kt)).
 2. [`AppRoot`](../../app/src/main/kotlin/com/tempobox/ui/AppRoot.kt) calls
    `hiltViewModel()` to get
    [`MainViewModel`](../../app/src/main/kotlin/com/tempobox/ui/MainViewModel.kt),
-   whose constructor demands `SettingsRepository` and `PlayerConnection` —
+   whose constructor demands `SettingsRepository` and `PlayerConnection`,
    both resolved from the singleton graph. The ViewModel itself is cached in
    the navigation back-stack entry's store (per-route singleton).
 3. Composables collect `viewModel.settings` / `viewModel.nowPlaying`
@@ -219,7 +219,7 @@ repository knows the UI exists.
 `PlaybackService.onCreate`
 ([`PlaybackService.kt`](../../core/playback/src/main/kotlin/com/tempobox/playback/PlaybackService.kt))
 builds the ExoPlayer and MediaSession, restores the persisted queue, and
-registers its Bluetooth/volume receivers — the full tour is
+registers its Bluetooth/volume receivers; the full tour is
 [deep dive 3](03-playback.md). The point for *this* document: the service is
 `@AndroidEntryPoint`, so its `settingsRepository`, `libraryRepository`,
 `scrobbler`, `stateStore`, and `tagReader` fields are injected from the same

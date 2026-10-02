@@ -3,8 +3,8 @@
 > Prerequisites: [Android primer](../android-primer.md) §9 (DataStore), §6
 > (StateFlow).
 
-Settings look mundane, but this subsystem encodes several deliberate choices —
-a typed snapshot model, a JSON-per-group storage layout, defensive decoding —
+Settings look mundane, but this subsystem encodes several deliberate choices
+(a typed snapshot model, a JSON-per-group storage layout, defensive decoding),
 and it's the cleanest place to see the repo's end-to-end reactive pattern.
 It's also governed by a hard rule (CLAUDE.md rule 5): **nothing outside
 `core:settings` reads DataStore directly.**
@@ -30,7 +30,7 @@ data class AppSettings(
 
 Two things to notice:
 
-- **The Kotlin defaults ARE the product defaults** — the class is the single
+- **The Kotlin defaults ARE the product defaults**: the class is the single
   place where "anti-repeat is ON by default" lives, and tests assert the spec
   against a fresh store (see §5). There is no second defaults table to drift.
 - Values are real types, not strings: enums
@@ -81,13 +81,13 @@ private fun <T> Preferences.decode(key: Preferences.Key<String>, serializer: KSe
 
 A missing or unreadable group yields null → the caller substitutes defaults.
 A malformed value (bit rot, an interrupted migration, a bug in an old
-version) can never crash the app at startup — the worst case is one settings
+version) can never crash the app at startup; the worst case is one settings
 group silently reset. The same `runCatching`-to-defaults posture appears in
 `PlaybackStateStore` and `SmartRule.fromJson`; it's a house pattern:
 **persisted bytes are input, and input is validated, not trusted.**
 
-Writes go through one generic helper — decode current (or defaults), apply
-the caller's transform, re-encode — inside `dataStore.edit { }`, which is
+Writes go through one generic helper (decode current or defaults, apply
+the caller's transform, re-encode) inside `dataStore.edit { }`, which is
 atomic and serialized per store, so concurrent `update*` calls compose instead
 of clobbering (asserted by the `sequential transforms compose` test).
 
@@ -107,7 +107,7 @@ Consumers everywhere treat it uniformly:
   `MainViewModel` for theme/drawer).
 - **Services**: `PlaybackService` keeps `settingsRepository.settings.stateIn(scope, Eagerly, null)`
   and consults `settingsState.value` inside broadcast receivers and session
-  callbacks — those are synchronous call sites that can't suspend, and a
+  callbacks; those are synchronous call sites that can't suspend, and a
   stale-by-milliseconds read is fine there.
 - **One-shot readers**: `settings.first()` where a single decision needs the
   current value (scanner startup, `addToQueue`'s duplicate policy, the
@@ -115,20 +115,20 @@ Consumers everywhere treat it uniformly:
 
 The DataStore *instance* itself is provided by
 [`SettingsModule`](../../core/settings/src/main/kotlin/com/tempobox/settings/di/SettingsModule.kt)
-via a Kotlin property delegate rather than a plain `@Singleton @Provides` —
-the "one instance per process vs one per DI component" subtlety explained in
-[deep dive 1 §2](01-startup-and-di.md).
+via a Kotlin property delegate rather than a plain `@Singleton @Provides`;
+the "one instance per process vs one per DI component" subtlety is explained
+in [deep dive 1 §2](01-startup-and-di.md).
 
 ## 4. Tracing one setting end-to-end
 
-Adding a hypothetical "crossfade" toggle shows every layer a setting touches —
+Adding a hypothetical "crossfade" toggle shows every layer a setting touches,
 and how short the list is:
 
 1. **Model + default**: add `val crossfade: Boolean = false` to the
-   appropriate group in `AppSettings.kt`. Done — storage, decoding, and
+   appropriate group in `AppSettings.kt`. Done; storage, decoding, and
    migration (old JSON without the field decodes to the default) all come for
    free from the serializer.
-2. **Expose a writer**: nothing to add — the group's existing
+2. **Expose a writer**: nothing to add; the group's existing
    `updateNowPlaying { it.copy(crossfade = …) }`-style transform already
    covers it. (A brand-new *group* would add one key, one line in the
    `settings` map-block, and one `update*` function.)
@@ -137,11 +137,11 @@ and how short the list is:
    / [`SettingsSectionsLibraryUi.kt`](../../app/src/main/kotlin/com/tempobox/ui/settings/SettingsSectionsLibraryUi.kt),
    reading `settings.<group>.crossfade` and calling the updater on toggle.
 4. **Consumption**: whoever implements the behavior collects
-   `settingsRepository.settings` (or reads the service's `settingsState`) —
+   `settingsRepository.settings` (or reads the service's `settingsState`);
    it reacts live, because the DataStore flow re-emits on every write.
 
 Compare the real example: `LibraryInitializer` restarts the folder watcher
-when `autoRescanAndWatch` *or* the location list changes — that's just
+when `autoRescanAndWatch` *or* the location list changes; that's just
 `settings.map { … }.distinctUntilChanged().onEach { restart }`
 ([deep dive 2 §5](02-library-scanning-and-database.md)). No invalidation
 callbacks, no "settings changed" broadcast: the flow is the notification.
@@ -152,15 +152,15 @@ callbacks, no "settings changed" broadcast: the flow is the notification.
 (Robolectric + a real DataStore on a temp file) pins:
 
 - fresh store ⇒ **the product defaults** (auto-rescan ON, anti-repeat ON,
-  scrobble broadcasts ON, default swipes/drawer) — the spec encoded as
+  scrobble broadcasts ON, default swipes/drawer): the spec encoded as
   assertions;
 - group isolation (updating library doesn't disturb UI defaults);
 - complex values (sealed `DrawerItem`s, enum-keyed maps, theme ARGBs)
   surviving the JSON round trip;
 - sequential transforms composing.
 
-One embedded lesson is worth quoting, because anyone writing a DataStore test
-will hit it — the store cannot share the test's `TestScope`:
+One embedded lesson deserves quoting, because anyone writing a DataStore test
+will hit it: the store cannot share the test's `TestScope`.
 
 ```kotlin
 /**

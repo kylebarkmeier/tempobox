@@ -46,14 +46,14 @@ files cost zero tag reads.
 
 **Smart playlists are evaluated live.** A smart playlist stores only its rule
 tree (JSON). Reads evaluate against the current library, so new matching
-tracks appear automatically — the spec's "kept up to date" requirement falls
+tracks appear automatically; the spec's "kept up to date" requirement falls
 out of the design instead of needing a sync job. Their `.m3u8` exports are
 refreshed (debounced) whenever the track table changes.
 
 **The ExoPlayer timeline IS the queue.** No parallel queue store to drift out
 of sync. `PlayerConnection` mutates the timeline (uid-tagged MediaItems) and
 exposes StateFlows; shuffle is applied by *reordering the timeline* with
-`ShuffleEngine`, never via ExoPlayer's built-in shuffle — that's what makes
+`ShuffleEngine`, never via ExoPlayer's built-in shuffle. That is what makes
 anti-repeat and rating-biased modes possible. Un-shuffle restores the
 remembered pre-shuffle uid order. Reorders and bulk removals are batched into
 O(1) timeline operations (`QueueReorder`): every timeline change makes Media3
@@ -89,7 +89,7 @@ the UI can point users at the All-files-access grant.
 - Scrobbling is delegated to the user's scrobbler app: `BroadcastScrobbler`
   emits SLS-format broadcasts (Now Playing + complete) that the Last.fm app,
   Pano Scrobbler, etc. pick up. TempoBox holds no scrobbling credentials and
-  no offline queue — the scrobbler app owns both.
+  no offline queue; the scrobbler app owns both.
 - The queue snapshot (track ids, index, position, repeat) persists to its own
   DataStore, debounced plus every 15s while playing; restore happens in
   `onCreate` with `playWhenReady = false`.
@@ -111,5 +111,5 @@ the UI can point users at the All-files-access grant.
   Compose instrumented tests on a device with the real Hilt graph.
 
 Known deliberate gaps: jaudiotagger's actual byte-level tag writing (would
-need real audio fixtures — covered manually), and Media3 internals (owned by
+need real audio fixtures; covered manually), and Media3 internals (owned by
 AndroidX, exercised by the instrumented smoke tests).

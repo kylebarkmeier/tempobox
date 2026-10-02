@@ -12,12 +12,12 @@ the code does.
 
 ## Reading order
 
-1. **[Android primer](android-primer.md)** — the Android/Jetpack concepts this
+1. **[Android primer](android-primer.md)**: the Android/Jetpack concepts this
    app is built on, explained for a backend/web developer. Read this first if
    your Android knowledge is small or outdated; everything else assumes it.
-2. **[Architecture](ARCHITECTURE.md)** — the concise decision record: module
-   graph and the key design decisions in one page.
-3. **The deep dives** ([docs/deep-dive/](deep-dive/)) — one walkthrough per
+2. **[Architecture](ARCHITECTURE.md)**: the concise decision record, with the
+   module graph and the key design decisions in one page.
+3. **The deep dives** ([docs/deep-dive/](deep-dive/)): one walkthrough per
    subsystem, tracing real code paths with file references. In rough
    dependency order:
 
@@ -34,7 +34,7 @@ the code does.
    | 9 | [Tags & editing](deep-dive/09-tags-and-editing.md) | jaudiotagger, the single-writer rule, prefill/dirty-field write sets, file-first-then-DB sync |
    | 10 | [Build & CI/release](deep-dive/10-build-and-ci.md) | Module graph, convention plugins, version catalog, CI jobs, release signing |
 
-4. **[Releasing](RELEASING.md)** — the operational guide for cutting a release
+4. **[Releasing](RELEASING.md)**: the operational guide for cutting a release
    (versioning, tagging, APK signing secrets).
 
 Also useful: [`CLAUDE.md`](../CLAUDE.md) at the repo root is the condensed
