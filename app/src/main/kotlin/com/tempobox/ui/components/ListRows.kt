@@ -28,9 +28,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tempobox.common.TimeFormat
+import com.tempobox.model.STANDARD_SORT_KEYS
 import com.tempobox.model.SortKey
 import com.tempobox.model.SortSpec
 import com.tempobox.model.Track
+import com.tempobox.model.defaultAscending
 import com.tempobox.ui.library.LibraryActionsViewModel
 import com.tempobox.ui.library.LibraryItem
 
@@ -138,14 +140,16 @@ fun CollectionRow(
 }
 
 /**
- * Sort control shown in every library view's toolbar: pick the key
- * (alphabetical / recently added / last modified / rating / tag date) and
- * tap the active key again to flip direction.
+ * Sort control shown in every library view's toolbar (main tabs and detail
+ * screens alike): pick a key from [keys] and tap the active key again to flip
+ * direction. Main tabs offer the standard five; detail views pass their own
+ * list from [com.tempobox.model.LibrarySubview.sortKeys].
  */
 @Composable
 fun SortMenuButton(
     current: SortSpec,
     onChange: (SortSpec) -> Unit,
+    keys: List<SortKey> = STANDARD_SORT_KEYS,
 ) {
     var open by remember { mutableStateOf(false) }
     Box {
@@ -153,7 +157,7 @@ fun SortMenuButton(
             Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort")
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            SortKey.entries.forEach { key ->
+            keys.forEach { key ->
                 DropdownMenuItem(
                     text = { Text(sortLabel(key)) },
                     trailingIcon = {
@@ -171,7 +175,7 @@ fun SortMenuButton(
                             if (key == current.key) {
                                 current.copy(ascending = !current.ascending)
                             } else {
-                                SortSpec(key = key, ascending = key == SortKey.ALPHABETICAL)
+                                SortSpec(key = key, ascending = key.defaultAscending())
                             },
                         )
                     },
@@ -187,4 +191,9 @@ fun sortLabel(key: SortKey): String = when (key) {
     SortKey.LAST_MODIFIED -> "Last modified"
     SortKey.RATING -> "Rating"
     SortKey.TAG_DATE -> "Tag date (year)"
+    SortKey.TRACK_NUMBER -> "Track number"
+    SortKey.ALBUM_ORDER -> "Album order"
+    SortKey.DURATION -> "Duration"
+    SortKey.PLAY_COUNT -> "Play count"
+    SortKey.PLAYLIST_ORDER -> "Playlist order"
 }

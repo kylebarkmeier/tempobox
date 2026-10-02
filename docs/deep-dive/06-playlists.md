@@ -171,6 +171,13 @@ shown.
 semantic split: you can't hand-add tracks to a rule-defined playlist
 (the UI never offers it; the repository backstops it).
 
+The playlist detail screen's sort menu never touches any of this: the chosen
+sort is applied to the displayed list in `PlaylistDetailViewModel`
+(`SortSpec.sortTracks`), and `replaceEntries` only runs for explicit edits
+(entry removal, reorder). The stored position column and the `.m3u8` file keep
+the user's manual order whatever the view shows
+([deep dive 8](08-ui-architecture.md)).
+
 ## 6. Deletion semantics
 
 `deletePlaylist(id, deleteFile)` encodes the product distinction surfaced by

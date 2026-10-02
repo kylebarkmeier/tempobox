@@ -77,6 +77,18 @@ lives in Hilt ViewModels
 holds per-tab `SortSpec`s, genre filter chips, card/list layout toggles, all
 feeding reactive repository queries).
 
+Detail lists sort with the same `SortMenuButton` the tabs use. The option
+list per view and the defaults live in `core:model`
+([`LibrarySubview`](../../core/model/src/main/kotlin/com/tempobox/model/LibrarySubview.kt)):
+album tracks default to disc/track number, artist and genre track lists to
+album order, artist albums to release year, playlists to their stored order.
+The chosen sorts are session state like the tab sorts, but detail ViewModels
+die on back navigation, so they live in a singleton holder
+([`SubviewSortState`](../../app/src/main/kotlin/com/tempobox/ui/library/SubviewSortState.kt))
+keyed per view type. Playlist sorting is view-only: the detail ViewModel
+applies `SortSpec.sortTracks` to the displayed list and never writes a sorted
+order back through `PlaylistRepository`.
+
 ## 2. The single action layer
 
 The core UI design decision: **every content action in the app is implemented

@@ -13,7 +13,7 @@ import com.tempobox.model.SortSpec
 import com.tempobox.model.TagData
 import com.tempobox.model.Track
 import com.tempobox.model.sortNormalized
-import com.tempobox.model.trackComparator
+import com.tempobox.model.sortTracks
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -28,7 +28,7 @@ import javax.inject.Singleton
  * Facade over the track table: all library reads and mutations the UI needs.
  * (Playlists live in [PlaylistRepository]; scanning in [MediaScanner].)
  *
- * Sorting happens in memory with [SortSpec.trackComparator] because the
+ * Sorting happens in memory with [SortSpec.sortTracks] because the
  * article-aware alphabetical order ("The Beatles" under B) can't be expressed
  * in SQLite cleanly. Library sizes (tens of thousands of tracks) sort in
  * single-digit milliseconds.
@@ -44,25 +44,48 @@ class LibraryRepository @Inject constructor(
 
     fun observeTracks(sort: SortSpec = SortSpec()): Flow<List<Track>> =
         trackDao.observeAll().map { rows ->
-            rows.map { it.toModel() }.sortedWith(sort.trackComparator())
+            sort.sortTracks(rows.map { it.toModel() })
         }
 
-    fun observeAlbumTracks(album: String, albumArtist: String): Flow<List<Track>> =
-        trackDao.observeAlbumTracks(album, albumArtist).map { rows -> rows.map { it.toModel() } }
+    /** Default sort mirrors the album's natural order: disc then track number. */
+    fun observeAlbumTracks(
+        album: String,
+        albumArtist: String,
+        sort: SortSpec = SortSpec(SortKey.TRACK_NUMBER),
+    ): Flow<List<Track>> =
+        trackDao.observeAlbumTracks(album, albumArtist).map { rows ->
+            sort.sortTracks(rows.map { it.toModel() })
+        }
 
-    fun observeArtistTracks(albumArtist: String): Flow<List<Track>> =
-        trackDao.observeArtistTracks(albumArtist).map { rows -> rows.map { it.toModel() } }
+    /** Default sort mirrors the DAO's natural order: album, disc, track. */
+    fun observeArtistTracks(
+        albumArtist: String,
+        sort: SortSpec = SortSpec(SortKey.ALBUM_ORDER),
+    ): Flow<List<Track>> =
+        trackDao.observeArtistTracks(albumArtist).map { rows ->
+            sort.sortTracks(rows.map { it.toModel() })
+        }
 
     /** Tracks whose track artist (not album artist) is [artist]. */
-    fun observeTrackArtistTracks(artist: String): Flow<List<Track>> =
-        trackDao.observeTrackArtistTracks(artist).map { rows -> rows.map { it.toModel() } }
+    fun observeTrackArtistTracks(
+        artist: String,
+        sort: SortSpec = SortSpec(SortKey.ALBUM_ORDER),
+    ): Flow<List<Track>> =
+        trackDao.observeTrackArtistTracks(artist).map { rows ->
+            sort.sortTracks(rows.map { it.toModel() })
+        }
 
-    fun observeGenreTracks(genre: String): Flow<List<Track>> =
-        trackDao.observeGenreTracks(genre).map { rows -> rows.map { it.toModel() } }
+    fun observeGenreTracks(
+        genre: String,
+        sort: SortSpec = SortSpec(SortKey.ALBUM_ORDER),
+    ): Flow<List<Track>> =
+        trackDao.observeGenreTracks(genre).map { rows ->
+            sort.sortTracks(rows.map { it.toModel() })
+        }
 
     fun observeRecentlyAddedTracks(sinceMs: Long, sort: SortSpec = SortSpec(SortKey.RECENTLY_ADDED, ascending = false)): Flow<List<Track>> =
         trackDao.observeRecentlyAdded(sinceMs).map { rows ->
-            rows.map { it.toModel() }.sortedWith(sort.trackComparator())
+            sort.sortTracks(rows.map { it.toModel() })
         }
 
     suspend fun getTracksByIds(ids: List<Long>): List<Track> = withContext(ioDispatcher) {
@@ -200,6 +223,8 @@ class LibraryRepository @Inject constructor(
             SortKey.LAST_MODIFIED -> compareBy { it.dateModifiedMs }
             SortKey.RATING -> compareBy { it.maxRating }
             SortKey.TAG_DATE -> compareBy { it.year ?: Int.MIN_VALUE }
+            // Track-list-only keys; no album view offers them. Fall back to name.
+            else -> compareBy { it.name.sortNormalized() }
         }
         return (if (sort.ascending) base else base.reversed())
             .thenBy { it.name.sortNormalized() }

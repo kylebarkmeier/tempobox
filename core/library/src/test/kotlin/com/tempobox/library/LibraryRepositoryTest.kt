@@ -301,6 +301,73 @@ class LibraryRepositoryTest {
         assertThat(recent.map { it.title }).containsExactly("New", "Mid").inOrder()
     }
 
+    // ------------------------------------------------------------------ subview track sorting
+
+    private suspend fun seedNumbered(
+        path: String,
+        title: String,
+        artist: String = "A",
+        album: String = "Al",
+        disc: Int? = 1,
+        trackNo: Int? = 1,
+        duration: Long = 0,
+        genre: String = "Rock",
+    ) {
+        db.trackDao().insert(
+            Track(
+                filePath = path, title = title, artist = artist, albumArtist = artist,
+                album = album, genre = genre, discNumber = disc, trackNumber = trackNo,
+                durationMs = duration,
+            ).toEntity(),
+        )
+    }
+
+    @Test
+    fun `album tracks default to disc then track number order`() = runTest {
+        seedNumbered("/1.mp3", title = "Zulu Opener", disc = 1, trackNo = 1)
+        seedNumbered("/2.mp3", title = "Alpha Closer", disc = 1, trackNo = 2)
+        seedNumbered("/3.mp3", title = "Bonus", disc = 2, trackNo = 1)
+
+        val titles = repository.observeAlbumTracks("Al", "A").first().map { it.title }
+        assertThat(titles).containsExactly("Zulu Opener", "Alpha Closer", "Bonus").inOrder()
+    }
+
+    @Test
+    fun `album tracks honor an explicit sort spec`() = runTest {
+        seedNumbered("/1.mp3", title = "Zulu Opener", trackNo = 1)
+        seedNumbered("/2.mp3", title = "Alpha Closer", trackNo = 2)
+
+        val titles = repository
+            .observeAlbumTracks("Al", "A", SortSpec(SortKey.ALPHABETICAL, ascending = true))
+            .first().map { it.title }
+        assertThat(titles).containsExactly("Alpha Closer", "Zulu Opener").inOrder()
+    }
+
+    @Test
+    fun `artist tracks default to album order and accept overrides`() = runTest {
+        seedNumbered("/1.mp3", title = "LateAlbumTrack", album = "Second", trackNo = 1, duration = 10)
+        seedNumbered("/2.mp3", title = "FirstAlbumTrack", album = "First", trackNo = 1, duration = 99)
+
+        val byDefault = repository.observeArtistTracks("A").first().map { it.title }
+        assertThat(byDefault).containsExactly("FirstAlbumTrack", "LateAlbumTrack").inOrder()
+
+        val byDuration = repository
+            .observeArtistTracks("A", SortSpec(SortKey.DURATION, ascending = false))
+            .first().map { it.title }
+        assertThat(byDuration).containsExactly("FirstAlbumTrack", "LateAlbumTrack").inOrder()
+    }
+
+    @Test
+    fun `genre tracks honor the sort spec`() = runTest {
+        seedNumbered("/1.mp3", title = "Short", duration = 10, genre = "Rock")
+        seedNumbered("/2.mp3", title = "Long", duration = 500, genre = "Rock")
+
+        val titles = repository
+            .observeGenreTracks("Rock", SortSpec(SortKey.DURATION, ascending = true))
+            .first().map { it.title }
+        assertThat(titles).containsExactly("Short", "Long").inOrder()
+    }
+
     @Test
     fun `getTrackByPath resolves a single file`() = runTest {
         seed("/somewhere/a.mp3", title = "Found")

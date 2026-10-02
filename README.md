@@ -36,6 +36,10 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
 - Browse by Album Artist, Artist, Album, Genre, Tracks, and Playlists
   (each with sub-browsing, card/list switches, and 5-way sorting in both
   directions)
+- Detail views sort too: artist albums and tracks, album track lists, genre
+  artists/albums/tracks, and playlists, each with options that fit the list
+  (track number, album order, duration, play count). Sorting a playlist only
+  changes the view; the stored order stays yours
 - Per-track 1-5★ ratings and play counts
 - In-app ID3/Vorbis/MP4 tag editing, single track or bulk
 - Remove-from-library and delete-from-device (both behind confirmations)
