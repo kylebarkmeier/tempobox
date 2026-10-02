@@ -50,7 +50,12 @@ of sync. `PlayerConnection` mutates the timeline (uid-tagged MediaItems) and
 exposes StateFlows; shuffle is applied by *reordering the timeline* with
 `ShuffleEngine`, never via ExoPlayer's built-in shuffle — that's what makes
 anti-repeat and rating-biased modes possible. Un-shuffle restores the
-remembered pre-shuffle uid order.
+remembered pre-shuffle uid order. Reorders and bulk removals are batched into
+O(1) timeline operations (`QueueReorder`): every timeline change makes Media3
+re-broadcast the *entire* queue to the platform session and on to every legacy
+controller (Bluetooth AVRCP included), so one-op-per-track mutations are
+quadratic parcel traffic that can OOM the Bluetooth stack and ANR the app
+inside `MediaSession.setQueue`.
 
 **One action layer for the whole UI.** `LibraryActionsViewModel` +
 `LibraryItem` implement play/shuffle/queue/playlist/tag-edit/rate/remove/
