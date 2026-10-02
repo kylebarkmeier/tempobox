@@ -22,7 +22,7 @@ the advisory is published after it's available.
   All-files-access) to scan and tag-edit the music library; reports about
   misuse of that access (path traversal via crafted tags/playlists, writing
   outside library folders) are very welcome.
-- Playlist files (M3U/M3U8) and audio tags are untrusted input — parser issues
+- Playlist files (M3U/M3U8) and audio tags are untrusted input; parser issues
   are in scope.
 - The release APK signing key is held only by the maintainer; CI signs via
   GitHub Actions secrets.

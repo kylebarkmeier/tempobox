@@ -29,8 +29,8 @@ signing secrets.
 ## APK signing (one-time setup)
 
 Without secrets the workflow publishes an *unsigned* APK
-(`tempobox-release-unsigned.apk`) — fine for CI validation, but devices won't
-install it. To publish installable signed builds:
+(`tempobox-release-unsigned.apk`), which is fine for CI validation, but
+devices won't install it. To publish installable signed builds:
 
 1. Create a keystore (keep it safe; losing it means users must uninstall to
    update):

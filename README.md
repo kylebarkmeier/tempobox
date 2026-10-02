@@ -4,12 +4,12 @@
 [![Release](https://img.shields.io/github/v/release/kylebarkmeier/tempobox?include_prereleases)](https://github.com/kylebarkmeier/tempobox/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A modern, local-first Android music player built with Kotlin, Jetpack Compose,
+A local-first Android music player built with Kotlin, Jetpack Compose,
 and Media3/ExoPlayer.
 
 TempoBox is built for people with real music libraries on their device:
 lossless formats, careful tags, ratings, smart playlists, and proper
-Bluetooth behavior — no cloud account, no ads, no telemetry.
+Bluetooth behavior. No cloud account, no ads, no telemetry.
 
 ## Features
 
@@ -20,8 +20,8 @@ Bluetooth behavior — no cloud account, no ads, no telemetry.
 - Lockscreen & notification controls with embedded album art, plus AVRCP
   metadata for car head units and Bluetooth displays
 - Repeat off / all / one, and three shuffle flavors:
-  plain random, **anti-repeat** (spreads out repeats of the same track, album
-  and artist as far as possible — the default), and **rating-biased**
+  plain random, **anti-repeat** (the default; spreads out repeats of the same
+  track, album and artist as far as possible), and **rating-biased**
   (favors your 5★ tracks)
 - Play queue that survives restarts (configurable), with multi-select,
   swipe-to-remove, and an animated now-playing indicator
@@ -33,8 +33,8 @@ Bluetooth behavior — no cloud account, no ads, no telemetry.
 - Browse by Album Artist, Artist, Album, Genre, Tracks, and Playlists
   (each with sub-browsing, card/list switches, and 5-way sorting in both
   directions)
-- Per-track 1–5★ ratings and play counts
-- In-app ID3/Vorbis/MP4 tag editing — single track or bulk
+- Per-track 1-5★ ratings and play counts
+- In-app ID3/Vorbis/MP4 tag editing, single track or bulk
 - Remove-from-library and delete-from-device (both behind confirmations)
 - Artist images from Discogs (optional, bring your own token) with an
   album-art collage fallback
@@ -44,13 +44,13 @@ Bluetooth behavior — no cloud account, no ads, no telemetry.
   imported automatically
 - Everything the app creates or modifies is written as UTF-8 **M3U8**
 - **Auto (smart) playlists** built from Album Artist / Artist / Genre / Year /
-  Rating conditions with AND/OR combinations and `<` / `>` for Year & Rating —
+  Rating conditions with AND/OR combinations and `<` / `>` for Year & Rating;
   they update themselves as your library changes and are exported as `.m3u8`
 
 **Integrations**
 - Scrobbling through your scrobbler app: TempoBox broadcasts played tracks in
   the standard SLS format, which the Last.fm app, Pano Scrobbler, Simple
-  Scrobbler, etc. pick up — no account or API keys in TempoBox
+  Scrobbler, etc. pick up. No account or API keys in TempoBox
 - Home screen widget: art, artist, title, shuffle/prev/play/next/repeat
 - "Set album art as wallpaper" corner action
 - Bluetooth: start-on-connect, media-button remapping, and triple-tap volume
@@ -147,7 +147,7 @@ reset.
 
 ```
 app/               Compose UI, navigation, widget, DI wiring
-core/model         Pure Kotlin domain models (rules, sorting — no Android)
+core/model         Pure Kotlin domain models (rules, sorting; no Android)
 core/common        Small shared utilities
 core/database      Room: tracks, playlists, aggregates
 core/settings      Typed DataStore settings repository
@@ -168,26 +168,26 @@ See `docs/ARCHITECTURE.md` for the module graph and key design decisions, and
 
 [docs/README.md](docs/README.md) is the index for all project documentation:
 
-- **[Android primer](docs/android-primer.md)** — the Android/Jetpack concepts
+- **[Android primer](docs/android-primer.md)**: the Android/Jetpack concepts
   this app uses, explained for backend/web developers.
-- **[Deep dives](docs/deep-dive/)** — one walkthrough per subsystem (startup &
+- **[Deep dives](docs/deep-dive/)**: one walkthrough per subsystem (startup &
   DI, scanning & the database, playback, the queue, shuffle, playlists,
   settings, UI, tag editing, build & CI), tracing real code paths with file
   references.
-- **[Architecture](docs/ARCHITECTURE.md)** — the one-page decision record.
-- **[Releasing](docs/RELEASING.md)** — cutting and signing releases.
+- **[Architecture](docs/ARCHITECTURE.md)**: the one-page decision record.
+- **[Releasing](docs/RELEASING.md)**: cutting and signing releases.
 
 ## CI/CD
 
 GitHub Actions runs the pipeline (see `.github/workflows/`):
 
-- **CI** (`ci.yml`) — every push/PR: all unit tests, Android Lint, and a debug
-  APK build (uploaded as an artifact). Pushes to `main` additionally run the
-  instrumented Compose tests on an API 34 emulator.
-- **Release** (`release.yml`) — push a `v*` tag (or run manually): tests,
+- **CI** (`ci.yml`) runs on every push/PR: all unit tests, Android Lint, and a
+  debug APK build (uploaded as an artifact). Pushes to `main` additionally run
+  the instrumented Compose tests on an API 34 emulator.
+- **Release** (`release.yml`) runs on a `v*` tag push (or manually): tests,
   builds, optionally signs, and publishes a GitHub Release with the APK and
   auto-generated notes. See [docs/RELEASING.md](docs/RELEASING.md).
-- **Dependabot** — weekly grouped dependency-update PRs for Gradle and
+- **Dependabot** files weekly grouped dependency-update PRs for Gradle and
   Actions.
 
 Contributions: see [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -203,7 +203,7 @@ support, but it must be built from source and is intentionally not a default
 dependency.)
 
 **Bluetooth quality:** Android negotiates the Bluetooth codec (LDAC, aptX/HD,
-AAC, LC3/LE Audio) at the OS level — apps can't pick it. TempoBox outputs
+AAC, LC3/LE Audio) at the OS level; apps can't pick it. TempoBox outputs
 bit-perfect PCM to the audio stack so the system can use the best codec your
 headphones support, and speaks AVRCP through its MediaSession for metadata and
 controls.
@@ -216,10 +216,10 @@ controls.
   requires a declaration.
 - Scrobbling needs a scrobbler app on the device (the Last.fm app or a
   dedicated scrobbler); the Discogs artist-image integration needs your own
-  (free) Discogs token — TempoBox ships with no credentials.
+  (free) Discogs token, since TempoBox ships with no credentials.
 - Volume triple-tap gestures can't begin when the volume is already at its
   minimum/maximum (Android emits no volume-change event to observe).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT; see [LICENSE](LICENSE).

@@ -1,6 +1,6 @@
 # Contributing to TempoBox
 
-Thanks for taking a look! This is a personal project, but issues and PRs are
+Thanks for taking a look. This is a personal project, but issues and PRs are
 welcome.
 
 ## Getting set up
@@ -15,7 +15,7 @@ design in depth. Reading those two first will save you time.
 - **Tests accompany behavior.** Logic changes come with unit tests; UI flows
   with Compose tests where practical. `./gradlew test testDebugUnitTest` must
   pass before a PR.
-- **Dependency versions live in `gradle/libs.versions.toml`** — never inline a
+- **Dependency versions live in `gradle/libs.versions.toml`.** Never inline a
   version in a build file.
 - **Respect module boundaries** (CLAUDE.md "Hard rules"): UI → repositories
   only; tag writes through `core:tags`; settings reads/writes through
@@ -33,6 +33,6 @@ design in depth. Reading those two first will save you time.
 
 ## Reporting bugs
 
-Open an issue with device model, Android version, steps to reproduce, and —
-for library/scan problems — the file format and a sample tag layout if
+Open an issue with device model, Android version, steps to reproduce, and,
+for library/scan problems, the file format and a sample tag layout if
 possible (never upload copyrighted audio).
