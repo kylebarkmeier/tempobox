@@ -1,5 +1,6 @@
 package com.tempobox.playback
 
+import android.app.PendingIntent
 import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -129,6 +130,7 @@ class PlaybackService : MediaSessionService() {
             .setBitmapLoader(
                 CacheBitmapLoader(ArtworkBitmapLoader(tagReader, scope, ioDispatcher)),
             )
+            .apply { launchAppPendingIntent()?.let(::setSessionActivity) }
             .build()
 
         restoreQueue()
@@ -138,6 +140,21 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+
+    /**
+     * Content intent for the media notification and lockscreen session: tapping
+     * them opens the app. Resolved via the launcher intent because this module
+     * must not depend on :app (where MainActivity lives).
+     */
+    private fun launchAppPendingIntent(): PendingIntent? {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: return null
+        return PendingIntent.getActivity(
+            this,
+            /* requestCode = */ 0,
+            launchIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+    }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Keep playing in the background; stop only when idle/paused.
