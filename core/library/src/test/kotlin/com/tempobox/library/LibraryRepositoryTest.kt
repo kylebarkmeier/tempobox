@@ -234,12 +234,16 @@ class LibraryRepositoryTest {
 
     @Test
     fun `albums sort by rating uses the album's best-rated track`() = runTest {
-        seedFull("/1.mp3", album = "Low", rating = 1)
-        seedFull("/2.mp3", album = "High", rating = 2)
-        seedFull("/3.mp3", album = "High", rating = 5)
+        // Max and average ratings disagree on purpose: "Consistent" averages
+        // higher (4.0 vs 3.0) but "OneHit" holds the better single track (5).
+        // The spec'd order is by the album's BEST track, so OneHit wins.
+        seedFull("/1.mp3", album = "Consistent", rating = 4)
+        seedFull("/2.mp3", album = "Consistent", rating = 4)
+        seedFull("/3.mp3", album = "OneHit", rating = 5)
+        seedFull("/4.mp3", album = "OneHit", rating = 1)
 
         val sorted = repository.observeAlbums(sort = SortSpec(SortKey.RATING, ascending = false)).first()
-        assertThat(sorted.map { it.name }).containsExactly("High", "Low").inOrder()
+        assertThat(sorted.map { it.name }).containsExactly("OneHit", "Consistent").inOrder()
     }
 
     @Test

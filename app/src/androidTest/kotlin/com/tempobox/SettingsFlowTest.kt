@@ -15,6 +15,8 @@ import dagger.hilt.android.testing.HiltAndroidTest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -49,11 +51,13 @@ class SettingsFlowTest {
     @Before
     fun inject() {
         hiltRule.inject()
+        // Settings persist on-device across tests: start from the product
+        // defaults instead of assuming whatever an earlier test left behind.
+        runBlocking { settingsRepository.updateScrobble { ScrobbleSettings() } }
     }
 
     @After
     fun restoreDefaults() {
-        // Settings persist on-device across tests — put back the product defaults.
         runBlocking { settingsRepository.updateScrobble { ScrobbleSettings() } }
     }
 
@@ -108,11 +112,15 @@ class SettingsFlowTest {
         composeRule.waitForText("Hand scrobbles to a scrobbler app")
         // Spec: broadcast scrobbling is the default — no account, no token fields.
         val enabled = runBlocking { settingsRepository.settings.first().scrobble.broadcastScrobbles }
-        assert(enabled) { "Scrobble broadcasting must default to ON" }
+        assertTrue("Scrobble broadcasting must default to ON", enabled)
     }
 
     @Test
     fun scrobblingToggle_persistsThroughTheRepository() {
+        // Known starting point: broadcasting explicitly ON (test isolation).
+        runBlocking {
+            settingsRepository.updateScrobble { it.copy(broadcastScrobbles = true) }
+        }
         openSettings()
         composeRule.onNodeWithText("Hand played tracks to your scrobbler app").performClick()
         composeRule.waitForText("Hand scrobbles to a scrobbler app")
@@ -146,7 +154,7 @@ class SettingsFlowTest {
         composeRule.onNodeWithText("Favor higher-rated tracks").assertIsDisplayed()
 
         val shuffle = runBlocking { settingsRepository.settings.first().shuffle }
-        assert(shuffle.antiRepeat) { "Anti-repeat must default to ON" }
-        assert(!shuffle.ratingBias) { "Rating bias must default to OFF" }
+        assertTrue("Anti-repeat must default to ON", shuffle.antiRepeat)
+        assertFalse("Rating bias must default to OFF", shuffle.ratingBias)
     }
 }

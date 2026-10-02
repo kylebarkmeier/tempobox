@@ -17,6 +17,7 @@ import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -209,6 +210,10 @@ class QueueFlowTest {
 
         composeRule.waitForTextGone("Clear queue?")
         composeRule.onNodeWithText("Queue (1)").assertIsDisplayed()
-        assert(player.queue.value.size == 1)
+        // Cancel must retain the exact queued track, not merely one item.
+        assertEquals(
+            listOf("Alpha Song"),
+            player.queue.value.map { it.track.title },
+        )
     }
 }

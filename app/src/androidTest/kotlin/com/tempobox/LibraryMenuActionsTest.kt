@@ -15,6 +15,7 @@ import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -156,7 +157,7 @@ class LibraryMenuActionsTest {
         composeRule.waitUntil(TestLibrary.WAIT_TIMEOUT_MS) {
             runBlocking { db.trackDao().getByPath(hotelFile.absolutePath) == null }
         }
-        assert(hotelFile.exists()) { "Remove from library must not touch the file" }
+        assertTrue("Remove from library must not touch the file", hotelFile.exists())
     }
 
     @Test
@@ -183,6 +184,6 @@ class LibraryMenuActionsTest {
 
         composeRule.waitForTextGone("Delete permanently?")
         composeRule.onNodeWithText("Hotel Song").assertIsDisplayed()
-        assert(hotelFile.exists())
+        assertTrue("Cancelled delete must leave the file alone", hotelFile.exists())
     }
 }

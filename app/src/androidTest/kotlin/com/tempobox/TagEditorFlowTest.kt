@@ -18,6 +18,7 @@ import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -120,9 +121,9 @@ class TagEditorFlowTest {
         // the dialog closes without touching any file or row.
         composeRule.waitForTextGone("Edit tags — Tag One")
         val row = runBlocking { db.trackDao().getByPath("/seed/tag1.mp3")!! }
-        assert(row.title == "Tag One" && row.genre == "Shoegaze" && row.year == 1999) {
-            "No-change save must not alter the stored tags"
-        }
+        assertEquals("Tag One", row.title)
+        assertEquals("Shoegaze", row.genre)
+        assertEquals(1999, row.year)
     }
 
     @Test

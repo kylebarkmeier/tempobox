@@ -21,6 +21,7 @@ import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -114,8 +115,8 @@ class PlaylistFlowTest {
 
         // Spec: everything the app creates exists on disk as UTF-8 M3U8.
         val row = runBlocking { db.playlistDao().getByName("Road Mix")!! }
-        assert(row.filePath!!.endsWith(".m3u8")) { "expected .m3u8, got ${row.filePath}" }
-        assert(java.io.File(row.filePath!!).exists()) { "playlist file missing on disk" }
+        assertTrue("expected .m3u8, got ${row.filePath}", row.filePath!!.endsWith(".m3u8"))
+        assertTrue("playlist file missing on disk", java.io.File(row.filePath!!).exists())
     }
 
     @Test
@@ -157,7 +158,10 @@ class PlaylistFlowTest {
         composeRule.onNodeWithText("Create").performClick()
         composeRule.onNodeWithText("Playlist name").assertIsDisplayed() // dialog still open
         composeRule.onNodeWithText("Cancel").performClick()
-        assert(runBlocking { db.playlistDao().getAll() }.isEmpty())
+        assertTrue(
+            "No playlist row may be created from a blank name",
+            runBlocking { db.playlistDao().getAll() }.isEmpty(),
+        )
     }
 
     @Test
