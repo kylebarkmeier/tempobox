@@ -245,12 +245,19 @@ class PlaybackService : MediaSessionService() {
             scheduleSnapshot()
             refreshWidget()
         }
+
+        override fun onRepeatModeChanged(repeatMode: Int) {
+            // Repeat is part of the persisted snapshot and shown on the
+            // widget's repeat button, whichever controller changed it.
+            scheduleSnapshot()
+            refreshWidget()
+        }
     }
 
     /** Tells the app's home-screen widget to re-render (receiver in :app). */
     private fun refreshWidget() {
         sendBroadcast(
-            Intent(WIDGET_REFRESH_ACTION).setPackage(packageName),
+            Intent(ACTION_WIDGET_REFRESH).setPackage(packageName),
         )
     }
 
@@ -431,8 +438,13 @@ class PlaybackService : MediaSessionService() {
     companion object {
         private const val TAG = "PlaybackService"
 
-        /** Must match TempoBoxWidgetReceiver.ACTION_REFRESH in :app. */
-        private const val WIDGET_REFRESH_ACTION = "com.tempobox.action.WIDGET_REFRESH"
+        /**
+         * Re-render request for the :app home-screen widget. Referenced by
+         * TempoBoxWidgetReceiver and declared literally in its manifest
+         * intent-filter; also sent by [PlayerConnection] when the app-level
+         * shuffle mode changes (not a player event the service can observe).
+         */
+        const val ACTION_WIDGET_REFRESH = "com.tempobox.action.WIDGET_REFRESH"
 
         // Hidden-but-stable AudioManager broadcast constants.
         private const val VOLUME_CHANGED_ACTION = "android.media.VOLUME_CHANGED_ACTION"

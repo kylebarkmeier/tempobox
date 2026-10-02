@@ -2,6 +2,7 @@ package com.tempobox.playback
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
@@ -21,6 +22,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.isActive
@@ -42,7 +44,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class PlayerConnection @Inject constructor(
-    @ApplicationContext context: Context,
+    @ApplicationContext private val context: Context,
     private val shuffleEngine: ShuffleEngine,
     private val settingsRepository: SettingsRepository,
 ) {
@@ -67,6 +69,20 @@ class PlayerConnection @Inject constructor(
     private var nextUid: Long = 1
 
     init {
+        // Shuffle is applied by reordering the timeline, so it is NOT an
+        // ExoPlayer state change the service's listener (or any controller)
+        // can observe — nudge the home-screen widget from here whenever the
+        // mode flips, exactly like PlaybackService does for repeat/track/
+        // play-pause changes. StateFlow conflation makes this fire only on
+        // real changes; drop(1) skips the initial OFF.
+        scope.launch {
+            _shuffleMode.drop(1).collect {
+                context.sendBroadcast(
+                    Intent(PlaybackService.ACTION_WIDGET_REFRESH).setPackage(context.packageName),
+                )
+            }
+        }
+
         scope.launch {
             val controller = controller()
             controller.addListener(object : Player.Listener {
@@ -223,6 +239,7 @@ class PlayerConnection @Inject constructor(
             val controller = controller()
             if (controller.mediaItemCount == 0) {
                 _shuffleMode.value = mode
+                refresh(controller) // keep state.shuffleMode (UI + widget) in sync
                 return@launch
             }
             val currentUid = controller.currentMediaItem?.mediaId?.toLongOrNull()
