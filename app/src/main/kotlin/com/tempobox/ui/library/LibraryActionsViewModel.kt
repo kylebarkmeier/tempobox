@@ -25,8 +25,9 @@ import javax.inject.Inject
 /**
  * The shared "standard options" engine used by every library view, the queue,
  * and Now Playing: play / shuffle / add-to-queue / add-to-playlist /
- * auto-playlist / tag editing / rating / remove / delete — plus the dialog
- * state those actions need (confirmations, editors, pickers).
+ * auto-playlist / go-to-artist / go-to-album / tag editing / rating / remove /
+ * delete — plus the dialog state those actions need (confirmations, editors,
+ * pickers).
  *
  * One implementation ⇒ identical behavior everywhere (CLAUDE.md modularity).
  */
@@ -54,6 +55,16 @@ class LibraryActionsViewModel @Inject constructor(
     /** One-shot user feedback, collected into a snackbar by the app root. */
     val messages: SharedFlow<String> = _messages.asSharedFlow()
 
+    /** Detail screens the "Go to …" menu entries can open. */
+    sealed interface Navigation {
+        data class ToArtist(val name: String, val byAlbumArtist: Boolean) : Navigation
+        data class ToAlbum(val albumArtist: String, val album: String) : Navigation
+    }
+
+    private val _navigations = MutableSharedFlow<Navigation>(extraBufferCapacity = 8)
+    /** One-shot navigation requests, collected (like [messages]) via ActionDialogHost. */
+    val navigations: SharedFlow<Navigation> = _navigations.asSharedFlow()
+
     fun dismissDialog() {
         _dialog.value = null
     }
@@ -78,6 +89,16 @@ class LibraryActionsViewModel @Inject constructor(
     fun playNext(item: LibraryItem) = withTracks(item) {
         playerConnection.playNext(it)
         toast("Playing ${countLabel(it.size)} next")
+    }
+
+    /** "Go to artist": open the artist detail screen this item belongs to. */
+    fun goToArtist(item: LibraryItem) {
+        artistDestination(item)?.let { _navigations.tryEmit(it) }
+    }
+
+    /** "Go to album": open the album detail screen this item belongs to. */
+    fun goToAlbum(item: LibraryItem) {
+        albumDestination(item)?.let { _navigations.tryEmit(it) }
     }
 
     fun rate(trackId: Long, rating: Int) {
@@ -245,4 +266,40 @@ class LibraryActionsViewModel @Inject constructor(
     }
 
     private fun countLabel(count: Int) = if (count == 1) "1 track" else "$count tracks"
+
+    companion object {
+        /**
+         * Artist detail destination for "Go to artist", or null where the entry
+         * makes no sense (artist/genre/playlist items, multi-track selections).
+         *
+         * Tracks open the *track* artist (same as the Now Playing corner
+         * button), falling back to the album-artist view only when the artist
+         * tag is blank; albums open their album artist (same as the Album
+         * Artists tab).
+         */
+        fun artistDestination(item: LibraryItem): Navigation.ToArtist? = when (item) {
+            is LibraryItem.TrackItem -> trackArtistDestination(item.track)
+            is LibraryItem.AlbumItem -> item.album.albumArtist
+                .takeIf { it.isNotBlank() }
+                ?.let { Navigation.ToArtist(it, byAlbumArtist = true) }
+            is LibraryItem.TracksItem -> item.tracks.singleOrNull()?.let(::trackArtistDestination)
+            else -> null
+        }
+
+        /** Album detail destination for "Go to album" (track items only), or null. */
+        fun albumDestination(item: LibraryItem): Navigation.ToAlbum? = when (item) {
+            is LibraryItem.TrackItem -> trackAlbumDestination(item.track)
+            is LibraryItem.TracksItem -> item.tracks.singleOrNull()?.let(::trackAlbumDestination)
+            else -> null
+        }
+
+        private fun trackArtistDestination(track: Track): Navigation.ToArtist? =
+            track.artist.ifBlank { track.effectiveAlbumArtist }
+                .takeIf { it.isNotBlank() }
+                ?.let { Navigation.ToArtist(it, byAlbumArtist = track.artist.isBlank()) }
+
+        /** Same (albumArtist, album) pair the Albums tab and Now Playing use. */
+        private fun trackAlbumDestination(track: Track): Navigation.ToAlbum =
+            Navigation.ToAlbum(track.effectiveAlbumArtist, track.effectiveAlbum)
+    }
 }

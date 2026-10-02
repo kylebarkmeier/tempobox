@@ -38,6 +38,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.tempobox.model.DrawerItem
 import com.tempobox.model.LibraryTab
+import com.tempobox.ui.library.LibraryActionsViewModel
 import com.tempobox.ui.navigation.Routes
 import com.tempobox.ui.navigation.TempoBoxNavHost
 import com.tempobox.ui.nowplaying.MiniPlayer
@@ -46,6 +47,15 @@ import kotlinx.coroutines.launch
 
 /** Snackbar host shared by every screen (action feedback, errors). */
 val LocalSnackbar = compositionLocalOf { SnackbarHostState() }
+
+/**
+ * Executes "Go to artist/album" requests from the shared action layer
+ * ([com.tempobox.ui.library.LibraryActionsViewModel.Navigation]). Provided by
+ * [AppRoot] (where the NavController lives) and collected via ActionDialogHost,
+ * so every screen hosting the standard menus navigates identically.
+ */
+val LocalLibraryNavigator =
+    compositionLocalOf<(LibraryActionsViewModel.Navigation) -> Unit> { {} }
 
 /**
  * App shell: theme ← settings, side navigation drawer (Library, Now Playing,
@@ -74,8 +84,24 @@ fun AppRoot(navController: NavHostController = rememberNavController()) {
         }
     }
 
+    // "Go to artist/album" from the shared action layer's menus, resolved to
+    // the same detail routes the library screens use.
+    val libraryNavigator: (LibraryActionsViewModel.Navigation) -> Unit = remember(navController) {
+        { destination ->
+            when (destination) {
+                is LibraryActionsViewModel.Navigation.ToArtist ->
+                    navController.navigate(Routes.artist(destination.name, destination.byAlbumArtist))
+                is LibraryActionsViewModel.Navigation.ToAlbum ->
+                    navController.navigate(Routes.album(destination.albumArtist, destination.album))
+            }
+        }
+    }
+
     TempoBoxTheme(config = settings.theme) {
-        CompositionLocalProvider(LocalSnackbar provides snackbarHostState) {
+        CompositionLocalProvider(
+            LocalSnackbar provides snackbarHostState,
+            LocalLibraryNavigator provides libraryNavigator,
+        ) {
             ModalNavigationDrawer(
                 drawerState = drawerState,
                 drawerContent = {

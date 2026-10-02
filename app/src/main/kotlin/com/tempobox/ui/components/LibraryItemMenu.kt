@@ -17,9 +17,10 @@ import com.tempobox.ui.library.LibraryItem
 
 /**
  * The standard 3-dot "more" menu every library item shows (product spec):
- * Shuffle (collections), Add to queue, Play next, Add to playlist,
- * Create auto playlist, Edit ID3 tags, Rate (tracks), Remove from library,
- * Delete permanently. Extra entries can be appended per screen via [extras].
+ * Shuffle (collections), Add to queue, Play next, Go to artist (tracks and
+ * albums), Go to album (tracks), Add to playlist, Create auto playlist,
+ * Edit ID3 tags, Rate (tracks), Remove from library, Delete permanently.
+ * Extra entries can be appended per screen via [extras].
  */
 @Composable
 fun LibraryItemMenu(
@@ -61,6 +62,20 @@ private fun MenuContent(
             text = { Text("Play next") },
             onClick = { onDismiss(); actions.playNext(item) },
         )
+        // Visibility mirrors the action layer: entries only appear when the
+        // item actually resolves to an artist/album destination.
+        if (LibraryActionsViewModel.artistDestination(item) != null) {
+            DropdownMenuItem(
+                text = { Text("Go to artist") },
+                onClick = { onDismiss(); actions.goToArtist(item) },
+            )
+        }
+        if (LibraryActionsViewModel.albumDestination(item) != null) {
+            DropdownMenuItem(
+                text = { Text("Go to album") },
+                onClick = { onDismiss(); actions.goToAlbum(item) },
+            )
+        }
         DropdownMenuItem(
             text = { Text("Add to playlist") },
             onClick = { onDismiss(); actions.requestAddToPlaylist(item) },
