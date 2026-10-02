@@ -3,6 +3,11 @@
 Companion to the concise `CLAUDE.md` guiderails. Read that first; this file
 explains the *why* behind the bigger decisions.
 
+Longer-form walkthroughs of every subsystem (written for readers new to
+Android) live in [docs/README.md](README.md) → [deep-dive/](deep-dive/); the
+Android concepts themselves are explained in the
+[Android primer](android-primer.md).
+
 ## Module graph
 
 ```
@@ -11,8 +16,8 @@ explains the *why* behind the bigger decisions.
                           └──┬──────┬──────┬──────┬──────┬──┘
         ┌────────────────────┘      │      │      │      └──────────────┐
   :core:playback              :core:library│ :core:scrobble       :core:artwork
-  Media3 service · queue      scanner ·    │ Last.fm client       Coil fetcher ·
-  shuffle · BT glue           repos · ops  │ offline queue        Discogs images
+  Media3 service · queue      scanner ·    │ SLS broadcasts to    Coil fetcher ·
+  shuffle · BT glue           repos · ops  │ the scrobbler app    Discogs images
         │      │                   │       │        │                  │
         │      └────────┬──────────┤       │        │                  │
         │         :core:playlist   │  :core:settings┴──────────────────┤

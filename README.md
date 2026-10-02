@@ -158,11 +158,24 @@ core/playback      Media3 service, queue, shuffle engines, Bluetooth glue
 core/scrobble      SLS broadcasts to the user's scrobbler app
 core/artwork       Embedded-art Coil fetcher + Discogs artist images
 build-logic/       Gradle convention plugins shared by all modules
-docs/              Architecture notes
+docs/              Architecture notes, Android primer, subsystem deep dives
 ```
 
 See `docs/ARCHITECTURE.md` for the module graph and key design decisions, and
 `CLAUDE.md` for the condensed contributor guiderails.
+
+## Documentation
+
+[docs/README.md](docs/README.md) is the index for all project documentation:
+
+- **[Android primer](docs/android-primer.md)** — the Android/Jetpack concepts
+  this app uses, explained for backend/web developers.
+- **[Deep dives](docs/deep-dive/)** — one walkthrough per subsystem (startup &
+  DI, scanning & the database, playback, the queue, shuffle, playlists,
+  settings, UI, tag editing, build & CI), tracing real code paths with file
+  references.
+- **[Architecture](docs/ARCHITECTURE.md)** — the one-page decision record.
+- **[Releasing](docs/RELEASING.md)** — cutting and signing releases.
 
 ## CI/CD
 
