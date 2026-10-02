@@ -11,13 +11,17 @@ import com.tempobox.model.SmartRule
 import com.tempobox.model.SwipeAction
 import com.tempobox.model.Track
 import com.tempobox.playback.PlayerConnection
+import com.tempobox.model.Album
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -37,6 +41,8 @@ class LibraryActionsViewModelTest {
 
     private val track = Track(id = 1, filePath = "/a.mp3", title = "Song", artist = "Artist")
 
+    private val collectors = mutableListOf<Job>()
+
     @Before
     fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -45,7 +51,17 @@ class LibraryActionsViewModelTest {
 
     @After
     fun tearDown() {
+        collectors.forEach(Job::cancel)
         Dispatchers.resetMain()
+    }
+
+    /** Records every navigation request the view model emits from now on. */
+    private fun collectNavigations(): List<LibraryActionsViewModel.Navigation> {
+        val events = mutableListOf<LibraryActionsViewModel.Navigation>()
+        collectors += CoroutineScope(UnconfinedTestDispatcher()).launch {
+            viewModel.navigations.collect { events += it }
+        }
+        return events
     }
 
     @Test
@@ -122,6 +138,89 @@ class LibraryActionsViewModelTest {
         )
         assertThat(viewModel.dialog.value).isNull()
     }
+
+    @Test
+    fun `go to artist on a track opens the track-artist view`() {
+        val events = collectNavigations()
+        viewModel.goToArtist(LibraryItem.TrackItem(track))
+        assertThat(events).containsExactly(
+            LibraryActionsViewModel.Navigation.ToArtist("Artist", byAlbumArtist = false),
+        )
+    }
+
+    @Test
+    fun `go to artist falls back to the album artist when the artist tag is blank`() {
+        val events = collectNavigations()
+        viewModel.goToArtist(LibraryItem.TrackItem(track.copy(artist = "", albumArtist = "AA")))
+        assertThat(events).containsExactly(
+            LibraryActionsViewModel.Navigation.ToArtist("AA", byAlbumArtist = true),
+        )
+    }
+
+    @Test
+    fun `go to album on a track uses the album-artist grouping`() {
+        val events = collectNavigations()
+        viewModel.goToAlbum(LibraryItem.TrackItem(track.copy(albumArtist = "AA", album = "LP")))
+        assertThat(events).containsExactly(
+            LibraryActionsViewModel.Navigation.ToAlbum(albumArtist = "AA", album = "LP"),
+        )
+    }
+
+    @Test
+    fun `go to artist on an album opens its album artist`() {
+        val events = collectNavigations()
+        viewModel.goToArtist(LibraryItem.AlbumItem(album("LP", "AA")))
+        assertThat(events).containsExactly(
+            LibraryActionsViewModel.Navigation.ToArtist("AA", byAlbumArtist = true),
+        )
+    }
+
+    @Test
+    fun `go to targets a single queue selection like a plain track`() {
+        val events = collectNavigations()
+        val selection = LibraryItem.TracksItem("Song", listOf(track.copy(album = "LP")))
+        viewModel.goToArtist(selection)
+        viewModel.goToAlbum(selection)
+        assertThat(events).containsExactly(
+            LibraryActionsViewModel.Navigation.ToArtist("Artist", byAlbumArtist = false),
+            LibraryActionsViewModel.Navigation.ToAlbum(albumArtist = "Artist", album = "LP"),
+        ).inOrder()
+    }
+
+    @Test
+    fun `go to emits nothing for items without a single destination`() {
+        val events = collectNavigations()
+        viewModel.goToArtist(LibraryItem.GenreItem(Genre("Rock", trackCount = 1, albumCount = 1)))
+        viewModel.goToAlbum(LibraryItem.AlbumItem(album("LP", "AA")))
+        viewModel.goToArtist(
+            LibraryItem.TracksItem("2 tracks", listOf(track, track.copy(id = 2))),
+        )
+        assertThat(events).isEmpty()
+    }
+
+    @Test
+    fun `destination helpers drive menu visibility per item type`() {
+        assertThat(LibraryActionsViewModel.artistDestination(LibraryItem.TrackItem(track))).isNotNull()
+        assertThat(LibraryActionsViewModel.albumDestination(LibraryItem.TrackItem(track))).isNotNull()
+        assertThat(LibraryActionsViewModel.artistDestination(LibraryItem.AlbumItem(album("LP", "AA")))).isNotNull()
+        // Blank album artist ⇒ nowhere to go.
+        assertThat(LibraryActionsViewModel.artistDestination(LibraryItem.AlbumItem(album("LP", "")))).isNull()
+        assertThat(LibraryActionsViewModel.albumDestination(LibraryItem.AlbumItem(album("LP", "AA")))).isNull()
+        assertThat(
+            LibraryActionsViewModel.artistDestination(LibraryItem.PlaylistItem(Playlist(id = 1, name = "Mix"))),
+        ).isNull()
+    }
+
+    private fun album(name: String, albumArtist: String) = Album(
+        name = name,
+        albumArtist = albumArtist,
+        year = null,
+        trackCount = 1,
+        durationMs = 0,
+        artworkTrackPath = null,
+        dateAddedMs = 0,
+        dateModifiedMs = 0,
+    )
 
     @Test
     fun `createAutoPlaylist delegates to the repository`() {

@@ -13,9 +13,10 @@ import com.tempobox.ui.library.LibraryItem
 import com.tempobox.ui.library.PlaylistsViewModel
 
 /**
- * Renders whichever modal the shared action layer requested. Include ONCE per
- * screen that uses [LibraryActionsViewModel] — this is what makes the
- * "standard options" identical everywhere.
+ * Renders whichever modal the shared action layer requested, and services its
+ * one-shot effects (snackbar messages, "Go to artist/album" navigation).
+ * Include ONCE per screen that uses [LibraryActionsViewModel] — this is what
+ * makes the "standard options" identical everywhere.
  */
 @Composable
 fun ActionDialogHost(actions: LibraryActionsViewModel) {
@@ -23,6 +24,12 @@ fun ActionDialogHost(actions: LibraryActionsViewModel) {
     val snackbar = com.tempobox.ui.LocalSnackbar.current
     androidx.compose.runtime.LaunchedEffect(actions) {
         actions.messages.collect { snackbar.showSnackbar(it) }
+    }
+
+    // Execute one-shot "Go to artist/album" requests via the app-level navigator.
+    val navigator = com.tempobox.ui.LocalLibraryNavigator.current
+    androidx.compose.runtime.LaunchedEffect(actions, navigator) {
+        actions.navigations.collect { navigator(it) }
     }
 
     val dialog by actions.dialog.collectAsState()
