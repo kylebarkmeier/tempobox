@@ -155,21 +155,21 @@ class TempoBoxWidget : GlanceAppWidget() {
                 ) {
                     // defaultWeight() spreads the controls evenly, so each one
                     // is a big tap target that grows with the widget.
-                    // Shuffle/repeat mirror the in-app buttons: active modes
-                    // tint primary, OFF dims to onSurfaceVariant, and repeat
-                    // ONE swaps in its own icon (see WidgetControls).
+                    // Shuffle/repeat mirror the in-app buttons: ON gets a
+                    // tonal pill behind the icon (shape, not just hue), OFF
+                    // dims to onSurfaceVariant, and repeat ONE swaps in its
+                    // own icon (see WidgetControls).
                     ControlIcon(
                         iconRes = R.drawable.ic_widget_shuffle,
                         contentDescription = WidgetControls.shuffleDescription(state.shuffleMode),
-                        active = WidgetControls.shuffleActive(state.shuffleMode),
                         size = controlSize,
                         action = actionRunCallback<ShuffleAction>(),
                         modifier = GlanceModifier.defaultWeight(),
+                        toggled = WidgetControls.shuffleActive(state.shuffleMode),
                     )
                     ControlIcon(
                         iconRes = R.drawable.ic_widget_skip_previous,
                         contentDescription = "Previous",
-                        active = true,
                         size = controlSize,
                         action = actionRunCallback<PreviousAction>(),
                         modifier = GlanceModifier.defaultWeight(),
@@ -177,7 +177,6 @@ class TempoBoxWidget : GlanceAppWidget() {
                     ControlIcon(
                         iconRes = WidgetControls.playPauseIcon(state.isPlaying),
                         contentDescription = WidgetControls.playPauseDescription(state.isPlaying),
-                        active = true,
                         size = controlSize,
                         action = actionRunCallback<PlayPauseAction>(),
                         modifier = GlanceModifier.defaultWeight(),
@@ -185,7 +184,6 @@ class TempoBoxWidget : GlanceAppWidget() {
                     ControlIcon(
                         iconRes = R.drawable.ic_widget_skip_next,
                         contentDescription = "Next",
-                        active = true,
                         size = controlSize,
                         action = actionRunCallback<NextAction>(),
                         modifier = GlanceModifier.defaultWeight(),
@@ -193,10 +191,10 @@ class TempoBoxWidget : GlanceAppWidget() {
                     ControlIcon(
                         iconRes = WidgetControls.repeatIcon(state.repeatMode),
                         contentDescription = WidgetControls.repeatDescription(state.repeatMode),
-                        active = WidgetControls.repeatActive(state.repeatMode),
                         size = controlSize,
                         action = actionRunCallback<RepeatAction>(),
                         modifier = GlanceModifier.defaultWeight(),
+                        toggled = WidgetControls.repeatActive(state.repeatMode),
                     )
                 }
             }
@@ -205,32 +203,54 @@ class TempoBoxWidget : GlanceAppWidget() {
 
     /**
      * One control icon; the caller passes a defaultWeight() modifier.
+     * [toggled] is null for plain transport buttons, true/false for the
+     * shuffle/repeat toggles.
      *
      * Tinted vector drawables, not text glyphs: the old emoji glyphs rendered
      * as fixed-color emoji that ignored the tint entirely, so active/inactive
      * state was invisible (and the mixed emoji/text styles clashed).
+     *
+     * A toggle's ON state draws a tonal pill behind the icon instead of only
+     * re-tinting it: tint alone (primary vs onSurfaceVariant) is invisible to
+     * red-green colorblind users when the Material You palette lands in the
+     * green or red range. Below Android 12 cornerRadius is a no-op and the
+     * pill renders square, which still reads as "on".
      */
     @androidx.compose.runtime.Composable
     private fun ControlIcon(
         @DrawableRes iconRes: Int,
         contentDescription: String,
-        active: Boolean,
         size: Dp,
         action: androidx.glance.action.Action,
         modifier: GlanceModifier,
+        toggled: Boolean? = null,
     ) {
         Box(
             modifier = modifier.clickable(action),
             contentAlignment = Alignment.Center,
         ) {
-            Image(
-                provider = ImageProvider(iconRes),
-                contentDescription = contentDescription,
-                colorFilter = ColorFilter.tint(
-                    if (active) GlanceTheme.colors.primary else GlanceTheme.colors.onSurfaceVariant,
-                ),
-                modifier = GlanceModifier.size(size),
-            )
+            val pill = if (toggled == true) {
+                GlanceModifier
+                    .background(GlanceTheme.colors.primaryContainer)
+                    .cornerRadius(size)
+                    .padding(horizontal = 6.dp, vertical = 3.dp)
+            } else {
+                GlanceModifier.padding(horizontal = 6.dp, vertical = 3.dp)
+            }
+            Box(modifier = pill, contentAlignment = Alignment.Center) {
+                Image(
+                    provider = ImageProvider(iconRes),
+                    contentDescription = contentDescription,
+                    colorFilter = ColorFilter.tint(
+                        when (toggled) {
+                            null -> GlanceTheme.colors.primary
+                            true -> GlanceTheme.colors.onPrimaryContainer
+                            false -> GlanceTheme.colors.onSurfaceVariant
+                        },
+                    ),
+                    modifier = GlanceModifier.size(size),
+                )
+            }
         }
     }
 

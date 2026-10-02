@@ -162,6 +162,10 @@ resolves a Material 3 `ColorScheme` from
   Deriving beats storing a full palette: any reasonable seed yields usable
   contrast, and the settings payload stays three ARGB longs.
 
+The Settings swatch picker names the current preset in the row label and
+checkmarks the selected swatch: maroon and green presets are the same hue
+class under red-green colorblindness, so selection is never color-only.
+
 ## 4. The Glance widget pipeline
 
 The widget is the furthest-flung consumer of UI state, and its pipeline is a
@@ -193,11 +197,15 @@ drawables rather than text glyphs, because emoji glyphs render in fixed color,
 ignore tinting, and made active/inactive state invisible.
 
 **State mapping**: `WidgetControls` mirrors the in-app transport buttons so
-the two surfaces can't disagree: shuffle/repeat render "active" (primary
-tint) for any non-OFF mode, repeat ONE swaps in its own icon, play/pause picks
-its icon from `isPlaying`, and content descriptions name the action a tap
-performs. It's deliberately Glance-free so it unit-tests on the JVM; the
-shuffle/repeat state icons arrived with PR #22.
+the two surfaces can't disagree: shuffle/repeat render "active" for any
+non-OFF mode, repeat ONE swaps in its own icon, play/pause picks its icon
+from `isPlaying`, and content descriptions name the action a tap performs.
+It's deliberately Glance-free so it unit-tests on the JVM; the shuffle/repeat
+state icons arrived with PR #22. Active state is never tint-only: the widget
+draws a tonal pill behind an ON toggle, and the in-app buttons swap to the
+Material "on" glyphs (`TransportGlyphs`), because a primary-vs-gray tint
+change is invisible to red-green colorblind users when the theme primary
+lands in the green or red range.
 
 **Refresh path**: Glance widgets re-render only when told. The chain is:
 player event → `PlaybackService` (or, for shuffle-mode changes,

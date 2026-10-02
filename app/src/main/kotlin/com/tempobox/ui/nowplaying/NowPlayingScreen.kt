@@ -24,9 +24,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RepeatOne
-import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Star
@@ -51,6 +48,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -371,9 +369,14 @@ private fun SeekBar(
 @Composable
 private fun ShuffleButton(current: ShuffleMode, onToggle: () -> Unit) {
     IconButton(onClick = onToggle) {
+        // Boxed "on" glyph + tint: the shape carries the state for
+        // red-green colorblind users (TransportGlyphs). The glyph name is the
+        // test tag so instrumented tests can assert which glyph rendered.
+        val glyph = TransportGlyphs.shuffleIcon(current)
         Icon(
-            Icons.Filled.Shuffle,
+            glyph,
             contentDescription = if (current != ShuffleMode.OFF) "Shuffle off" else "Shuffle on",
+            modifier = Modifier.testTag(glyph.name),
             tint = if (current != ShuffleMode.OFF) {
                 MaterialTheme.colorScheme.primary
             } else {
@@ -387,9 +390,12 @@ private fun ShuffleButton(current: ShuffleMode, onToggle: () -> Unit) {
 @Composable
 private fun RepeatButton(current: RepeatMode, onCycle: () -> Unit) {
     IconButton(onClick = onCycle) {
+        // Boxed "on" glyphs for ALL and ONE; see TransportGlyphs.
+        val glyph = TransportGlyphs.repeatIcon(current)
         Icon(
-            if (current == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+            glyph,
             contentDescription = "Repeat mode: $current",
+            modifier = Modifier.testTag(glyph.name),
             tint = if (current != RepeatMode.OFF) {
                 MaterialTheme.colorScheme.primary
             } else {

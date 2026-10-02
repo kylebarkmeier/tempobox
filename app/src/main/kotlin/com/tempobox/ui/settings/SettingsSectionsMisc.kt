@@ -8,15 +8,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.tempobox.model.Corner
 import com.tempobox.model.CornerAction
@@ -290,35 +297,62 @@ private fun darkModeName(mode: ThemeConfig.DarkMode): String = when (mode) {
     ThemeConfig.DarkMode.DARK -> "Dark"
 }
 
-/** Preset swatch row (tap to apply) with the current color highlighted. */
+/**
+ * Preset swatch row (tap to apply). The current pick is named in the row
+ * label and checkmarked on the swatch: several presets (maroon, green) are
+ * indistinguishable by hue for red-green colorblind users, so neither the
+ * swatch color nor the size bump can be the only cue.
+ */
 @Composable
 private fun ColorPickerRow(label: String, currentArgb: Long, onPick: (Long) -> Unit) {
     Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-        Text(label, style = androidx.compose.material3.MaterialTheme.typography.bodyLarge)
+        Text(
+            "$label: ${swatchName(currentArgb)}",
+            style = androidx.compose.material3.MaterialTheme.typography.bodyLarge,
+        )
         Row {
-            SWATCHES.forEach { argb ->
+            SWATCHES.forEach { (argb, name) ->
                 val selected = argb == currentArgb
+                val color = Color(argb.toInt())
                 androidx.compose.foundation.layout.Box(
                     Modifier
                         .padding(4.dp)
                         .size(if (selected) 36.dp else 30.dp)
                         .clip(CircleShape)
-                        .background(Color(argb.toInt()))
-                        .clickable { onPick(argb) },
-                )
+                        .background(color)
+                        .clickable { onPick(argb) }
+                        .semantics {
+                            contentDescription = if (selected) "$name, selected" else name
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (selected) {
+                        Icon(
+                            Icons.Filled.Check,
+                            contentDescription = null,
+                            // Same luminance rule the theme uses for on-colors.
+                            tint = if (color.luminance() > 0.5f) Color.Black else Color.White,
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 /** A tasteful default palette; any ARGB long works via ThemeConfig. */
-private val SWATCHES: List<Long> = listOf(
-    0xFF6750A4, // material baseline purple
-    0xFF4A3A8C, // TempoBox indigo
-    0xFF00696D, // teal
-    0xFF8B5000, // amber
-    0xFF9C4146, // maroon
-    0xFF2E6C2F, // green
-    0xFF00639B, // blue
-    0xFF625B71, // muted violet
+internal val SWATCHES: List<Pair<Long, String>> = listOf(
+    0xFF6750A4 to "Purple", // material baseline
+    0xFF4A3A8C to "Indigo", // TempoBox default
+    0xFF00696D to "Teal",
+    0xFF8B5000 to "Amber",
+    0xFF9C4146 to "Maroon",
+    0xFF2E6C2F to "Green",
+    0xFF00639B to "Blue",
+    0xFF625B71 to "Violet",
 )
+
+/** Preset name for a stored color, or its hex code for non-preset values. */
+internal fun swatchName(argb: Long): String =
+    SWATCHES.firstOrNull { it.first == argb }?.second
+        ?: "#%06X".format(argb and 0xFFFFFF)
