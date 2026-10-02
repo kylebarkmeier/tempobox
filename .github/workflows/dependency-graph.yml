@@ -3,11 +3,13 @@
 # the project's real (transitive) dependencies instead of only what Dependabot
 # can parse out of the build files.
 #
-# The graph is scoped to runtime classpaths: only dependencies that ship in
-# the APK. An unscoped submission also reports the build toolchain (AGP pulls
-# Netty, BouncyCastle, jose4j, JDOM, ...), which produced 51 alerts for code
-# that never leaves the build machine. Toolchain fixes arrive via AGP/Kotlin
-# updates, which Dependabot already PRs from the version catalog.
+# The graph is scoped to non-test runtime classpaths: only dependencies that
+# ship in the APK. An unscoped submission also reports the build toolchain
+# (AGP pulls Netty, BouncyCastle, jose4j, JDOM, ...), which produced 51 alerts
+# for code that never leaves the build machine, and test runtime classpaths
+# add test tooling (Robolectric pulls its own BouncyCastle). Toolchain and
+# test-tool fixes arrive via AGP/Kotlin/Robolectric updates, which Dependabot
+# already PRs from the version catalog.
 name: Dependency graph
 
 on:
@@ -35,3 +37,4 @@ jobs:
         uses: gradle/actions/dependency-submission@v6
         with:
           dependency-graph-include-configurations: '.*[rR]untimeClasspath$'
+          dependency-graph-exclude-configurations: '.*[Tt]est.*'
