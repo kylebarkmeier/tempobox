@@ -12,9 +12,17 @@ class SortingTest {
         modified: Long = 0,
         rating: Int = 0,
         year: Int? = null,
+        disc: Int? = null,
+        trackNo: Int? = null,
+        duration: Long = 0,
+        playCount: Long = 0,
+        artist: String = "",
+        album: String = "",
     ) = Track(
         id = id, filePath = "/m/$id.mp3", title = title,
         dateAddedMs = added, dateModifiedMs = modified, rating = rating, year = year,
+        discNumber = disc, trackNumber = trackNo, durationMs = duration, playCount = playCount,
+        artist = artist, albumArtist = artist, album = album,
     )
 
     @Test
@@ -71,6 +79,82 @@ class SortingTest {
         val tracks = listOf(track(2, "Same", rating = 3), track(1, "Same", rating = 3))
         val sorted = tracks.sortedWith(SortSpec(SortKey.RATING).trackComparator())
         assertThat(sorted.map { it.id }).containsExactly(1L, 2L).inOrder()
+    }
+
+    @Test
+    fun `track number sorts by disc then track with untagged numbers last`() {
+        val tracks = listOf(
+            track(1, "D2T1", disc = 2, trackNo = 1),
+            track(2, "D1T2", disc = 1, trackNo = 2),
+            track(3, "D1T1", disc = 1, trackNo = 1),
+            track(4, "Untagged", disc = null, trackNo = null),
+        )
+        val sorted = tracks.sortedWith(SortSpec(SortKey.TRACK_NUMBER, ascending = true).trackComparator())
+        assertThat(sorted.map { it.title })
+            .containsExactly("D1T1", "D1T2", "D2T1", "Untagged")
+            .inOrder()
+    }
+
+    @Test
+    fun `album order groups by artist then album then disc and track`() {
+        val tracks = listOf(
+            track(1, "Late", artist = "The Band", album = "Second", disc = 1, trackNo = 1),
+            track(2, "Opener", artist = "Abba", album = "Hits", disc = 1, trackNo = 1),
+            track(3, "Closer", artist = "Abba", album = "Hits", disc = 1, trackNo = 9),
+        )
+        val sorted = tracks.sortedWith(SortSpec(SortKey.ALBUM_ORDER, ascending = true).trackComparator())
+        assertThat(sorted.map { it.title }).containsExactly("Opener", "Closer", "Late").inOrder()
+    }
+
+    @Test
+    fun `duration sort orders by track length`() {
+        val tracks = listOf(track(1, "Long", duration = 300_000), track(2, "Short", duration = 90_000))
+        val sorted = tracks.sortedWith(SortSpec(SortKey.DURATION, ascending = true).trackComparator())
+        assertThat(sorted.map { it.title }).containsExactly("Short", "Long").inOrder()
+    }
+
+    @Test
+    fun `play count sort puts most played first when descending`() {
+        val tracks = listOf(track(1, "Rare", playCount = 2), track(2, "Favorite", playCount = 40))
+        val sorted = tracks.sortedWith(SortSpec(SortKey.PLAY_COUNT, ascending = false).trackComparator())
+        assertThat(sorted.first().title).isEqualTo("Favorite")
+    }
+
+    @Test
+    fun `sortTracks keeps playlist order untouched when ascending`() {
+        val stored = listOf(track(3, "C"), track(1, "A"), track(2, "B"))
+        val sorted = SortSpec(SortKey.PLAYLIST_ORDER, ascending = true).sortTracks(stored)
+        assertThat(sorted).isEqualTo(stored)
+    }
+
+    @Test
+    fun `sortTracks reverses playlist order when descending without touching ties`() {
+        val stored = listOf(track(3, "C"), track(1, "A"), track(2, "B"))
+        val sorted = SortSpec(SortKey.PLAYLIST_ORDER, ascending = false).sortTracks(stored)
+        assertThat(sorted.map { it.id }).containsExactly(2L, 1L, 3L).inOrder()
+    }
+
+    @Test
+    fun `sortTracks delegates to the comparator for every other key`() {
+        val stored = listOf(track(1, "Zebra"), track(2, "Apple"))
+        val sorted = SortSpec(SortKey.ALPHABETICAL, ascending = true).sortTracks(stored)
+        assertThat(sorted.map { it.title }).containsExactly("Apple", "Zebra").inOrder()
+    }
+
+    @Test
+    fun `playlist order comparator keeps duplicates in place (stable all-equal)`() {
+        val dupe = track(7, "Same")
+        val stored = listOf(dupe, track(1, "Other"), dupe)
+        val sorted = stored.sortedWith(SortSpec(SortKey.PLAYLIST_ORDER).trackComparator())
+        assertThat(sorted.map { it.id }).containsExactly(7L, 1L, 7L).inOrder()
+    }
+
+    @Test
+    fun `menu defaults start alphabetical and positional keys ascending, the rest descending`() {
+        val ascending = SortKey.entries.filter { it.defaultAscending() }
+        assertThat(ascending).containsExactly(
+            SortKey.ALPHABETICAL, SortKey.TRACK_NUMBER, SortKey.ALBUM_ORDER, SortKey.PLAYLIST_ORDER,
+        )
     }
 
     @Test
