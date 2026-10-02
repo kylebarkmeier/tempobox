@@ -259,6 +259,29 @@ class LibraryRepositoryTest {
     }
 
     @Test
+    fun `genre rows carry the most played albums' artwork paths`() = runTest {
+        suspend fun seedArt(path: String, album: String, genre: String, plays: Long, hasArt: Boolean = true) {
+            db.trackDao().insert(
+                Track(
+                    filePath = path, title = path, artist = "A", albumArtist = "A",
+                    album = album, genre = genre, playCount = plays, hasEmbeddedArt = hasArt,
+                ).toEntity(),
+            )
+        }
+        seedArt("/rock-rare.mp3", album = "Rare", genre = "Rock", plays = 1)
+        seedArt("/rock-hit.mp3", album = "Hit", genre = "Rock", plays = 50)
+        seedArt("/rock-bare.mp3", album = "Bare", genre = "Rock", plays = 99, hasArt = false)
+        seedArt("/jazz.mp3", album = "Blue", genre = "Jazz", plays = 0)
+
+        val genres = repository.observeGenres().first().associateBy { it.name }
+        // Most played first; the artless album never contributes a slot.
+        assertThat(genres.getValue("Rock").artworkTrackPaths)
+            .containsExactly("/rock-hit.mp3", "/rock-rare.mp3")
+            .inOrder()
+        assertThat(genres.getValue("Jazz").artworkTrackPaths).containsExactly("/jazz.mp3")
+    }
+
+    @Test
     fun `genres sort by recently added descending`() = runTest {
         seedFull("/1.mp3", genre = "Old", added = 100)
         seedFull("/2.mp3", genre = "New", added = 900)

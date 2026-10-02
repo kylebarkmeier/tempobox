@@ -58,9 +58,11 @@ data class UiSettings(
     val swipeRight: SwipeAction = SwipeAction.ADD_TO_PLAYLIST,
     /** Drawer contents; users may append LibraryView shortcuts from Settings ▸ UI. */
     val drawerItems: List<DrawerItem> = DEFAULT_DRAWER_ITEMS,
-    /** Card (artwork) vs. list presentation for the artist/album tabs. */
+    /** Card (artwork) vs. list presentation for the artist/album/genre tabs. */
     val artistLayout: ViewLayout = ViewLayout.CARD,
     val albumLayout: ViewLayout = ViewLayout.CARD,
+    /** Genres default to LIST: the tab was list-only before the toggle existed. */
+    val genreLayout: ViewLayout = ViewLayout.LIST,
 ) {
     companion object {
         val DEFAULT_DRAWER_ITEMS: List<DrawerItem> = listOf(

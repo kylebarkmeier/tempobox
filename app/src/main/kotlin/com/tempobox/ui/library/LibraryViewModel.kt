@@ -66,6 +66,7 @@ class LibraryViewModel @Inject constructor(
 
     fun toggleArtistLayout() = toggleLayout { it.copy(artistLayout = it.artistLayout.flip()) }
     fun toggleAlbumLayout() = toggleLayout { it.copy(albumLayout = it.albumLayout.flip()) }
+    fun toggleGenreLayout() = toggleLayout { it.copy(genreLayout = it.genreLayout.flip()) }
 
     private fun ViewLayout.flip() = if (this == ViewLayout.CARD) ViewLayout.LIST else ViewLayout.CARD
 

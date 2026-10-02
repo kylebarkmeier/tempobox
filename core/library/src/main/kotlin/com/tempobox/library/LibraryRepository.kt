@@ -16,6 +16,7 @@ import com.tempobox.model.sortNormalized
 import com.tempobox.model.trackComparator
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import com.tempobox.tags.TagWriter
@@ -108,8 +109,9 @@ class LibraryRepository @Inject constructor(
         }
 
     fun observeGenres(sinceMs: Long? = null, sort: SortSpec = SortSpec()): Flow<List<Genre>> =
-        trackDao.observeGenres(sinceMs).map { rows ->
-            val base = rows.map { it.toModel() }
+        combine(trackDao.observeGenres(sinceMs), trackDao.observeGenreAlbumArt()) { rows, artRows ->
+            val artByGenre = GenreCollage.topArtPathsByGenre(artRows)
+            val base = rows.map { it.toModel(artworkTrackPaths = artByGenre[it.name].orEmpty()) }
             when (sort.key) {
                 SortKey.RECENTLY_ADDED, SortKey.LAST_MODIFIED ->
                     base.sortedBy { it.dateAddedMs }.let { if (sort.ascending) it else it.reversed() }
