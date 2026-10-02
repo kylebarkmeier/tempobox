@@ -46,4 +46,29 @@ class ScrobbleBroadcastTest {
         assertThat(extras["state"]).isEqualTo(0)
         assertThat(extras["artist"]).isEqualTo("Various Artists")
     }
+
+    @Test
+    fun `state codes match the SLS protocol`() {
+        assertThat(ScrobbleBroadcast.State.START.code).isEqualTo(0)
+        assertThat(ScrobbleBroadcast.State.RESUME.code).isEqualTo(1)
+        assertThat(ScrobbleBroadcast.State.PAUSE.code).isEqualTo(2)
+        assertThat(ScrobbleBroadcast.State.COMPLETE.code).isEqualTo(3)
+    }
+
+    @Test
+    fun `the broadcast action is the SLS playstatechanged intent`() {
+        // Scrobbler apps register receivers for exactly this string.
+        assertThat(ScrobbleBroadcast.ACTION).isEqualTo("com.adam.aslfms.notify.playstatechanged")
+    }
+
+    @Test
+    fun `duration is whole seconds, truncated`() {
+        val extras = ScrobbleBroadcast.extras(
+            track = track().copy(durationMs = 2_999),
+            state = ScrobbleBroadcast.State.START,
+            appName = "TempoBox",
+            appPackage = "com.tempobox",
+        )
+        assertThat(extras["duration"]).isEqualTo(2)
+    }
 }

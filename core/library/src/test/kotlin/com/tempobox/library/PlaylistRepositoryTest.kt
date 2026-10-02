@@ -172,6 +172,120 @@ class PlaylistRepositoryTest {
     }
 
     @Test
+    fun `createPlaylist falls back to a default name for blank input`() = runTest {
+        val playlist = repository.createPlaylist("   ")
+        assertThat(playlist.name).isEqualTo("Playlist")
+    }
+
+    @Test
+    fun `replacePlaylistTracks reorders and drops entries and rewrites the file`() = runTest {
+        val a = seedTrack("a")
+        val b = seedTrack("b")
+        val c = seedTrack("c")
+        val playlist = repository.createPlaylist("Mix", listOf(a.id, b.id, c.id))
+
+        // Queue-style edit: drop b, move c first.
+        repository.replacePlaylistTracks(playlist.id, listOf(c.id, a.id))
+
+        val tracks = repository.getPlaylistTracks(repository.getPlaylist(playlist.id)!!)
+        assertThat(tracks.map { it.title }).containsExactly("c", "a").inOrder()
+        assertThat(codec.read(File(playlist.filePath!!)))
+            .containsExactly(c.filePath, a.filePath)
+            .inOrder()
+    }
+
+    @Test
+    fun `addToPlaylist refuses smart playlists`() = runTest {
+        val t = seedTrack("song")
+        val smart = repository.createSmartPlaylist(
+            "Auto",
+            SmartRule.Condition(RuleField.GENRE, RuleOp.IS, "Rock"),
+        )
+        try {
+            repository.addToPlaylist(smart.id, listOf(t.id))
+            throw AssertionError("expected IllegalArgumentException")
+        } catch (expected: IllegalArgumentException) {
+            // membership is rule-driven; manual adds are a programming error
+        }
+    }
+
+    @Test
+    fun `remove-from-library keeps the m3u8 file on disk`() = runTest {
+        val playlist = repository.createPlaylist("Keep my file")
+        val file = File(playlist.filePath!!)
+
+        repository.deletePlaylist(playlist.id, deleteFile = false)
+
+        assertThat(repository.getPlaylist(playlist.id)).isNull()
+        assertThat(file.exists()).isTrue()
+    }
+
+    @Test
+    fun `export then re-import round-trips a playlist`() = runTest {
+        val a = seedTrack("a")
+        val b = seedTrack("b")
+        val playlist = repository.createPlaylist("RoundTrip", listOf(b.id, a.id))
+
+        // Remove from library (file kept), then a rescan re-imports the file.
+        repository.deletePlaylist(playlist.id, deleteFile = false)
+        repository.importPlaylistFiles(listOf(musicDir.absolutePath))
+
+        val imported = repository.observePlaylists().first().single { it.name == "RoundTrip" }
+        val tracks = repository.getPlaylistTracks(imported)
+        assertThat(tracks.map { it.title }).containsExactly("b", "a").inOrder()
+    }
+
+    // ------------------------------------------------------------------ legacy upgrade
+
+    @Test
+    fun `editing an imported m3u upgrades it to m3u8 and removes the legacy file`() = runTest {
+        val a = seedTrack("a")
+        val b = seedTrack("b")
+        val legacy = File(musicDir, "oldies.m3u").apply { writeText("a.mp3\n") }
+        repository.importPlaylistFiles(listOf(musicDir.absolutePath))
+        val imported = repository.observePlaylists().first().single { it.name == "oldies" }
+
+        repository.addToPlaylist(imported.id, listOf(b.id))
+
+        val upgraded = File(musicDir, "oldies.m3u8")
+        assertThat(legacy.exists()).isFalse() // legacy file replaced, not duplicated
+        assertThat(upgraded.exists()).isTrue()
+        assertThat(codec.read(upgraded)).containsExactly(a.filePath, b.filePath).inOrder()
+        assertThat(repository.getPlaylist(imported.id)!!.filePath).isEqualTo(upgraded.absolutePath)
+    }
+
+    @Test
+    fun `import skips the upgraded twin of a tracked legacy playlist`() = runTest {
+        seedTrack("a")
+        File(musicDir, "oldies.m3u").writeText("a.mp3\n")
+        repository.importPlaylistFiles(listOf(musicDir.absolutePath))
+        val imported = repository.observePlaylists().first().single()
+        repository.addToPlaylist(imported.id, emptyList()) // triggers the upgrade rewrite
+
+        // The watcher/next rescan sees the new .m3u8 — it must not import a copy.
+        repository.importPlaylistFiles(listOf(musicDir.absolutePath))
+        assertThat(repository.observePlaylists().first()).hasSize(1)
+    }
+
+    @Test
+    fun `import resolves relative playlist entries against the playlist folder`() = runTest {
+        val nestedDir = File(musicDir, "rock").apply { mkdirs() }
+        val file = File(nestedDir, "deep.mp3").apply { writeText("x") }
+        val track = Track(
+            filePath = file.absolutePath, title = "deep", artist = "A", albumArtist = "A",
+            album = "Al", genre = "Rock", durationMs = 60_000,
+        )
+        db.trackDao().insert(track.toEntity())
+        File(musicDir, "relative.m3u8").writeText("#EXTM3U\nrock/deep.mp3\n")
+
+        repository.importPlaylistFiles(listOf(musicDir.absolutePath))
+
+        val imported = repository.observePlaylists().first().single { it.name == "relative" }
+        assertThat(repository.getPlaylistTracks(imported).map { it.filePath })
+            .containsExactly(file.absolutePath)
+    }
+
+    @Test
     fun `refreshSmartExports writes the m3u8 snapshot`() = runTest {
         seedTrack("rock1", genre = "Rock")
         val smart = repository.createSmartPlaylist(

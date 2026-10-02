@@ -67,4 +67,47 @@ class MediaItemsTest {
         val item = MediaItems.toMediaItem(track.copy(hasEmbeddedArt = false), uid = 1)
         assertThat(item.mediaMetadata.artworkUri).isNull()
     }
+
+    @Test
+    fun `blank track artist falls back to the album artist in metadata`() {
+        val item = MediaItems.toMediaItem(track.copy(artist = ""), uid = 1)
+        // What lockscreens/AVRCP display:
+        assertThat(item.mediaMetadata.artist.toString()).isEqualTo("Album Artist")
+        // And the restored queue track keeps the fallback as its artist.
+        assertThat(MediaItems.toTrack(item).artist).isEqualTo("Album Artist")
+    }
+
+    @Test
+    fun `missing year survives the round trip as null`() {
+        val item = MediaItems.toMediaItem(track.copy(year = null), uid = 1)
+        assertThat(MediaItems.toTrack(item).year).isNull()
+    }
+
+    @Test
+    fun `unknown format string degrades to OTHER`() {
+        val item = MediaItems.toMediaItem(track, uid = 1)
+        val tampered = item.buildUpon()
+            .setMediaMetadata(
+                item.mediaMetadata.buildUpon()
+                    .setExtras(
+                        android.os.Bundle(item.mediaMetadata.extras).apply {
+                            putString("format", "WAVPACK9000")
+                        },
+                    )
+                    .build(),
+            )
+            .build()
+        assertThat(MediaItems.toTrack(tampered).format).isEqualTo(AudioFormat.OTHER)
+    }
+
+    @Test
+    fun `an item without extras maps to safe defaults`() {
+        // E.g. a MediaItem offered by an external controller.
+        val foreign = androidx.media3.common.MediaItem.Builder().setMediaId("not-a-uid").build()
+        val queueItem = MediaItems.toQueueItem(foreign)
+        assertThat(queueItem.uid).isEqualTo(-1) // unknown uid sentinel
+        assertThat(queueItem.track.id).isEqualTo(0)
+        assertThat(queueItem.track.filePath).isEmpty()
+        assertThat(queueItem.track.format).isEqualTo(AudioFormat.OTHER)
+    }
 }

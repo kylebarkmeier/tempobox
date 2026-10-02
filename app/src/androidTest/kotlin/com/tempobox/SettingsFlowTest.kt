@@ -8,12 +8,18 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
+import com.tempobox.settings.ScrobbleSettings
+import com.tempobox.settings.SettingsRepository
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import javax.inject.Inject
 
 /** Settings flows that back real product requirements. */
 @HiltAndroidTest
@@ -37,9 +43,18 @@ class SettingsFlowTest {
     @get:Rule(order = 2)
     val composeRule = createAndroidComposeRule<MainActivity>()
 
+    @Inject
+    lateinit var settingsRepository: SettingsRepository
+
     @Before
     fun inject() {
         hiltRule.inject()
+    }
+
+    @After
+    fun restoreDefaults() {
+        // Settings persist on-device across tests — put back the product defaults.
+        runBlocking { settingsRepository.updateScrobble { ScrobbleSettings() } }
     }
 
     private fun openSettings() {
@@ -83,5 +98,55 @@ class SettingsFlowTest {
         composeRule.onNodeWithText("Corner buttons, track info").performClick()
         composeRule.onNodeWithText("Top left").assertIsDisplayed()
         composeRule.onNodeWithText("Bottom right").assertIsDisplayed()
+    }
+
+    @Test
+    fun scrobblingSection_isASingleToggle_defaultOn() {
+        openSettings()
+        composeRule.onNodeWithText("Hand played tracks to your scrobbler app").performClick()
+
+        composeRule.waitForText("Hand scrobbles to a scrobbler app")
+        // Spec: broadcast scrobbling is the default — no account, no token fields.
+        val enabled = runBlocking { settingsRepository.settings.first().scrobble.broadcastScrobbles }
+        assert(enabled) { "Scrobble broadcasting must default to ON" }
+    }
+
+    @Test
+    fun scrobblingToggle_persistsThroughTheRepository() {
+        openSettings()
+        composeRule.onNodeWithText("Hand played tracks to your scrobbler app").performClick()
+        composeRule.waitForText("Hand scrobbles to a scrobbler app")
+
+        composeRule.onNodeWithText("Hand scrobbles to a scrobbler app").performClick()
+        composeRule.waitUntil(TestLibrary.WAIT_TIMEOUT_MS) {
+            runBlocking { !settingsRepository.settings.first().scrobble.broadcastScrobbles }
+        }
+
+        // Toggling back re-enables it (the single-toggle section round-trips).
+        composeRule.onNodeWithText("Hand scrobbles to a scrobbler app").performClick()
+        composeRule.waitUntil(TestLibrary.WAIT_TIMEOUT_MS) {
+            runBlocking { settingsRepository.settings.first().scrobble.broadcastScrobbles }
+        }
+    }
+
+    @Test
+    fun queueSection_exposesPersistenceAndConfirmations() {
+        openSettings()
+        composeRule.onNodeWithText("Persistence, confirmations").performClick()
+        composeRule.onNodeWithText("Restore queue on restart").assertIsDisplayed()
+        composeRule.onNodeWithText("Confirm before clearing").assertIsDisplayed()
+        composeRule.onNodeWithText("Allow duplicates").assertIsDisplayed()
+    }
+
+    @Test
+    fun shuffleSection_reflectsTheProductDefaults() {
+        openSettings()
+        composeRule.onNodeWithText("Shuffle").performClick()
+        composeRule.onNodeWithText("Anti-repeat shuffle").assertIsDisplayed()
+        composeRule.onNodeWithText("Favor higher-rated tracks").assertIsDisplayed()
+
+        val shuffle = runBlocking { settingsRepository.settings.first().shuffle }
+        assert(shuffle.antiRepeat) { "Anti-repeat must default to ON" }
+        assert(!shuffle.ratingBias) { "Rating bias must default to OFF" }
     }
 }

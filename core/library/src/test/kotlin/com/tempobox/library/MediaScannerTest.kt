@@ -144,4 +144,94 @@ class MediaScannerTest {
         scanner.scanPaths(listOf(a.absolutePath, b.absolutePath))
         assertThat(db.trackDao().getAllPaths()).containsExactly(a.absolutePath)
     }
+
+    @Test
+    fun `scan walks nested folders`() = runTest {
+        val nested = File(musicDir, "Artist/Album").apply { mkdirs() }
+        newAudioFile("A__X__Deep.mp3", dir = nested)
+        newAudioFile("A__X__Top.mp3")
+
+        val result = scanner.scan(listOf(musicDir.absolutePath))
+        assertThat(result.added).isEqualTo(2)
+    }
+
+    @Test
+    fun `scan merges multiple locations and ignores missing ones`() = runTest {
+        val second = tmp.newFolder("Podcasts")
+        newAudioFile("A__X__One.mp3")
+        newAudioFile("B__Y__Two.mp3", dir = second)
+
+        val result = scanner.scan(
+            listOf(
+                musicDir.absolutePath,
+                second.absolutePath,
+                File(tmp.root, "does-not-exist").absolutePath,
+            ),
+        )
+        assertThat(result.added).isEqualTo(2)
+    }
+
+    @Test
+    fun `overlapping locations do not duplicate tracks`() = runTest {
+        val sub = File(musicDir, "rock").apply { mkdirs() }
+        newAudioFile("A__X__One.mp3", dir = sub)
+
+        // The sub-folder is listed both directly and via its parent.
+        val result = scanner.scan(listOf(musicDir.absolutePath, sub.absolutePath))
+        assertThat(result.added).isEqualTo(1)
+        assertThat(db.trackDao().count()).isEqualTo(1)
+    }
+
+    @Test
+    fun `a moved file is one removal plus one addition`() = runTest {
+        val old = newAudioFile("A__X__One.mp3")
+        scanner.scan(listOf(musicDir.absolutePath))
+
+        val renamed = File(musicDir, "A__X__Renamed.mp3")
+        old.renameTo(renamed)
+        val result = scanner.scan(listOf(musicDir.absolutePath))
+
+        assertThat(result.added).isEqualTo(1)
+        assertThat(result.removed).isEqualTo(1)
+        assertThat(db.trackDao().getAllPaths()).containsExactly(renamed.absolutePath)
+    }
+
+    @Test
+    fun `scan leaves its state flow on the final Done`() = runTest {
+        newAudioFile("A__X__One.mp3")
+        val done = scanner.scan(listOf(musicDir.absolutePath))
+        assertThat(scanner.state.value).isEqualTo(done)
+        assertThat(done).isEqualTo(ScanState.Done(added = 1, updated = 0, removed = 0))
+    }
+
+    @Test
+    fun `scanPaths ignores unsupported files`() = runTest {
+        val art = File(musicDir, "cover.jpg").apply { writeText("not audio") }
+        scanner.scanPaths(listOf(art.absolutePath))
+        assertThat(db.trackDao().count()).isEqualTo(0)
+    }
+
+    @Test
+    fun `scanPaths keeps user data for an already known file`() = runTest {
+        val file = newAudioFile("A__X__One.mp3")
+        scanner.scan(listOf(musicDir.absolutePath))
+        val before = db.trackDao().getByPath(file.absolutePath)!!
+        db.trackDao().setRating(before.id, 5)
+
+        // The watcher re-reports the file (e.g. retagged in place).
+        file.writeText("retagged")
+        scanner.scanPaths(listOf(file.absolutePath))
+
+        val after = db.trackDao().getByPath(file.absolutePath)!!
+        assertThat(after.id).isEqualTo(before.id)
+        assertThat(after.rating).isEqualTo(5)
+        assertThat(after.dateAddedMs).isEqualTo(before.dateAddedMs) // not re-stamped
+    }
+
+    @Test
+    fun `scanPaths picks up a brand new file without a full walk`() = runTest {
+        val fresh = newAudioFile("A__X__Fresh.mp3")
+        scanner.scanPaths(listOf(fresh.absolutePath))
+        assertThat(db.trackDao().getAllPaths()).containsExactly(fresh.absolutePath)
+    }
 }
