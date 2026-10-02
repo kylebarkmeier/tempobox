@@ -2,6 +2,12 @@
 # This is what makes Dependabot alerts and the dependency-review PR check see
 # the project's real (transitive) dependencies instead of only what Dependabot
 # can parse out of the build files.
+#
+# The graph is scoped to runtime classpaths: only dependencies that ship in
+# the APK. An unscoped submission also reports the build toolchain (AGP pulls
+# Netty, BouncyCastle, jose4j, JDOM, ...), which produced 51 alerts for code
+# that never leaves the build machine. Toolchain fixes arrive via AGP/Kotlin
+# updates, which Dependabot already PRs from the version catalog.
 name: Dependency graph
 
 on:
@@ -27,3 +33,5 @@ jobs:
 
       - name: Generate and submit dependency graph
         uses: gradle/actions/dependency-submission@v6
+        with:
+          dependency-graph-include-configurations: '.*[rR]untimeClasspath$'
