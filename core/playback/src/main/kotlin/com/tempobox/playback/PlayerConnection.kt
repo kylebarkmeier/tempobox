@@ -191,10 +191,12 @@ class PlayerConnection @Inject constructor(
     // ------------------------------------------------------------------ queue mutation
 
     fun removeQueueItems(uids: Collection<Long>) = withController { c ->
-        // Remove back-to-front so indices stay valid.
-        uids.mapNotNull { indexOfUid(c, it) }
-            .sortedDescending()
-            .forEach { c.removeMediaItem(it) }
+        // Contiguous ranges, back-to-front: one timeline change per run instead
+        // of per item (each change rebroadcasts the whole queue — see QueueReorder).
+        val indices = uids.mapNotNull { indexOfUid(c, it) }
+        QueueReorder.descendingRanges(indices).forEach { range ->
+            c.removeMediaItems(range.first, range.last + 1)
+        }
         originalOrderUids = currentUids(c)
     }
 
@@ -290,12 +292,29 @@ class PlayerConnection @Inject constructor(
     private fun indexOfUid(c: MediaController, uid: Long): Int? =
         (0 until c.mediaItemCount).firstOrNull { c.getMediaItemAt(it).mediaId == uid.toString() }
 
-    /** Reorders the timeline to [targetUids] using non-interrupting moves. */
+    /**
+     * Reorders the timeline to [targetUids] without interrupting playback, in
+     * at most [QueueReorder.MAX_OPS] timeline operations (NEVER one move per
+     * track — see [QueueReorder] for the Bluetooth-flood rationale).
+     *
+     * Items are re-added via the controller, which strips their file URI
+     * crossing the binder; PlaybackService.onAddMediaItems rebuilds it from the
+     * path stashed in the metadata extras, same as every other enqueue path.
+     */
     private fun applyOrder(c: MediaController, targetUids: List<Long>) {
-        targetUids.forEachIndexed { target, uid ->
-            val current = indexOfUid(c, uid) ?: return@forEachIndexed
-            if (current != target) c.moveMediaItem(current, target)
-        }
+        val items = (0 until c.mediaItemCount).map { c.getMediaItemAt(it) }
+        val itemsByUid = items.associateBy { it.mediaId.toLongOrNull() }
+        val plan = QueueReorder.plan(
+            current = items.mapNotNull { it.mediaId.toLongOrNull() },
+            target = targetUids,
+            anchorUid = c.currentMediaItem?.mediaId?.toLongOrNull(),
+        ) ?: return // already in order
+
+        plan.anchorToFront?.let { c.moveMediaItem(it.from, it.to) }
+        val keepFrom = if (plan.anchored) 1 else 0
+        if (c.mediaItemCount > keepFrom) c.removeMediaItems(keepFrom, c.mediaItemCount)
+        c.addMediaItems(plan.tail.mapNotNull { itemsByUid[it] })
+        plan.anchorToTarget?.let { c.moveMediaItem(it.from, it.to) }
     }
 
     private fun refresh(c: MediaController) {

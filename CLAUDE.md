@@ -33,5 +33,6 @@ Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.5
 - jaudiotagger: use `AndroidArtwork` (never awt-based artwork classes); requires `minSdk 26` (java.nio).
 - Robolectric 4.14 supports at most SDK 35 (compileSdk is 37): each module with Robolectric tests pins `sdk=35` in `src/test/resources/robolectric.properties`.
 - Media3: service side uses `MediaLibraryService`; UI side always goes through `PlayerConnection` (never a raw ExoPlayer reference in composables).
+- Never loop per-item timeline ops (`moveMediaItem`/`removeMediaItem`) over a queue: each timeline change re-broadcasts the whole queue to Bluetooth AVRCP (can OOM the BT stack → ANR). Batch through `QueueReorder`.
 - ALAC plays via device MediaCodec; see README "Codecs".
 - The queue is persisted across restarts in DataStore (see `QueuePersistence`).
