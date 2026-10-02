@@ -2,6 +2,7 @@ package com.tempobox
 
 import android.os.Build
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -12,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
 import com.tempobox.database.TempoBoxDatabase
@@ -97,6 +99,8 @@ class PlaylistFlowTest {
         composeRule.waitForText("Playlist name") // the input's placeholder
         composeRule.onNode(hasSetTextAction() and hasAnyAncestor(isDialog()))
             .performTextInput(name)
+        Espresso.closeSoftKeyboard() // keep the IME off the Create button
+        composeRule.waitForIdle()
         composeRule.onNodeWithText("Create").performClick()
         composeRule.waitForText(name)
     }
@@ -163,19 +167,42 @@ class PlaylistFlowTest {
         composeRule.waitForText("Auto playlist")
 
         // Name + one GENRE IS <value> condition (the builder's default field/op).
-        composeRule.onNode(hasSetTextAction() and hasText("Name") and hasAnyAncestor(isDialog()))
-            .performTextInput("Rock Auto")
-        composeRule.onNode(hasSetTextAction() and hasText("value") and hasAnyAncestor(isDialog()))
-            .performTextInput("Rock")
-        composeRule.onNodeWithText("Create").performClick()
+        // Each input is verified to have landed before moving on: on a slow
+        // emulator the second focus/IME handshake can lag behind the tap, and
+        // Create is (correctly) disabled while either field is blank.
+        val nameField = hasSetTextAction() and hasText("Name") and hasAnyAncestor(isDialog())
+        val valueField = hasSetTextAction() and hasText("value") and hasAnyAncestor(isDialog())
+        composeRule.onNode(nameField).performTextInput("Rock Auto")
+        composeRule.waitUntil(TestLibrary.WAIT_TIMEOUT_MS) {
+            composeRule.onAllNodes(hasText("Rock Auto") and hasAnyAncestor(isDialog()))
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNode(valueField).performTextInput("Rock")
+        composeRule.waitUntil(TestLibrary.WAIT_TIMEOUT_MS) {
+            composeRule.onAllNodes(hasText("Rock") and hasAnyAncestor(isDialog()))
+                .fetchSemanticsNodes().isNotEmpty()
+        }
 
-        // The row appears flagged as an auto playlist with live stats.
+        // Drop the soft keyboard so the tap on Create cannot land on the IME.
+        Espresso.closeSoftKeyboard()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Create").assertIsEnabled().performClick()
+
+        // Creation is observable in the repository layer first (deterministic,
+        // independent of snackbars and list animation)…
+        composeRule.waitUntil(TestLibrary.WAIT_TIMEOUT_MS) {
+            runBlocking { db.playlistDao().getByName("Rock Auto")?.smartRuleJson != null }
+        }
+        composeRule.waitForTextGone("Auto playlist") // builder dialog closed
+
+        // …then the row appears flagged as an auto playlist with live stats.
         composeRule.waitForText("Rock Auto", substring = true)
         composeRule.waitForText("· auto", substring = true)
         composeRule.waitForText("1 tracks", substring = true) // only the Rock track matches
 
-        // Its detail evaluates against the current library.
-        composeRule.onNodeWithText("Rock Auto", substring = true).performClick()
+        // Open the detail via the row's exact title ("Rock Auto  ✨") — a
+        // substring match could also hit the "Created auto playlist" snackbar.
+        composeRule.onNodeWithText("Rock Auto  ✨").performClick()
         composeRule.waitForText("Lima Song")
         composeRule.waitForText("Auto playlist — updates automatically as your library changes.")
         composeRule.waitForTextGone("Mike Song") // Jazz is filtered out
