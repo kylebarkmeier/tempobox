@@ -4,7 +4,7 @@
 #
 # Signing (optional): add these repository secrets and release APKs get
 # signed; without them the unsigned APK is published instead.
-#   KEYSTORE_BASE64      base64 of your .jks/.keystore file
+#   KEYSTORE_B64         base64 of your .jks/.keystore file
 #                        (create with: base64 -w0 my.keystore)
 #   KEYSTORE_PASSWORD    keystore password
 #   KEY_ALIAS            key alias
@@ -59,19 +59,19 @@ jobs:
       - name: Check for signing secrets
         id: keystore
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_B64 }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No KEYSTORE_BASE64 secret — publishing the unsigned APK."
+            echo "::notice::No KEYSTORE_B64 secret, publishing the unsigned APK."
           fi
 
       - name: Sign APK
         if: steps.keystore.outputs.present == 'true'
         env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_B64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
