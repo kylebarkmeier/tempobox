@@ -1,11 +1,16 @@
 package com.tempobox.ui
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -29,8 +34,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -41,7 +48,9 @@ import com.tempobox.model.LibraryTab
 import com.tempobox.ui.library.LibraryActionsViewModel
 import com.tempobox.ui.navigation.Routes
 import com.tempobox.ui.navigation.TempoBoxNavHost
-import com.tempobox.ui.nowplaying.MiniPlayer
+import com.tempobox.ui.nowplaying.NowPlayingSheet
+import com.tempobox.ui.nowplaying.SheetStage
+import com.tempobox.ui.nowplaying.rememberNowPlayingSheetState
 import com.tempobox.ui.theme.TempoBoxTheme
 import kotlinx.coroutines.launch
 
@@ -59,8 +68,10 @@ val LocalLibraryNavigator =
 
 /**
  * App shell: theme ← settings, side navigation drawer (Library, Now Playing,
- * Queue, Settings + user-added library shortcuts), NavHost, and the
- * mini-player bar docked at the bottom whenever something is loaded.
+ * Queue, Settings + user-added library shortcuts), NavHost, and the Now
+ * Playing sheet layered over everything: collapsed it is the mini-player pill
+ * docked at the bottom, dragged or tapped up it becomes the full Now Playing
+ * view ([com.tempobox.ui.nowplaying.NowPlayingSheet]).
  */
 @Composable
 fun AppRoot(navController: NavHostController = rememberNavController()) {
@@ -71,6 +82,7 @@ fun AppRoot(navController: NavHostController = rememberNavController()) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val sheetState = rememberNowPlayingSheetState()
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -85,17 +97,20 @@ fun AppRoot(navController: NavHostController = rememberNavController()) {
     }
 
     // "Go to artist/album" from the shared action layer's menus, resolved to
-    // the same detail routes the library screens use.
-    val libraryNavigator: (LibraryActionsViewModel.Navigation) -> Unit = remember(navController) {
-        { destination ->
-            when (destination) {
-                is LibraryActionsViewModel.Navigation.ToArtist ->
-                    navController.navigate(Routes.artist(destination.name, destination.byAlbumArtist))
-                is LibraryActionsViewModel.Navigation.ToAlbum ->
-                    navController.navigate(Routes.album(destination.albumArtist, destination.album))
+    // the same detail routes the library screens use. The sheet collapses
+    // first so the destination isn't hidden under an expanded Now Playing.
+    val libraryNavigator: (LibraryActionsViewModel.Navigation) -> Unit =
+        remember(navController, sheetState) {
+            { destination ->
+                sheetState.collapse()
+                when (destination) {
+                    is LibraryActionsViewModel.Navigation.ToArtist ->
+                        navController.navigate(Routes.artist(destination.name, destination.byAlbumArtist))
+                    is LibraryActionsViewModel.Navigation.ToAlbum ->
+                        navController.navigate(Routes.album(destination.albumArtist, destination.album))
+                }
             }
         }
-    }
 
     TempoBoxTheme(config = settings.theme) {
         CompositionLocalProvider(
@@ -119,7 +134,7 @@ fun AppRoot(navController: NavHostController = rememberNavController()) {
                                 val selected = when (item) {
                                     DrawerItem.Library, is DrawerItem.LibraryView ->
                                         currentRoute == Routes.LIBRARY
-                                    DrawerItem.NowPlaying -> currentRoute == Routes.NOW_PLAYING
+                                    DrawerItem.NowPlaying -> sheetState.stage == SheetStage.EXPANDED
                                     DrawerItem.Queue -> currentRoute == Routes.QUEUE
                                     DrawerItem.Settings -> currentRoute == Routes.SETTINGS
                                 }
@@ -127,7 +142,15 @@ fun AppRoot(navController: NavHostController = rememberNavController()) {
                                     label = { Text(label) },
                                     icon = { Icon(icon, contentDescription = null) },
                                     selected = selected,
-                                    onClick = { navigate(route) },
+                                    onClick = {
+                                        // Now Playing is the sheet, not a route.
+                                        if (route == null) {
+                                            scope.launch { drawerState.close() }
+                                            sheetState.expand()
+                                        } else {
+                                            navigate(route)
+                                        }
+                                    },
                                     modifier = Modifier.padding(horizontal = 12.dp),
                                 )
                             }
@@ -135,28 +158,57 @@ fun AppRoot(navController: NavHostController = rememberNavController()) {
                     }
                 },
             ) {
-                Scaffold(
-                    // No top inset here: every screen has its own TopAppBar,
-                    // which already applies the status-bar inset — padding it
-                    // twice leaves a blank band above the header.
-                    contentWindowInsets = WindowInsets.systemBars
-                        .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
-                    snackbarHost = { SnackbarHost(snackbarHostState) },
-                    bottomBar = {
-                        // Mini player everywhere except the full Now Playing view.
-                        if (nowPlaying.track != null && currentRoute != Routes.NOW_PLAYING) {
-                            MiniPlayer(
-                                state = nowPlaying,
-                                player = viewModel.player,
-                                onOpen = { navigate(Routes.NOW_PLAYING) },
-                            )
-                        }
-                    },
-                ) { padding ->
-                    TempoBoxNavHost(
-                        navController = navController,
-                        openDrawer = { scope.launch { drawerState.open() } },
-                        modifier = Modifier.padding(padding),
+                val pillHeight = with(LocalDensity.current) { sheetState.pillHeightPx.toDp() }
+                Box(Modifier.fillMaxSize()) {
+                    Scaffold(
+                        // No top inset here: every screen has its own TopAppBar,
+                        // which already applies the status-bar inset — padding it
+                        // twice leaves a blank band above the header.
+                        contentWindowInsets = WindowInsets.systemBars
+                            .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+                        bottomBar = {
+                            // Reserve the mini-player pill's space; the pill
+                            // itself is the collapsed Now Playing sheet drawn
+                            // over the scaffold.
+                            if (nowPlaying.track != null) {
+                                Spacer(Modifier.height(pillHeight))
+                            }
+                        },
+                    ) { padding ->
+                        TempoBoxNavHost(
+                            navController = navController,
+                            openDrawer = { scope.launch { drawerState.open() } },
+                            modifier = Modifier.padding(padding),
+                        )
+                    }
+
+                    NowPlayingSheet(
+                        state = sheetState,
+                        nowPlaying = nowPlaying,
+                        player = viewModel.player,
+                        onOpenArtist = { name ->
+                            sheetState.collapse()
+                            navController.navigate(Routes.artist(name, byAlbumArtist = false))
+                        },
+                        onOpenAlbum = { artist, album ->
+                            sheetState.collapse()
+                            navController.navigate(Routes.album(artist, album))
+                        },
+                    )
+
+                    // Above the sheet so feedback stays visible over expanded
+                    // Now Playing, and clear of the pill when collapsed.
+                    SnackbarHost(
+                        snackbarHostState,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .then(
+                                if (nowPlaying.track != null) {
+                                    Modifier.padding(bottom = pillHeight)
+                                } else {
+                                    Modifier.navigationBarsPadding()
+                                },
+                            ),
                     )
                 }
             }
@@ -164,9 +216,10 @@ fun AppRoot(navController: NavHostController = rememberNavController()) {
     }
 }
 
-private fun drawerEntry(item: DrawerItem): Triple<String, ImageVector, String> = when (item) {
+private fun drawerEntry(item: DrawerItem): Triple<String, ImageVector, String?> = when (item) {
     DrawerItem.Library -> Triple("Library", Icons.Filled.LibraryMusic, Routes.library())
-    DrawerItem.NowPlaying -> Triple("Now Playing", Icons.Filled.PlayCircle, Routes.NOW_PLAYING)
+    // Null route: the drawer item expands the Now Playing sheet instead.
+    DrawerItem.NowPlaying -> Triple("Now Playing", Icons.Filled.PlayCircle, null)
     DrawerItem.Queue -> Triple("Queue", Icons.AutoMirrored.Filled.QueueMusic, Routes.QUEUE)
     DrawerItem.Settings -> Triple("Settings", Icons.Filled.Settings, Routes.SETTINGS)
     is DrawerItem.LibraryView -> Triple(

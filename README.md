@@ -25,6 +25,9 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
   (favors your 5★ tracks)
 - Play queue that survives restarts (configurable), with multi-select,
   swipe-to-remove, and an animated now-playing indicator
+- Swipe-driven Now Playing: drag the mini player up into the full view and
+  back down to the pill, and swipe up from Now Playing to reveal the queue
+  over it (swipe down to send it back)
 
 **Library**
 - Fast scanner over your chosen folders: only new/changed files get their tags

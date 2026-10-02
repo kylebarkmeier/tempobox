@@ -94,4 +94,20 @@ class AppNavigationTest {
         composeRule.onNodeWithText("Nothing playing — pick something from the Library")
             .assertIsDisplayed()
     }
+
+    @Test
+    fun nowPlayingSheet_backCollapsesInsteadOfLeavingLibrary() {
+        composeRule.onNodeWithContentDescription("Open navigation").performClick()
+        composeRule.onNodeWithText("Now Playing").performClick()
+        composeRule.onNodeWithText("Nothing playing — pick something from the Library")
+            .assertIsDisplayed()
+
+        composeRule.runOnUiThread {
+            composeRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
+
+        // Back collapsed the sheet; the Library underneath is still there.
+        composeRule.waitForTextGone("Nothing playing — pick something from the Library")
+        composeRule.onNodeWithText("Tracks").performScrollTo().assertIsDisplayed()
+    }
 }

@@ -9,17 +9,21 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.ShuffleOn
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import com.tempobox.model.RepeatMode
-import com.tempobox.model.ShuffleMode
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.swipeUp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.tempobox.database.TempoBoxDatabase
+import com.tempobox.model.RepeatMode
+import com.tempobox.model.ShuffleMode
 import com.tempobox.playback.PlaybackStateStore
 import com.tempobox.playback.PlayerConnection
 import dagger.hilt.android.testing.HiltAndroidRule
@@ -106,17 +110,44 @@ class NowPlayingFlowTest {
         musicDir.deleteRecursively()
     }
 
-    /** Taps the track in the library (really starts playback) and opens Now Playing. */
-    private fun startPlaybackAndOpenNowPlaying() {
+    /** Taps the track in the library, which really starts playback. */
+    private fun startPlayback() {
         composeRule.onNodeWithText("Tracks").performScrollTo().performClick()
         composeRule.waitForText("Echo Song")
         composeRule.onNodeWithText("Echo Song").performClick()
 
         composeRule.waitUntil(TestLibrary.WAIT_TIMEOUT_MS) { player.state.value.isPlaying }
+    }
+
+    /** Starts playback and expands the Now Playing sheet from the drawer. */
+    private fun startPlaybackAndOpenNowPlaying() {
+        startPlayback()
 
         composeRule.onNodeWithContentDescription("Open navigation").performClick()
         composeRule.waitForText("Now Playing")
         composeRule.onNodeWithText("Now Playing").performClick()
+    }
+
+    /** Waits until a node with [tag] is actually on screen (not just composed). */
+    private fun waitForTagDisplayed(tag: String) {
+        composeRule.waitUntil(TestLibrary.WAIT_TIMEOUT_MS) {
+            composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes()
+                .any { it.boundsInWindow.height > 0f }
+        }
+        // Let the settle animation finish so gestures hit a resting sheet.
+        composeRule.waitForIdle()
+    }
+
+    private fun waitForTagGone(tag: String) {
+        composeRule.waitUntil(TestLibrary.WAIT_TIMEOUT_MS) {
+            composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().isEmpty()
+        }
+    }
+
+    private fun pressBack() {
+        composeRule.runOnUiThread {
+            composeRule.activity.onBackPressedDispatcher.onBackPressed()
+        }
     }
 
     @Test
@@ -259,6 +290,85 @@ class NowPlayingFlowTest {
     }
 
     @Test
+    fun miniPlayer_tapExpandsNowPlaying() {
+        startPlayback()
+        waitForTagDisplayed("nowPlayingPill")
+
+        composeRule.onNodeWithTag("nowPlayingPill").performClick()
+
+        composeRule.waitForText("Echo Artist – Echo Song")
+        waitForTagGone("nowPlayingPill")
+    }
+
+    @Test
+    fun miniPlayer_swipeUpExpandsNowPlaying() {
+        startPlayback()
+        waitForTagDisplayed("nowPlayingPill")
+
+        composeRule.onNodeWithTag("nowPlayingPill").performTouchInput { swipeUp() }
+
+        composeRule.waitForText("Echo Artist – Echo Song")
+        waitForTagGone("nowPlayingPill")
+    }
+
+    @Test
+    fun nowPlaying_swipeDownCollapsesToMiniPlayer() {
+        startPlaybackAndOpenNowPlaying()
+        composeRule.waitForText("Echo Artist – Echo Song")
+
+        composeRule.onNodeWithTag("nowPlayingExpanded").performTouchInput { swipeDown() }
+
+        composeRule.waitForTextGone("Echo Artist – Echo Song")
+        waitForTagDisplayed("nowPlayingPill")
+        composeRule.onNodeWithTag("nowPlayingPill").assertIsDisplayed()
+    }
+
+    @Test
+    fun nowPlaying_swipeUpOpensQueue_andQueueSwipesBackDown() {
+        startPlaybackAndOpenNowPlaying()
+        composeRule.waitForText("Echo Artist – Echo Song")
+
+        // Swipe up anywhere on the expanded layout reveals the queue.
+        composeRule.onNodeWithTag("nowPlayingExpanded").performTouchInput { swipeUp() }
+        composeRule.waitForText("Queue (1)")
+
+        // Swipe down on the queue slides it away, back to Now Playing.
+        composeRule.onNodeWithTag("nowPlayingQueue").performTouchInput { swipeDown() }
+        composeRule.waitForTextGone("Queue (1)")
+        composeRule.onNodeWithText("Echo Artist – Echo Song").assertIsDisplayed()
+    }
+
+    @Test
+    fun back_closesQueueFirst_thenCollapsesNowPlaying() {
+        startPlaybackAndOpenNowPlaying()
+        composeRule.waitForText("Echo Artist – Echo Song")
+
+        composeRule.onNodeWithContentDescription("Show queue").performClick()
+        composeRule.waitForText("Queue (1)")
+
+        // First back: the queue closes, Now Playing stays expanded.
+        pressBack()
+        composeRule.waitForTextGone("Queue (1)")
+        composeRule.onNodeWithText("Echo Artist – Echo Song").assertIsDisplayed()
+
+        // Second back: Now Playing collapses to the pill.
+        pressBack()
+        composeRule.waitForTextGone("Echo Artist – Echo Song")
+        waitForTagDisplayed("nowPlayingPill")
+    }
+
+    @Test
+    fun collapseButton_returnsToMiniPlayer() {
+        startPlaybackAndOpenNowPlaying()
+        composeRule.waitForText("Echo Artist – Echo Song")
+
+        composeRule.onNodeWithContentDescription("Collapse").performClick()
+
+        composeRule.waitForTextGone("Echo Artist – Echo Song")
+        waitForTagDisplayed("nowPlayingPill")
+    }
+
+    @Test
     fun rateCorner_persistsARating() {
         startPlaybackAndOpenNowPlaying()
         composeRule.waitForText("Echo Artist – Echo Song")
@@ -274,3 +384,4 @@ class NowPlayingFlowTest {
         }
     }
 }
+

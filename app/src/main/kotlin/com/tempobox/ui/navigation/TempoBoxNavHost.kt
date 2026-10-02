@@ -13,7 +13,6 @@ import com.tempobox.ui.library.ArtistDetailScreen
 import com.tempobox.ui.library.GenreDetailScreen
 import com.tempobox.ui.library.LibraryScreen
 import com.tempobox.ui.library.PlaylistDetailScreen
-import com.tempobox.ui.nowplaying.NowPlayingScreen
 import com.tempobox.ui.queue.QueueScreen
 import com.tempobox.ui.settings.SettingsScreen
 import com.tempobox.ui.settings.SettingsSectionScreen
@@ -54,13 +53,8 @@ fun TempoBoxNavHost(
             )
         }
 
-        composable(Routes.NOW_PLAYING) {
-            NowPlayingScreen(
-                onBack = { navController.popBackStack() },
-                onOpenArtist = { navController.navigate(Routes.artist(it, byAlbumArtist = false)) },
-                onOpenAlbum = { artist, album -> navController.navigate(Routes.album(artist, album)) },
-            )
-        }
+        // Now Playing is not a destination: it is the draggable sheet hosted
+        // by AppRoot over this NavHost.
 
         composable(Routes.QUEUE) {
             QueueScreen(openDrawer = openDrawer, onBack = { navController.popBackStack() })

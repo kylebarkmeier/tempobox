@@ -29,9 +29,10 @@ import com.tempobox.playback.PlayerConnection
 import com.tempobox.ui.components.TrackArt
 
 /**
- * Bottom drawer bar shown whenever a track is loaded (product spec): album
- * art, artist, track, progress with elapsed (left) / total (right), and
- * previous / play-pause / next. Tapping it opens the full Now Playing view.
+ * Bottom pill shown whenever a track is loaded (product spec): album art,
+ * artist, track, progress with elapsed (left) / total (right), and previous /
+ * play-pause / next. It is the collapsed state of the Now Playing sheet:
+ * tapping or dragging it up expands the full view ([NowPlayingSheet]).
  */
 @Composable
 fun MiniPlayer(

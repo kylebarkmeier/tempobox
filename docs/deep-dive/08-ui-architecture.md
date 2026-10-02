@@ -21,11 +21,18 @@ shell, layered like a typical SPA layout component:
   `DrawerItem.LibraryView` shortcuts that deep-link to a specific library tab.
   The drawer is *data-driven UI configured by the user*: adding a shortcut
   is a settings write, not a code change.
-- **Scaffold** with the shared snackbar host and the **mini player** as the
-  `bottomBar`, shown on every route except full Now Playing whenever a track
-  is loaded (`nowPlaying.track != null`), reading
-  `MainViewModel.nowPlaying` (which is just `PlayerConnection.state`).
-- **`TempoBoxNavHost`**: the route table.
+- **Scaffold** hosting the `TempoBoxNavHost` route table; its `bottomBar` is
+  only a spacer reserving the mini player's height whenever a track is loaded.
+- **The Now Playing sheet**
+  ([`NowPlayingSheet`](../../app/src/main/kotlin/com/tempobox/ui/nowplaying/NowPlayingSheet.kt)),
+  layered over the Scaffold. Collapsed it is the mini-player pill docked at
+  the bottom (shown whenever `nowPlaying.track != null`, reading
+  `MainViewModel.nowPlaying`, which is just `PlayerConnection.state`); tapping
+  or dragging it up expands the full Now Playing view as one continuous,
+  finger-tracking transition (§5). Now Playing is therefore *not* a navigation
+  destination: the drawer item expands the sheet instead of navigating.
+- **Shared snackbar host**, drawn above the sheet so feedback stays visible
+  over expanded Now Playing.
 
 Two `CompositionLocal`s (≈ React context) are provided here and matter later:
 `LocalSnackbar` (any screen can toast feedback without prop-drilling) and
@@ -41,7 +48,7 @@ use Navigation-Compose: string route patterns with placeholders, like URL
 templates:
 
 ```
-library?tab={tab} · nowplaying · queue · settings · settings/{section}
+library?tab={tab} · queue · settings · settings/{section}
 artist/{name}?by={by} · album/{artist}/{album} · genre/{name} · playlist/{id}
 ```
 
@@ -63,7 +70,8 @@ The non-obvious details:
 Screens: `LibraryScreen` (the six-tab browser), detail screens
 (artist/album/genre/playlist in
 [`DetailScreens.kt`](../../app/src/main/kotlin/com/tempobox/ui/library/DetailScreens.kt)),
-`NowPlayingScreen`, `QueueScreen`, and the settings pair. Per-screen state
+`QueueScreen`, and the settings pair (Now Playing lives in the sheet, not the
+route table). Per-screen state
 lives in Hilt ViewModels
 ([`LibraryViewModel`](../../app/src/main/kotlin/com/tempobox/ui/library/LibraryViewModel.kt)
 holds per-tab `SortSpec`s, genre filter chips, card/list layout toggles, all
@@ -227,7 +235,40 @@ continuously as the user resizes it instead of snapping between fixed layouts.
 
 ## 5. Now Playing specifics
 
-[`NowPlayingScreen`](../../app/src/main/kotlin/com/tempobox/ui/nowplaying/NowPlayingScreen.kt)
+### The sheet gesture model
+
+Now Playing is a persistent draggable sheet
+([`NowPlayingSheet`](../../app/src/main/kotlin/com/tempobox/ui/nowplaying/NowPlayingSheet.kt))
+with two vertical layers, each moving between two anchors:
+
+- the **sheet** itself: *collapsed* (only the `MiniPlayer` pill visible at the
+  bottom) ⇄ *expanded* (full `NowPlayingContent`), cross-fading pill and full
+  layout by drag fraction;
+- the **queue layer**: the full `QueuePanel` sliding up over expanded Now
+  Playing (*hidden* ⇄ *shown*), also reachable via the toolbar queue button.
+
+One vertical `draggable` on the sheet feeds every delta through
+[`SheetMath.routeDrag`](../../app/src/main/kotlin/com/tempobox/ui/nowplaying/SheetMath.kt):
+the queue owns the gesture while visible at all, dragging up on a fully
+expanded sheet starts revealing the queue, everything else moves the sheet.
+Because routing is per delta, one continuous gesture can close the queue and
+keep pulling the sheet down to the pill. On release, `settleStage` /
+`settleQueueShown` pick an anchor (fling direction past a velocity threshold
+wins, otherwise nearest anchor). Back-button precedence (`backAction`: close
+queue → collapse sheet → fall through to navigation) lives in the same pure
+`SheetMath` object, so anchors, routing, settling, fades and back handling all
+unit-test on the JVM (`SheetMathTest`).
+
+Gesture-conflict rules: the seek slider and the artwork's track-skip swipe are
+horizontal, so they coexist with the vertical sheet drag; zoomed artwork
+consumes its pointer events so pinch-panning never drags the sheet; the
+queue's `LazyColumn` consumes vertical drags itself and hands overscroll past
+its top to the queue layer through a `NestedScrollConnection`, which is how
+"drag the list down to dismiss the queue" works.
+
+### Configuration
+
+[`NowPlayingContent`](../../app/src/main/kotlin/com/tempobox/ui/nowplaying/NowPlayingScreen.kt)
 is configuration-driven in two ways
 ([`NowPlayingSettings`](../../core/settings/src/main/kotlin/com/tempobox/settings/AppSettings.kt)):
 
