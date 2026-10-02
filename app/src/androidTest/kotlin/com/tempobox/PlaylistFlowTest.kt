@@ -2,11 +2,11 @@ package com.tempobox
 
 import android.os.Build
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -186,7 +186,15 @@ class PlaylistFlowTest {
         // Drop the soft keyboard so the tap on Create cannot land on the IME.
         Espresso.closeSoftKeyboard()
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("Create").assertIsEnabled().performClick()
+        // Regression guard for the stale-enablement bug fixed alongside this
+        // test (SmartRuleBuilderDialog): Create must become enabled once both
+        // fields hold text. Bounded wait instead of a single-frame assertion —
+        // the derived state may trail the text commit by a frame.
+        composeRule.waitUntil(TestLibrary.WAIT_TIMEOUT_MS) {
+            composeRule.onAllNodes(hasText("Create") and isEnabled())
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithText("Create").performClick()
 
         // Creation is observable in the repository layer first (deterministic,
         // independent of snackbars and list animation)…

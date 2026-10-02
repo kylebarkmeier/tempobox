@@ -22,7 +22,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -46,7 +45,12 @@ fun SmartRuleBuilderDialog(
     onCreate: (name: String, rule: SmartRule) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    data class ConditionDraft(var field: RuleField, var op: RuleOp, var value: String)
+    // Immutable: edits REPLACE the element in the SnapshotStateList below, so
+    // every recomposition scope reading a draft (incl. the Create button's
+    // enablement) is invalidated. Mutable `var` fields bumped alongside a
+    // separate "revision" counter used to leave the enablement check stale —
+    // filling the dialog top-to-bottom kept Create disabled forever.
+    data class ConditionDraft(val field: RuleField, val op: RuleOp, val value: String)
 
     fun seedConditions(rule: SmartRule?): List<ConditionDraft> = when (rule) {
         is SmartRule.Condition -> listOf(ConditionDraft(rule.field, rule.op, rule.value))
@@ -60,8 +64,6 @@ fun SmartRuleBuilderDialog(
     var name by remember { mutableStateOf(suggestedName) }
     var matchAll by remember { mutableStateOf(initialRule !is SmartRule.AnyOf) }
     val conditions = remember { seedConditions(initialRule).toMutableStateList() }
-    // Trigger recomposition on in-place edits of drafts.
-    var revision by remember { mutableStateOf(0) }
 
     val valid = name.isNotBlank() && conditions.isNotEmpty() && conditions.all { draft ->
         draft.value.isNotBlank() && (!draft.field.isNumeric || draft.value.trim().toIntOrNull() != null)
@@ -94,50 +96,45 @@ fun SmartRuleBuilderDialog(
                         label = { Text("Match ANY (OR)") },
                     )
                 }
-                key(revision) {
-                    conditions.forEachIndexed { index, draft ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                conditions.forEachIndexed { index, draft ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        EnumDropdown(
+                            label = fieldLabel(draft.field),
+                            options = RuleField.entries.map { fieldLabel(it) },
+                            modifier = Modifier.weight(1.2f),
+                        ) { picked ->
+                            val field = RuleField.entries[picked]
+                            val op = if (draft.op in RuleOp.operatorsFor(field)) draft.op else RuleOp.IS
+                            conditions[index] = draft.copy(field = field, op = op)
+                        }
+                        EnumDropdown(
+                            label = opLabel(draft.op),
+                            options = RuleOp.operatorsFor(draft.field).map { opLabel(it) },
+                            modifier = Modifier.weight(0.9f),
+                        ) { picked ->
+                            conditions[index] =
+                                draft.copy(op = RuleOp.operatorsFor(draft.field)[picked])
+                        }
+                        OutlinedTextField(
+                            value = draft.value,
+                            onValueChange = { conditions[index] = draft.copy(value = it) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1.1f),
+                            placeholder = { Text(if (draft.field.isNumeric) "e.g. 1990" else "value") },
+                        )
+                        IconButton(
+                            onClick = { conditions.removeAt(index) },
+                            enabled = conditions.size > 1,
                         ) {
-                            EnumDropdown(
-                                label = fieldLabel(draft.field),
-                                options = RuleField.entries.map { fieldLabel(it) },
-                                modifier = Modifier.weight(1.2f),
-                            ) { picked ->
-                                draft.field = RuleField.entries[picked]
-                                if (draft.op !in RuleOp.operatorsFor(draft.field)) {
-                                    draft.op = RuleOp.IS
-                                }
-                                revision++
-                            }
-                            EnumDropdown(
-                                label = opLabel(draft.op),
-                                options = RuleOp.operatorsFor(draft.field).map { opLabel(it) },
-                                modifier = Modifier.weight(0.9f),
-                            ) { picked ->
-                                draft.op = RuleOp.operatorsFor(draft.field)[picked]
-                                revision++
-                            }
-                            OutlinedTextField(
-                                value = draft.value,
-                                onValueChange = { draft.value = it; revision++ },
-                                singleLine = true,
-                                modifier = Modifier.weight(1.1f),
-                                placeholder = { Text(if (draft.field.isNumeric) "e.g. 1990" else "value") },
-                            )
-                            IconButton(
-                                onClick = { conditions.removeAt(index); revision++ },
-                                enabled = conditions.size > 1,
-                            ) {
-                                Icon(Icons.Filled.Close, contentDescription = "Remove condition")
-                            }
+                            Icon(Icons.Filled.Close, contentDescription = "Remove condition")
                         }
                     }
                 }
                 OutlinedButton(onClick = {
                     conditions.add(ConditionDraft(RuleField.GENRE, RuleOp.IS, ""))
-                    revision++
                 }) {
                     Icon(Icons.Filled.Add, contentDescription = null)
                     Text("Add condition")
