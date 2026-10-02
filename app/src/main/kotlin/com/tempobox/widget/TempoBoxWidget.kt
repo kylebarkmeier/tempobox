@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import androidx.annotation.DrawableRes
+import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
@@ -35,6 +37,7 @@ import androidx.glance.layout.padding
 import androidx.glance.layout.size
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
@@ -43,6 +46,7 @@ import androidx.compose.runtime.remember
 import com.tempobox.MainActivity
 import com.tempobox.R
 import com.tempobox.model.NowPlayingState
+import com.tempobox.playback.PlaybackService
 import com.tempobox.playback.PlayerConnection
 import com.tempobox.tags.TagReader
 import dagger.hilt.EntryPoint
@@ -59,9 +63,11 @@ import java.io.File
  * Home screen widget (product spec): album art, album artist, title, and
  * shuffle / previous / play-pause / next / repeat controls.
  *
- * Rendered with Glance. [PlaybackService] broadcasts
- * `com.tempobox.action.WIDGET_REFRESH` on track/state changes; the receiver
- * below re-renders every widget instance.
+ * Rendered with Glance. `com.tempobox.action.WIDGET_REFRESH` is broadcast on
+ * track / play-pause / repeat changes ([PlaybackService]) and on app-level
+ * shuffle changes ([PlayerConnection] — shuffle is a timeline reorder, not
+ * ExoPlayer state, so the service never sees it as a player event); the
+ * receiver below re-renders every widget instance.
  */
 class TempoBoxWidget : GlanceAppWidget() {
 
@@ -106,7 +112,7 @@ class TempoBoxWidget : GlanceAppWidget() {
         // below scales as the user resizes the widget on the home screen.
         val widgetSize = LocalSize.current
         val artSize = (widgetSize.height.value - 28f).coerceIn(56f, 140f).dp
-        val controlSize = (widgetSize.height.value * 0.26f).coerceIn(22f, 44f).sp
+        val controlSize = (widgetSize.height.value * 0.26f).coerceIn(22f, 44f).dp
         val titleSize = (widgetSize.height.value * 0.13f).coerceIn(13f, 20f).sp
         val subtitleSize = (widgetSize.height.value * 0.10f).coerceIn(11f, 16f).sp
 
@@ -149,26 +155,67 @@ class TempoBoxWidget : GlanceAppWidget() {
                 ) {
                     // defaultWeight() spreads the controls evenly, so each one
                     // is a big tap target that grows with the widget.
-                    ControlText("⇄", controlSize, actionRunCallback<ShuffleAction>(), GlanceModifier.defaultWeight())
-                    ControlText("⏮", controlSize, actionRunCallback<PreviousAction>(), GlanceModifier.defaultWeight())
-                    ControlText(
-                        if (state.isPlaying) "⏸" else "▶",
-                        controlSize,
-                        actionRunCallback<PlayPauseAction>(),
-                        GlanceModifier.defaultWeight(),
+                    // Shuffle/repeat mirror the in-app buttons: active modes
+                    // tint primary, OFF dims to onSurfaceVariant, and repeat
+                    // ONE swaps in its own icon (see WidgetControls).
+                    ControlIcon(
+                        iconRes = R.drawable.ic_widget_shuffle,
+                        contentDescription = WidgetControls.shuffleDescription(state.shuffleMode),
+                        active = WidgetControls.shuffleActive(state.shuffleMode),
+                        size = controlSize,
+                        action = actionRunCallback<ShuffleAction>(),
+                        modifier = GlanceModifier.defaultWeight(),
                     )
-                    ControlText("⏭", controlSize, actionRunCallback<NextAction>(), GlanceModifier.defaultWeight())
-                    ControlText("🔁", controlSize, actionRunCallback<RepeatAction>(), GlanceModifier.defaultWeight())
+                    ControlIcon(
+                        iconRes = R.drawable.ic_widget_skip_previous,
+                        contentDescription = "Previous",
+                        active = true,
+                        size = controlSize,
+                        action = actionRunCallback<PreviousAction>(),
+                        modifier = GlanceModifier.defaultWeight(),
+                    )
+                    ControlIcon(
+                        iconRes = WidgetControls.playPauseIcon(state.isPlaying),
+                        contentDescription = WidgetControls.playPauseDescription(state.isPlaying),
+                        active = true,
+                        size = controlSize,
+                        action = actionRunCallback<PlayPauseAction>(),
+                        modifier = GlanceModifier.defaultWeight(),
+                    )
+                    ControlIcon(
+                        iconRes = R.drawable.ic_widget_skip_next,
+                        contentDescription = "Next",
+                        active = true,
+                        size = controlSize,
+                        action = actionRunCallback<NextAction>(),
+                        modifier = GlanceModifier.defaultWeight(),
+                    )
+                    ControlIcon(
+                        iconRes = WidgetControls.repeatIcon(state.repeatMode),
+                        contentDescription = WidgetControls.repeatDescription(state.repeatMode),
+                        active = WidgetControls.repeatActive(state.repeatMode),
+                        size = controlSize,
+                        action = actionRunCallback<RepeatAction>(),
+                        modifier = GlanceModifier.defaultWeight(),
+                    )
                 }
             }
         }
     }
 
-    /** One control glyph; the caller passes a defaultWeight() modifier. */
+    /**
+     * One control icon; the caller passes a defaultWeight() modifier.
+     *
+     * Tinted vector drawables, not text glyphs: the old emoji glyphs rendered
+     * as fixed-color emoji that ignored the tint entirely, so active/inactive
+     * state was invisible (and the mixed emoji/text styles clashed).
+     */
     @androidx.compose.runtime.Composable
-    private fun ControlText(
-        glyph: String,
-        fontSize: androidx.compose.ui.unit.TextUnit,
+    private fun ControlIcon(
+        @DrawableRes iconRes: Int,
+        contentDescription: String,
+        active: Boolean,
+        size: Dp,
         action: androidx.glance.action.Action,
         modifier: GlanceModifier,
     ) {
@@ -176,9 +223,13 @@ class TempoBoxWidget : GlanceAppWidget() {
             modifier = modifier.clickable(action),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                glyph,
-                style = TextStyle(color = GlanceTheme.colors.primary, fontSize = fontSize),
+            Image(
+                provider = ImageProvider(iconRes),
+                contentDescription = contentDescription,
+                colorFilter = ColorFilter.tint(
+                    if (active) GlanceTheme.colors.primary else GlanceTheme.colors.onSurfaceVariant,
+                ),
+                modifier = GlanceModifier.size(size),
             )
         }
     }
@@ -259,6 +310,7 @@ class TempoBoxWidgetReceiver : GlanceAppWidgetReceiver() {
     }
 
     companion object {
-        const val ACTION_REFRESH = "com.tempobox.action.WIDGET_REFRESH"
+        /** Single source of truth lives in core:playback (also in the manifest). */
+        const val ACTION_REFRESH = PlaybackService.ACTION_WIDGET_REFRESH
     }
 }
