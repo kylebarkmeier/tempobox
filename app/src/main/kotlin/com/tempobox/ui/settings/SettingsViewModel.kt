@@ -30,7 +30,7 @@ import javax.inject.Inject
 /**
  * One ViewModel for all settings screens: exposes the live [AppSettings]
  * snapshot, typed per-group updaters, and the imperative operations settings
- * can trigger (rescan, reset, Last.fm login, cache clear).
+ * can trigger (rescan, reset, cache clear).
  */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
