@@ -39,17 +39,10 @@ class TrackTest {
     }
 
     @Test
-    fun `TagData isEmpty and prefill`() {
+    fun `TagData isEmpty`() {
         assertThat(TagData().isEmpty).isTrue()
         assertThat(TagData(genre = "Rock").isEmpty).isFalse()
-
-        val track = Track(
-            filePath = "/a", title = "Song", artist = "Artist", albumArtist = "AA",
-            album = "Album", genre = "Rock", year = 1999, trackNumber = 3, discNumber = 1,
-        )
-        val data = TagData.from(track)
-        assertThat(data.title).isEqualTo("Song")
-        assertThat(data.year).isEqualTo(1999)
-        assertThat(data.trackNumber).isEqualTo(3)
+        assertThat(TagData(year = 1999).isEmpty).isFalse()
+        assertThat(TagData(title = "").isEmpty).isFalse() // "" erases the tag; null leaves it.
     }
 }

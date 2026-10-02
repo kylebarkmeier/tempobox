@@ -5,7 +5,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.tempobox.model.TagData
+import com.tempobox.model.TagEditForm
 import com.tempobox.model.Track
 import com.tempobox.ui.library.LibraryActionsViewModel
 import com.tempobox.ui.library.LibraryActionsViewModel.Dialog
@@ -69,7 +69,7 @@ fun ActionDialogHost(actions: LibraryActionsViewModel) {
                 TagEditorDialog(
                     subjectLabel = current.item.title,
                     trackCount = tracks.size,
-                    initial = if (tracks.size == 1) TagData.from(tracks.first()) else null,
+                    form = TagEditForm.from(tracks),
                     onApply = { actions.applyTagEdit(current.item, it) },
                     onDismiss = actions::dismissDialog,
                 )

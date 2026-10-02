@@ -1,11 +1,13 @@
 package com.tempobox.model
 
 /**
- * The editable subset of a file's tags, as shown in the "Edit ID3 tag(s)" modal.
+ * The write set of a tag edit, as produced by [TagEditForm.deriveEdits] from
+ * the "Edit ID3 tag(s)" modal.
  *
- * Null fields mean "leave unchanged" when applied to multiple tracks at once
- * (bulk edit), so editing the genre of 20 selected tracks doesn't wipe their
- * titles. When editing a single track all fields are pre-populated.
+ * Null fields mean "leave unchanged": the tag writer only touches non-null
+ * fields, so an edit never clobbers values the user didn't change — whether
+ * that's one track or a bulk edit where the selected tracks hold differing
+ * values. A non-null empty string erases that tag.
  */
 data class TagData(
     val title: String? = null,
@@ -23,18 +25,4 @@ data class TagData(
         get() = listOf(
             title, artist, albumArtist, album, genre, year, trackNumber, discNumber, comment,
         ).all { it == null }
-
-    companion object {
-        /** Pre-populated editor state for a single track. */
-        fun from(track: Track): TagData = TagData(
-            title = track.title,
-            artist = track.artist,
-            albumArtist = track.albumArtist,
-            album = track.album,
-            genre = track.genre,
-            year = track.year,
-            trackNumber = track.trackNumber,
-            discNumber = track.discNumber,
-        )
-    }
 }
