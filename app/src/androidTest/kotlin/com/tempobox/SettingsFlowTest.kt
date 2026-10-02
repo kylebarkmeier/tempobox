@@ -1,13 +1,17 @@
 package com.tempobox
 
 import android.os.Build
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
+import com.tempobox.model.ThemeConfig
 import com.tempobox.settings.ScrobbleSettings
 import com.tempobox.settings.SettingsRepository
 import dagger.hilt.android.testing.HiltAndroidRule
@@ -53,12 +57,18 @@ class SettingsFlowTest {
         hiltRule.inject()
         // Settings persist on-device across tests: start from the product
         // defaults instead of assuming whatever an earlier test left behind.
-        runBlocking { settingsRepository.updateScrobble { ScrobbleSettings() } }
+        runBlocking {
+            settingsRepository.updateScrobble { ScrobbleSettings() }
+            settingsRepository.updateTheme { ThemeConfig() }
+        }
     }
 
     @After
     fun restoreDefaults() {
-        runBlocking { settingsRepository.updateScrobble { ScrobbleSettings() } }
+        runBlocking {
+            settingsRepository.updateScrobble { ScrobbleSettings() }
+            settingsRepository.updateTheme { ThemeConfig() }
+        }
     }
 
     private fun openSettings() {
@@ -144,6 +154,41 @@ class SettingsFlowTest {
         composeRule.onNodeWithText("Restore queue on restart").assertIsDisplayed()
         composeRule.onNodeWithText("Confirm before clearing").assertIsDisplayed()
         composeRule.onNodeWithText("Allow duplicates").assertIsDisplayed()
+    }
+
+    @Test
+    fun themeSwatches_nameTheCurrentPick() {
+        openSettings()
+        composeRule.onNodeWithText("Colors, dark mode").performScrollTo().performClick()
+
+        // Defaults: primary = Purple preset, secondary = Violet preset,
+        // tertiary = a non-preset color shown as its hex code. The selected
+        // swatch is also checkmarked and named in its content description,
+        // so the pick never depends on telling the hues apart.
+        composeRule.waitForText("Primary: Purple")
+        composeRule.onNodeWithText("Secondary: Violet").assertExists()
+        composeRule.onNodeWithText("Tertiary: #7D5260").assertExists()
+        composeRule.onNodeWithContentDescription("Purple, selected").assertExists()
+    }
+
+    @Test
+    fun pickingASwatch_renamesTheLabelAndMovesTheCheckmark() {
+        openSettings()
+        composeRule.onNodeWithText("Colors, dark mode").performScrollTo().performClick()
+        composeRule.waitForText("Primary: Purple")
+
+        // First "Green" node in traversal order is the primary row's swatch.
+        composeRule.onAllNodesWithContentDescription("Green")[0]
+            .performScrollTo()
+            .performClick()
+        composeRule.waitUntil(TestLibrary.WAIT_TIMEOUT_MS) {
+            runBlocking { settingsRepository.settings.first().theme.primaryArgb == 0xFF2E6C2F }
+        }
+
+        composeRule.waitForText("Primary: Green")
+        composeRule.onNodeWithContentDescription("Green, selected").assertExists()
+        // The checkmark moved: no swatch claims "Purple, selected" any more.
+        composeRule.onAllNodesWithContentDescription("Purple, selected").assertCountEquals(0)
     }
 
     @Test
