@@ -122,4 +122,40 @@ class PlaylistDaoTest {
         playlists.insert(playlistEntity("Road Trip"))
         assertThat(playlists.getByName("road trip")).isNotNull()
     }
+
+    @Test
+    fun `getByFilePath finds the imported file's row`() = runTest {
+        playlists.insert(playlistEntity("Mix"))
+        assertThat(playlists.getByFilePath("/playlists/Mix.m3u8")!!.name).isEqualTo("Mix")
+        assertThat(playlists.getByFilePath("/playlists/Other.m3u8")).isNull()
+    }
+
+    @Test
+    fun `the same track can appear twice in a playlist`() = runTest {
+        val trackIds = seedTracks(1)
+        val id = playlists.insert(playlistEntity("Mix"))
+        playlists.replaceEntries(id, listOf(trackIds[0], trackIds[0]))
+
+        assertThat(playlists.getPlaylistTracks(id)).hasSize(2)
+        val stats = playlists.observeAllWithStats().first().single()
+        assertThat(stats.trackCount).isEqualTo(2)
+        assertThat(stats.durationMs).isEqualTo(120_000)
+    }
+
+    @Test
+    fun `touch bumps only the modified timestamp`() = runTest {
+        val id = playlists.insert(playlistEntity("Mix"))
+        playlists.touch(id, 999)
+        val row = playlists.getById(id)!!
+        assertThat(row.dateModifiedMs).isEqualTo(999)
+        assertThat(row.dateAddedMs).isEqualTo(1)
+    }
+
+    @Test
+    fun `update can move a playlist to a new file path`() = runTest {
+        val id = playlists.insert(playlistEntity("Mix"))
+        val row = playlists.getById(id)!!
+        playlists.update(row.copy(filePath = "/playlists/Mix.m3u8.new"))
+        assertThat(playlists.getById(id)!!.filePath).isEqualTo("/playlists/Mix.m3u8.new")
+    }
 }

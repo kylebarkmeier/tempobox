@@ -78,6 +78,51 @@ class TrackDaoTest {
         assertThat(dao.count()).isEqualTo(2)
     }
 
+    @Test
+    fun `upsert handles a mixed batch of new and known paths`() = runTest {
+        dao.upsertKeepingUserData(listOf(entity("/a.mp3", title = "Old")))
+        val existingId = dao.getByPath("/a.mp3")!!.id
+        dao.setRating(existingId, 3)
+
+        dao.upsertKeepingUserData(
+            listOf(entity("/a.mp3", title = "Refreshed"), entity("/b.mp3", title = "Fresh")),
+        )
+
+        assertThat(dao.count()).isEqualTo(2)
+        val a = dao.getByPath("/a.mp3")!!
+        assertThat(a.id).isEqualTo(existingId) // identity is stable across rescans
+        assertThat(a.title).isEqualTo("Refreshed")
+        assertThat(a.rating).isEqualTo(3)
+        assertThat(dao.getByPath("/b.mp3")!!.title).isEqualTo("Fresh")
+    }
+
+    // ------------------------------------------------------------------ lookups
+
+    @Test
+    fun `getByIds returns only the requested rows`() = runTest {
+        dao.upsertKeepingUserData(listOf(entity("/a.mp3"), entity("/b.mp3"), entity("/c.mp3")))
+        val wanted = listOf(dao.getByPath("/a.mp3")!!.id, dao.getByPath("/c.mp3")!!.id)
+        assertThat(dao.getByIds(wanted).map { it.filePath }).containsExactly("/a.mp3", "/c.mp3")
+    }
+
+    @Test
+    fun `incrementPlayCount accumulates`() = runTest {
+        dao.upsertKeepingUserData(listOf(entity("/a.mp3")))
+        val id = dao.getByPath("/a.mp3")!!.id
+        dao.incrementPlayCount(id)
+        dao.incrementPlayCount(id)
+        assertThat(dao.getById(id)!!.playCount).isEqualTo(2)
+    }
+
+    @Test
+    fun `getAllScanMeta exposes the scanner's diff columns`() = runTest {
+        dao.upsertKeepingUserData(listOf(entity("/a.mp3", added = 7, modified = 42)))
+        val meta = dao.getAllScanMeta().single()
+        assertThat(meta.filePath).isEqualTo("/a.mp3")
+        assertThat(meta.dateAddedMs).isEqualTo(7)
+        assertThat(meta.dateModifiedMs).isEqualTo(42)
+    }
+
     // ------------------------------------------------------------------ aggregates
 
     @Test
@@ -142,6 +187,72 @@ class TrackDaoTest {
         )
         val recent = dao.observeRecentlyAdded(sinceMs = 500).first()
         assertThat(recent.map { it.filePath }).containsExactly("/new.mp3")
+    }
+
+    @Test
+    fun `album aggregate filters by album artist, genre and cutoff`() = runTest {
+        dao.upsertKeepingUserData(
+            listOf(
+                entity("/1.mp3", albumArtist = "X", album = "A", genre = "Rock", added = 100),
+                entity("/2.mp3", albumArtist = "X", album = "B", genre = "Jazz", added = 900),
+                entity("/3.mp3", albumArtist = "Y", album = "C", genre = "Rock", added = 900),
+            ),
+        )
+        assertThat(dao.observeAlbums(albumArtist = "X").first().map { it.name })
+            .containsExactly("A", "B")
+        assertThat(dao.observeAlbums(genre = "Rock").first().map { it.name })
+            .containsExactly("A", "C")
+        assertThat(dao.observeAlbums(sinceMs = 500).first().map { it.name })
+            .containsExactly("B", "C")
+    }
+
+    @Test
+    fun `album aggregate sums duration and takes the max year`() = runTest {
+        dao.upsertKeepingUserData(
+            listOf(
+                entity("/1.mp3", album = "A", year = 1999),
+                entity("/2.mp3", album = "A", year = 2001),
+            ),
+        )
+        val album = dao.observeAlbums().first().single()
+        assertThat(album.durationMs).isEqualTo(360_000)
+        assertThat(album.year).isEqualTo(2001)
+    }
+
+    @Test
+    fun `track artist aggregate falls back to the album artist for blank artists`() = runTest {
+        dao.upsertKeepingUserData(
+            listOf(
+                entity("/1.mp3", artist = "Solo", albumArtist = "Band"),
+                entity("/2.mp3", artist = "", albumArtist = "Band"),
+            ),
+        )
+        val names = dao.observeTrackArtists().first().map { it.name }
+        assertThat(names).containsExactly("Band", "Solo")
+    }
+
+    @Test
+    fun `genre tracks query matches the unknown-genre bucket`() = runTest {
+        dao.upsertKeepingUserData(
+            listOf(entity("/1.mp3", genre = ""), entity("/2.mp3", genre = "Rock")),
+        )
+        val unknown = dao.observeGenreTracks("Unknown Genre").first()
+        assertThat(unknown.map { it.filePath }).containsExactly("/1.mp3")
+    }
+
+    @Test
+    fun `album tracks are ordered by disc then track number`() = runTest {
+        dao.upsertKeepingUserData(
+            listOf(
+                entity("/d2t1.mp3", album = "A").copy(discNumber = 2, trackNumber = 1),
+                entity("/d1t2.mp3", album = "A").copy(discNumber = 1, trackNumber = 2),
+                entity("/d1t1.mp3", album = "A").copy(discNumber = 1, trackNumber = 1),
+            ),
+        )
+        val ordered = dao.observeAlbumTracks("A", "Album Artist").first()
+        assertThat(ordered.map { it.filePath })
+            .containsExactly("/d1t1.mp3", "/d1t2.mp3", "/d2t1.mp3")
+            .inOrder()
     }
 
     // ------------------------------------------------------------------ removal

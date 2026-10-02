@@ -31,4 +31,29 @@ class PlaybackStateStoreTest {
         store.clear()
         assertThat(store.load()).isNull()
     }
+
+    @Test
+    fun `saving again overwrites the previous snapshot`() = runTest {
+        store.save(PlaybackStateStore.Snapshot(trackIds = listOf(1L, 2L), currentIndex = 1))
+        val latest = PlaybackStateStore.Snapshot(
+            trackIds = listOf(7L),
+            currentIndex = 0,
+            positionMs = 1234,
+            repeatMode = RepeatMode.ONE,
+        )
+        store.save(latest)
+        assertThat(store.load()).isEqualTo(latest)
+    }
+
+    @Test
+    fun `snapshot defaults describe a stopped empty queue`() = runTest {
+        // These defaults define what a restore does when fields are absent
+        // (e.g. a snapshot written by an older app version).
+        store.save(PlaybackStateStore.Snapshot())
+        val restored = store.load()!!
+        assertThat(restored.trackIds).isEmpty()
+        assertThat(restored.currentIndex).isEqualTo(0)
+        assertThat(restored.positionMs).isEqualTo(0)
+        assertThat(restored.repeatMode).isEqualTo(RepeatMode.OFF)
+    }
 }

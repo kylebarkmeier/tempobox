@@ -1,6 +1,7 @@
 package com.tempobox.settings
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.edit
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
 import com.tempobox.model.Corner
@@ -46,11 +47,20 @@ class DataStoreSettingsRepositoryTest {
     private lateinit var file: File
     private lateinit var repository: DataStoreSettingsRepository
 
+    private lateinit var dataStore: androidx.datastore.core.DataStore<androidx.datastore.preferences.core.Preferences>
+
     @Before
     fun setUp() {
         file = File(tmp.root, "settings.preferences_pb")
-        val dataStore = PreferenceDataStoreFactory.create(scope = storeScope) { file }
+        dataStore = PreferenceDataStoreFactory.create(scope = storeScope) { file }
         repository = DataStoreSettingsRepository(dataStore)
+    }
+
+    /** Plants a raw string under a group key, simulating on-disk state. */
+    private suspend fun plantRaw(key: String, raw: String) {
+        dataStore.edit { prefs ->
+            prefs[androidx.datastore.preferences.core.stringPreferencesKey(key)] = raw
+        }
     }
 
     @After
@@ -106,5 +116,56 @@ class DataStoreSettingsRepositoryTest {
         repository.updateLibrary { it.copy(locations = it.locations + "/a") }
         repository.updateLibrary { it.copy(locations = it.locations + "/b") }
         assertThat(repository.settings.first().library.locations).containsExactly("/a", "/b").inOrder()
+    }
+
+    // ------------------------------------------------------------ defensive decoding
+
+    @Test
+    fun `corrupt group falls back to its defaults without crashing`() = scope.runTest {
+        plantRaw("shuffle", "{definitely not json")
+
+        val settings = repository.settings.first()
+        assertThat(settings.shuffle).isEqualTo(ShuffleSettings()) // defaults
+        assertThat(settings.shuffle.antiRepeat).isTrue()
+    }
+
+    @Test
+    fun `one corrupt group does not poison the others`() = scope.runTest {
+        repository.updateLibrary { it.copy(locations = listOf("/music")) }
+        plantRaw("queue", "[]") // wrong JSON shape for QueueSettings
+
+        val settings = repository.settings.first()
+        assertThat(settings.queue).isEqualTo(QueueSettings()) // corrupt → defaults
+        assertThat(settings.library.locations).containsExactly("/music") // intact
+    }
+
+    @Test
+    fun `updating a corrupt group starts from defaults and repairs the stored value`() = scope.runTest {
+        plantRaw("shuffle", "{corrupt")
+        repository.updateShuffle { it.copy(ratingBias = true) }
+
+        val shuffle = repository.settings.first().shuffle
+        assertThat(shuffle.ratingBias).isTrue() // the transform applied
+        assertThat(shuffle.antiRepeat).isTrue() // started from defaults, not garbage
+    }
+
+    @Test
+    fun `unknown fields from a future schema are tolerated`() = scope.runTest {
+        // A newer app version may add fields; an older one must still decode.
+        plantRaw("shuffle", """{"antiRepeat":false,"ratingBias":true,"futureFlag":42}""")
+
+        val shuffle = repository.settings.first().shuffle
+        assertThat(shuffle.antiRepeat).isFalse()
+        assertThat(shuffle.ratingBias).isTrue()
+    }
+
+    @Test
+    fun `missing fields in a stored group fall back to field defaults`() = scope.runTest {
+        // A group written before a field existed must decode with the new default.
+        plantRaw("library", """{"locations":["/sd/Music"]}""")
+
+        val library = repository.settings.first().library
+        assertThat(library.locations).containsExactly("/sd/Music")
+        assertThat(library.autoRescanAndWatch).isTrue() // product default kicks in
     }
 }

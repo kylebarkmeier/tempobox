@@ -64,6 +64,14 @@ class M3uCodecTest {
         assertThat(paths).containsExactly(a)
     }
 
+    @Test
+    fun `parse handles CRLF line endings from desktop players`() {
+        val a = abs("/music/a.mp3")
+        val b = abs("/music/b.mp3")
+        val paths = codec.parse("#EXTM3U\r\n$a\r\n$b\r\n", File("/base"))
+        assertThat(paths).containsExactly(a, b).inOrder()
+    }
+
     // ------------------------------------------------------------------ read
 
     @Test

@@ -133,4 +133,155 @@ class LibraryRepositoryTest {
         repository.resetLibrary()
         assertThat(db.trackDao().count()).isEqualTo(0)
     }
+
+    // ------------------------------------------------------------------ bulk edits & partial failures
+
+    @Test
+    fun `bulk editTags applies to every writable track and reports only failures`() = runTest {
+        val ok = File(tmp.root, "A__X__Ok.mp3").apply { writeText("x") }
+        val locked = File(tmp.root, "A__X__Locked.mp3").apply { writeText("x") }
+        tagIO.failingPaths += locked.absolutePath
+        val okId = seed(ok.absolutePath, title = "Ok")
+        val lockedId = seed(locked.absolutePath, title = "Locked")
+
+        val failed = repository.editTags(listOf(okId, lockedId), TagData(genre = "Ambient"))
+
+        assertThat(failed.map { it.id }).containsExactly(lockedId)
+        assertThat(db.trackDao().getById(okId)!!.genre).isEqualTo("Ambient")
+        assertThat(db.trackDao().getById(lockedId)!!.genre).isNotEqualTo("Ambient")
+    }
+
+    @Test
+    fun `deleteFromDevice keeps undeletable tracks in the library and reports them`() = runTest {
+        // A non-empty directory can't be File.delete()d on any OS — a portable
+        // stand-in for a file the app lacks write permission for.
+        val undeletable = File(tmp.root, "stubborn").apply {
+            mkdirs()
+            File(this, "child.txt").writeText("x")
+        }
+        val gone = File(tmp.root, "gone.mp3").apply { writeText("x") }
+        val stubbornId = seed(undeletable.absolutePath, title = "Stubborn")
+        val goneId = seed(gone.absolutePath, title = "Gone")
+
+        val failed = repository.deleteFromDevice(listOf(stubbornId, goneId))
+
+        assertThat(failed.map { it.id }).containsExactly(stubbornId)
+        assertThat(gone.exists()).isFalse()
+        assertThat(db.trackDao().getById(goneId)).isNull()
+        assertThat(db.trackDao().getById(stubbornId)).isNotNull() // kept so the UI can surface it
+    }
+
+    @Test
+    fun `missing files count as deleted rather than failing`() = runTest {
+        val id = seed("${tmp.root}/already-gone.mp3")
+        val failed = repository.deleteFromDevice(listOf(id))
+        assertThat(failed).isEmpty()
+        assertThat(db.trackDao().count()).isEqualTo(0)
+    }
+
+    @Test
+    fun `incrementPlayCount accumulates through the repository`() = runTest {
+        val id = seed("/a.mp3")
+        repository.incrementPlayCount(id)
+        repository.incrementPlayCount(id)
+        assertThat(db.trackDao().getById(id)!!.playCount).isEqualTo(2)
+    }
+
+    // ------------------------------------------------------------------ large libraries
+
+    @Test
+    fun `getTracksByIds spans the SQLite variable limit chunking`() = runTest {
+        val entities = (1..501).map { i ->
+            Track(filePath = "/bulk/$i.mp3", title = "T$i", artist = "A", albumArtist = "A").toEntity()
+        }
+        db.trackDao().upsertKeepingUserData(entities)
+        val ids = db.trackDao().getAllPaths().map { db.trackDao().getByPath(it)!!.id }.shuffled()
+
+        val result = repository.getTracksByIds(ids)
+        assertThat(result.map { it.id }).isEqualTo(ids) // all found, caller order kept
+    }
+
+    // ------------------------------------------------------------------ aggregate sorting
+
+    private suspend fun seedFull(
+        path: String,
+        title: String = "T",
+        artist: String = "A",
+        album: String = "Al",
+        genre: String = "Rock",
+        year: Int? = 2000,
+        rating: Int = 0,
+        added: Long = 0,
+    ) {
+        db.trackDao().insert(
+            Track(
+                filePath = path, title = title, artist = artist, albumArtist = artist,
+                album = album, genre = genre, year = year, rating = rating, dateAddedMs = added,
+            ).toEntity(),
+        )
+    }
+
+    @Test
+    fun `album artists sort article-aware alphabetically`() = runTest {
+        seedFull("/1.mp3", artist = "Cream")
+        seedFull("/2.mp3", artist = "The Beatles")
+        seedFull("/3.mp3", artist = "Abba")
+
+        val names = repository.observeAlbumArtists(sort = SortSpec(SortKey.ALPHABETICAL)).first()
+            .map { it.name }
+        assertThat(names).containsExactly("Abba", "The Beatles", "Cream").inOrder()
+    }
+
+    @Test
+    fun `albums sort by rating uses the album's best-rated track`() = runTest {
+        // Max and average ratings disagree on purpose: "Consistent" averages
+        // higher (4.0 vs 3.0) but "OneHit" holds the better single track (5).
+        // The spec'd order is by the album's BEST track, so OneHit wins.
+        seedFull("/1.mp3", album = "Consistent", rating = 4)
+        seedFull("/2.mp3", album = "Consistent", rating = 4)
+        seedFull("/3.mp3", album = "OneHit", rating = 5)
+        seedFull("/4.mp3", album = "OneHit", rating = 1)
+
+        val sorted = repository.observeAlbums(sort = SortSpec(SortKey.RATING, ascending = false)).first()
+        assertThat(sorted.map { it.name }).containsExactly("OneHit", "Consistent").inOrder()
+    }
+
+    @Test
+    fun `albums sort by tag date orders on the year`() = runTest {
+        seedFull("/1.mp3", album = "Nineties", year = 1995)
+        seedFull("/2.mp3", album = "Eighties", year = 1985)
+        seedFull("/3.mp3", album = "Untagged", year = null)
+
+        val sorted = repository.observeAlbums(sort = SortSpec(SortKey.TAG_DATE, ascending = true)).first()
+        assertThat(sorted.map { it.name })
+            .containsExactly("Untagged", "Eighties", "Nineties")
+            .inOrder()
+    }
+
+    @Test
+    fun `genres sort by recently added descending`() = runTest {
+        seedFull("/1.mp3", genre = "Old", added = 100)
+        seedFull("/2.mp3", genre = "New", added = 900)
+
+        val sorted = repository.observeGenres(sort = SortSpec(SortKey.RECENTLY_ADDED, ascending = false))
+            .first()
+        assertThat(sorted.map { it.name }).containsExactly("New", "Old").inOrder()
+    }
+
+    @Test
+    fun `recently added tracks honor the cutoff and sort newest first`() = runTest {
+        seedFull("/old.mp3", title = "Old", added = 100)
+        seedFull("/mid.mp3", title = "Mid", added = 600)
+        seedFull("/new.mp3", title = "New", added = 900)
+
+        val recent = repository.observeRecentlyAddedTracks(sinceMs = 500).first()
+        assertThat(recent.map { it.title }).containsExactly("New", "Mid").inOrder()
+    }
+
+    @Test
+    fun `getTrackByPath resolves a single file`() = runTest {
+        seed("/somewhere/a.mp3", title = "Found")
+        assertThat(repository.getTrackByPath("/somewhere/a.mp3")!!.title).isEqualTo("Found")
+        assertThat(repository.getTrackByPath("/nowhere.mp3")).isNull()
+    }
 }
