@@ -28,7 +28,7 @@
         android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />
 
-    <!-- Last.fm scrobbling & Discogs artist images -->
+    <!-- Discogs artist images (scrobbling is a local broadcast, no network) -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
