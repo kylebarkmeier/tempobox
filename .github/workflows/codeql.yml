@@ -1,8 +1,11 @@
-# Static security analysis: CodeQL scans the Kotlin/Java sources for known
-# vulnerability patterns on every PR, every push to main, and weekly (to pick
-# up newly added queries). Findings land in the repo's Security tab and as PR
-# check annotations. build-mode "none" analyzes without compiling, which is
-# fast and avoids coupling the scan to the AGP toolchain.
+# Static security analysis with CodeQL.
+#
+# Scope today: the "actions" language — scans the workflow files themselves
+# for script-injection and permission pitfalls. Kotlin source analysis is NOT
+# enabled because CodeQL's Kotlin extractor currently supports only Kotlin
+# <= 2.2.x (this repo is on 2.4.x) and build-mode "none" skips Kotlin files
+# entirely. Revisit `languages: java-kotlin` (with build-mode autobuild) once
+# CodeQL supports the repo's Kotlin version.
 name: CodeQL
 
 on:
@@ -18,9 +21,9 @@ permissions:
 
 jobs:
   analyze:
-    name: CodeQL (java-kotlin)
+    name: CodeQL (actions)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     permissions:
       contents: read
       security-events: write
@@ -30,10 +33,10 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
-          languages: java-kotlin
+          languages: actions
           build-mode: none
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4
         with:
-          category: '/language:java-kotlin'
+          category: '/language:actions'
