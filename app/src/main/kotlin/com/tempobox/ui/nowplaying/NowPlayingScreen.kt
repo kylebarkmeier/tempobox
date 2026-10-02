@@ -24,9 +24,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RepeatOne
-import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Star
@@ -372,7 +369,9 @@ private fun SeekBar(
 private fun ShuffleButton(current: ShuffleMode, onToggle: () -> Unit) {
     IconButton(onClick = onToggle) {
         Icon(
-            Icons.Filled.Shuffle,
+            // Boxed "on" glyph + tint: the shape carries the state for
+            // red-green colorblind users (TransportGlyphs).
+            TransportGlyphs.shuffleIcon(current),
             contentDescription = if (current != ShuffleMode.OFF) "Shuffle off" else "Shuffle on",
             tint = if (current != ShuffleMode.OFF) {
                 MaterialTheme.colorScheme.primary
@@ -388,7 +387,8 @@ private fun ShuffleButton(current: ShuffleMode, onToggle: () -> Unit) {
 private fun RepeatButton(current: RepeatMode, onCycle: () -> Unit) {
     IconButton(onClick = onCycle) {
         Icon(
-            if (current == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+            // Boxed "on" glyphs for ALL and ONE; see TransportGlyphs.
+            TransportGlyphs.repeatIcon(current),
             contentDescription = "Repeat mode: $current",
             tint = if (current != RepeatMode.OFF) {
                 MaterialTheme.colorScheme.primary

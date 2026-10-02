@@ -9,9 +9,11 @@ import com.tempobox.model.ShuffleMode
  * Pure state → presentation mapping for the widget's control row.
  *
  * Mirrors the in-app Now Playing transport buttons (`NowPlayingScreen`):
- * shuffle and repeat render "active" (primary tint) whenever their mode is
- * anything but OFF, and repeat ONE gets its own icon. Kept free of Glance so
- * it unit-tests on the JVM.
+ * shuffle and repeat render "active" (a tonal pill behind the icon, plus the
+ * tint) whenever their mode is anything but OFF, and repeat ONE gets its own
+ * icon. The pill carries the state for red-green colorblind users, for whom
+ * a tint change alone can vanish. Kept free of Glance so it unit-tests on
+ * the JVM.
  */
 internal object WidgetControls {
 
