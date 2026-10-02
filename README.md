@@ -38,6 +38,7 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
 - Remove-from-library and delete-from-device (both behind confirmations)
 - Artist images from Discogs (optional, bring your own token) with an
   album-art collage fallback
+- Genre artwork is a collage of the genre's most played albums
 
 **Playlists**
 - Native M3U and M3U8 support; playlists found in your library folders are

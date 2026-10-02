@@ -3,6 +3,8 @@ package com.tempobox
 import android.os.Build
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -132,6 +134,27 @@ class LibraryContentFlowTest {
         composeRule.onNodeWithText("Tracks").performClick()
         composeRule.waitForText("India One")
         composeRule.waitForTextGone("Juliet Song") // jazz stays out of Rock
+    }
+
+    @Test
+    fun genresTab_layoutToggle_showsTilesThatOpenGenreDetail() {
+        openTab("Genres")
+        composeRule.waitForText("Rock")
+
+        // Genres default to the list; the toolbar toggle switches to tiles.
+        composeRule.onNodeWithContentDescription("Switch to cards").performClick()
+        composeRule.waitUntil(TestLibrary.WAIT_TIMEOUT_MS) {
+            composeRule.onAllNodesWithContentDescription("Switch to list")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+
+        // Tiles show the same aggregates and open the same detail screen.
+        composeRule.waitForText("Rock")
+        composeRule.onNodeWithText("1 albums · 2 tracks").assertIsDisplayed()
+        composeRule.onNodeWithText("Jazz").assertIsDisplayed()
+        composeRule.onNodeWithText("Rock").performClick()
+        composeRule.waitForText("Artists")
+        composeRule.onNodeWithText("India Artist").assertIsDisplayed()
     }
 
     @Test

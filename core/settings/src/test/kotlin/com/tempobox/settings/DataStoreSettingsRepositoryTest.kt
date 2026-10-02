@@ -10,6 +10,7 @@ import com.tempobox.model.DrawerItem
 import com.tempobox.model.LibraryTab
 import com.tempobox.model.SwipeAction
 import com.tempobox.model.ThemeConfig
+import com.tempobox.model.ViewLayout
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -74,6 +75,8 @@ class DataStoreSettingsRepositoryTest {
         assertThat(settings.library.autoRescanAndWatch).isTrue() // spec: default ON
         assertThat(settings.ui.swipeLeft).isEqualTo(SwipeAction.ADD_TO_QUEUE)
         assertThat(settings.ui.drawerItems).isEqualTo(UiSettings.DEFAULT_DRAWER_ITEMS)
+        assertThat(settings.ui.artistLayout).isEqualTo(ViewLayout.CARD)
+        assertThat(settings.ui.genreLayout).isEqualTo(ViewLayout.LIST) // tab was list-only pre-toggle
         assertThat(settings.shuffle.antiRepeat).isTrue() // spec: default ON
         assertThat(settings.shuffle.ratingBias).isFalse()
         assertThat(settings.queue.persistQueue).isTrue()
@@ -109,6 +112,18 @@ class DataStoreSettingsRepositoryTest {
         assertThat(settings.nowPlaying.cornerActions[Corner.TOP_LEFT])
             .isEqualTo(CornerAction.SET_AS_WALLPAPER)
         assertThat(settings.theme.primaryArgb).isEqualTo(0xFF123456)
+    }
+
+    @Test
+    fun `genre layout round-trips and a stored group without it keeps the default`() = scope.runTest {
+        repository.updateUi { it.copy(genreLayout = ViewLayout.CARD) }
+        assertThat(repository.settings.first().ui.genreLayout).isEqualTo(ViewLayout.CARD)
+
+        // A UI group persisted before the field existed must decode to LIST.
+        plantRaw("ui", """{"artistLayout":"LIST"}""")
+        val ui = repository.settings.first().ui
+        assertThat(ui.artistLayout).isEqualTo(ViewLayout.LIST)
+        assertThat(ui.genreLayout).isEqualTo(ViewLayout.LIST)
     }
 
     @Test

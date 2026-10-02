@@ -232,6 +232,47 @@ class TrackDaoTest {
     }
 
     @Test
+    fun `genre album art groups per genre and album, summing play counts`() = runTest {
+        dao.upsertKeepingUserData(
+            listOf(
+                entity("/r1.mp3", genre = "Rock", album = "A", playCount = 2, hasArt = true),
+                entity("/r2.mp3", genre = "Rock", album = "A", playCount = 3, hasArt = false),
+                entity("/r3.mp3", genre = "Rock", album = "B", playCount = 1, hasArt = true),
+                entity("/j1.mp3", genre = "Jazz", album = "C", playCount = 7, hasArt = true),
+            ),
+        )
+        val rows = dao.observeGenreAlbumArt().first()
+        assertThat(rows).hasSize(3)
+        val rockA = rows.single { it.genreName == "Rock" && it.album == "A" }
+        assertThat(rockA.playCount).isEqualTo(5) // summed across the album's tracks
+        assertThat(rockA.trackCount).isEqualTo(2)
+        assertThat(rockA.artworkTrackPath).isEqualTo("/r1.mp3") // only the track WITH art
+        assertThat(rows.single { it.genreName == "Jazz" }.artworkTrackPath).isEqualTo("/j1.mp3")
+    }
+
+    @Test
+    fun `genre album art drops albums without any embedded art`() = runTest {
+        dao.upsertKeepingUserData(
+            listOf(
+                entity("/bare1.mp3", genre = "Rock", album = "Bare", hasArt = false),
+                entity("/bare2.mp3", genre = "Rock", album = "Bare", hasArt = false),
+                entity("/art.mp3", genre = "Rock", album = "Covered", hasArt = true),
+            ),
+        )
+        val rows = dao.observeGenreAlbumArt().first()
+        assertThat(rows.map { it.album }).containsExactly("Covered")
+    }
+
+    @Test
+    fun `genre album art buckets blank genres under the unknown genre`() = runTest {
+        dao.upsertKeepingUserData(
+            listOf(entity("/1.mp3", genre = "", album = "A", hasArt = true)),
+        )
+        val row = dao.observeGenreAlbumArt().first().single()
+        assertThat(row.genreName).isEqualTo("Unknown Genre")
+    }
+
+    @Test
     fun `genre tracks query matches the unknown-genre bucket`() = runTest {
         dao.upsertKeepingUserData(
             listOf(entity("/1.mp3", genre = ""), entity("/2.mp3", genre = "Rock")),

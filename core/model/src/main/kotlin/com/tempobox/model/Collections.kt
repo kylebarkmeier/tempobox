@@ -37,10 +37,16 @@ data class AlbumArtist(
     val dateModifiedMs: Long = 0,
 )
 
-/** Aggregated genre row for the Genres view. */
+/**
+ * Aggregated genre row for the Genres view.
+ *
+ * @property artworkTrackPaths Up to 4 representative track paths for the
+ *                             collage, from the genre's most played albums.
+ */
 data class Genre(
     val name: String,
     val trackCount: Int,
     val albumCount: Int,
     val dateAddedMs: Long = 0,
+    val artworkTrackPaths: List<String> = emptyList(),
 )

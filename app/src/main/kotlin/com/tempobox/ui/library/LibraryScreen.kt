@@ -95,13 +95,16 @@ fun LibraryScreen(
                 }
             },
             actions = {
-                // Card/list switch for the artist & album tabs (product spec).
+                // Card/list switch for the artist, album & genre tabs (product spec).
                 when (selectedTab) {
                     LibraryTab.ALBUM_ARTISTS, LibraryTab.ARTISTS -> LayoutToggle(ui.artistLayout) {
                         viewModel.toggleArtistLayout()
                     }
                     LibraryTab.ALBUMS -> LayoutToggle(ui.albumLayout) {
                         viewModel.toggleAlbumLayout()
+                    }
+                    LibraryTab.GENRES -> LayoutToggle(ui.genreLayout) {
+                        viewModel.toggleGenreLayout()
                     }
                     else -> Unit
                 }
@@ -147,6 +150,7 @@ fun LibraryScreen(
             )
             LibraryTab.GENRES -> GenresTab(
                 genres = viewModel.genres.collectAsState().value,
+                layout = ui.genreLayout,
                 actions = actions,
                 swipeLeft = ui.swipeLeft,
                 swipeRight = ui.swipeRight,
@@ -390,30 +394,76 @@ fun AlbumsTab(
 @Composable
 fun GenresTab(
     genres: List<com.tempobox.model.Genre>,
+    layout: ViewLayout,
     actions: LibraryActionsViewModel,
     swipeLeft: SwipeAction,
     swipeRight: SwipeAction,
     onOpenGenre: (String) -> Unit,
 ) {
-    LazyColumn(Modifier.fillMaxSize()) {
-        items(genres, key = { it.name }) { genre ->
-            val item = LibraryItem.GenreItem(genre)
-            SwipeableLibraryItem(item, swipeLeft, swipeRight, actions) {
-                CollectionRow(
-                    item = item,
-                    title = genre.name,
-                    subtitle = "${genre.albumCount} albums · ${genre.trackCount} tracks",
-                    actions = actions,
-                    artwork = {
-                        Icon(
-                            Icons.Filled.MusicNote,
-                            contentDescription = null,
-                            modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    },
-                    onOpen = { onOpenGenre(genre.name) },
-                )
+    if (layout == ViewLayout.CARD) {
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 160.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(genres, key = { it.name }) { genre ->
+                val item = LibraryItem.GenreItem(genre)
+                Column(Modifier.clickable { onOpenGenre(genre.name) }) {
+                    CollageArt(
+                        trackPaths = genre.artworkTrackPaths,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f),
+                        placeholder = Icons.Filled.MusicNote,
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                genre.name,
+                                style = MaterialTheme.typography.titleSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                "${genre.albumCount} albums · ${genre.trackCount} tracks",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(onClick = { actions.play(item) }) {
+                            Icon(
+                                Icons.Filled.PlayArrow,
+                                contentDescription = "Play ${genre.name}",
+                            )
+                        }
+                        LibraryItemMenu(item = item, actions = actions)
+                    }
+                }
+            }
+        }
+    } else {
+        LazyColumn(Modifier.fillMaxSize()) {
+            items(genres, key = { it.name }) { genre ->
+                val item = LibraryItem.GenreItem(genre)
+                SwipeableLibraryItem(item, swipeLeft, swipeRight, actions) {
+                    CollectionRow(
+                        item = item,
+                        title = genre.name,
+                        subtitle = "${genre.albumCount} albums · ${genre.trackCount} tracks",
+                        actions = actions,
+                        artwork = {
+                            CollageArt(
+                                trackPaths = genre.artworkTrackPaths,
+                                modifier = Modifier.size(48.dp),
+                                cornerRadius = 8,
+                                placeholder = Icons.Filled.MusicNote,
+                            )
+                        },
+                        onOpen = { onOpenGenre(genre.name) },
+                    )
+                }
             }
         }
     }

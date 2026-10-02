@@ -84,6 +84,13 @@ Some details in the DAO:
 - There are two artist aggregations: by `albumArtist` (the Album Artists tab)
   and by *track* artist with an albumArtist fallback (the Artists tab):
   same shape, different `GROUP BY` key.
+- Genre collages have their own aggregate (`observeGenreAlbumArt`): one row
+  per genre + album carrying the album's art path and summed play count
+  (albums with no embedded art are dropped in the `HAVING` clause). The
+  ranking (most played, then most tracks, then name) lives in
+  [`GenreCollage`](../../core/library/src/main/kotlin/com/tempobox/library/GenreCollage.kt),
+  which keeps the top 4 per genre; `LibraryRepository.observeGenres` combines
+  that with the plain genre rows.
 
 One deliberate oddity: **final sorting happens in Kotlin, not SQL**.
 [`LibraryRepository`](../../core/library/src/main/kotlin/com/tempobox/library/LibraryRepository.kt)

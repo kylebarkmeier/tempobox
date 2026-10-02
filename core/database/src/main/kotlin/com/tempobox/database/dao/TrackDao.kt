@@ -9,6 +9,7 @@ import androidx.room.Update
 import com.tempobox.database.entity.TrackEntity
 import com.tempobox.database.pojo.AlbumArtistRow
 import com.tempobox.database.pojo.AlbumRow
+import com.tempobox.database.pojo.GenreAlbumArtRow
 import com.tempobox.database.pojo.GenreRow
 import com.tempobox.database.pojo.TrackScanMeta
 import kotlinx.coroutines.flow.Flow
@@ -180,6 +181,26 @@ interface TrackDao {
         """,
     )
     fun observeGenres(sinceMs: Long? = null): Flow<List<GenreRow>>
+
+    /**
+     * Per-genre, per-album artwork rows feeding the genre collages. The HAVING
+     * clause drops albums with no embedded art anywhere, so every row carries a
+     * usable path; ranking (most played first) happens in the repository.
+     */
+    @Query(
+        """
+        SELECT (CASE WHEN genre = '' THEN 'Unknown Genre' ELSE genre END) AS genreName,
+               album AS album,
+               albumArtist AS albumArtist,
+               MIN(CASE WHEN hasEmbeddedArt THEN filePath ELSE NULL END) AS artworkTrackPath,
+               SUM(playCount) AS playCount,
+               COUNT(*) AS trackCount
+        FROM tracks
+        GROUP BY genreName, album, albumArtist
+        HAVING MIN(CASE WHEN hasEmbeddedArt THEN filePath ELSE NULL END) IS NOT NULL
+        """,
+    )
+    fun observeGenreAlbumArt(): Flow<List<GenreAlbumArtRow>>
 
     // ---------------------------------------------------------------- library-managed columns
 

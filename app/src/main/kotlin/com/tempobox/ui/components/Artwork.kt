@@ -63,12 +63,17 @@ fun TrackArt(
     }
 }
 
-/** 2×2 collage of album covers — the artist-card fallback image. */
+/**
+ * 2×2 collage of album covers — the artist-card fallback image, also the
+ * genre artwork. [placeholder] is the icon for a collection with no art at
+ * all (person for artists, note for genres).
+ */
 @Composable
 fun CollageArt(
     trackPaths: List<String>,
     modifier: Modifier = Modifier,
     cornerRadius: Int = 12,
+    placeholder: ImageVector = Icons.Filled.Person,
 ) {
     Box(modifier = modifier.clip(RoundedCornerShape(cornerRadius.dp))) {
         when {
@@ -76,7 +81,7 @@ fun CollageArt(
                 trackPath = null,
                 modifier = Modifier.fillMaxSize(),
                 cornerRadius = cornerRadius,
-                placeholder = Icons.Filled.Person,
+                placeholder = placeholder,
             )
             trackPaths.size < 4 -> TrackArt(
                 trackPath = trackPaths.first(),

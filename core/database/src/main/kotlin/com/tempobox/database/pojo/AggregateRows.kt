@@ -80,13 +80,29 @@ data class GenreRow(
     val albumCount: Int,
     val dateAddedMs: Long,
 ) {
-    fun toModel(): Genre = Genre(
+    fun toModel(artworkTrackPaths: List<String> = emptyList()): Genre = Genre(
         name = name,
         trackCount = trackCount,
         albumCount = albumCount,
         dateAddedMs = dateAddedMs,
+        artworkTrackPaths = artworkTrackPaths,
     )
 }
+
+/**
+ * One album inside one genre, with its artwork path and aggregate play count.
+ * Input to the genre collage: the repository picks each genre's most played
+ * albums from these rows. Albums without embedded art are filtered out by the
+ * query itself.
+ */
+data class GenreAlbumArtRow(
+    val genreName: String,
+    val album: String,
+    val albumArtist: String,
+    val artworkTrackPath: String,
+    val playCount: Long,
+    val trackCount: Int,
+)
 
 /** (path, mtime, size, added) projection for the scanner's change diff. */
 data class TrackScanMeta(
