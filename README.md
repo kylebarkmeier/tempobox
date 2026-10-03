@@ -40,6 +40,9 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
   artists/albums/tracks, and playlists, each with options that fit the list
   (track number, album order, duration, play count). Sorting a playlist only
   changes the view; the stored order stays yours
+- Fast scrolling: every library list and grid (and the queue) shows a
+  draggable scrollbar at the right edge while scrolling; drag the thumb to
+  jump anywhere in a long list
 - Per-track 1-5★ ratings and play counts
 - In-app ID3/Vorbis/MP4 tag editing, single track or bulk
 - Remove-from-library and delete-from-device (both behind confirmations)

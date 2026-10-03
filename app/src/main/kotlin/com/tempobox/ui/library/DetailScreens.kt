@@ -2,7 +2,6 @@ package com.tempobox.ui.library
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -30,6 +29,7 @@ import com.tempobox.model.LibrarySubview
 import com.tempobox.model.ViewLayout
 import com.tempobox.model.sortKeys
 import com.tempobox.ui.components.ActionDialogHost
+import com.tempobox.ui.components.FastScrollLazyColumn
 import com.tempobox.ui.components.SortMenuButton
 import com.tempobox.ui.components.TrackRow
 
@@ -249,7 +249,7 @@ fun GenreDetailScreen(
             }
         }
         when (tab) {
-            0 -> LazyColumn(Modifier.fillMaxSize()) {
+            0 -> FastScrollLazyColumn(Modifier.fillMaxSize()) {
                 itemsIndexed(artists, key = { _, a -> a.name }) { _, artist ->
                     com.tempobox.ui.components.CollectionRow(
                         item = LibraryItem.ArtistItem(artist),
@@ -313,7 +313,7 @@ fun PlaylistDetailScreen(
                 modifier = Modifier.padding(12.dp),
             )
         }
-        LazyColumn(Modifier.fillMaxSize()) {
+        FastScrollLazyColumn(Modifier.fillMaxSize()) {
             itemsIndexed(tracks, key = { index, t -> "$index-${t.id}" }) { index, track ->
                 TrackRow(
                     track = track,
