@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -53,6 +52,7 @@ import com.tempobox.common.TimeFormat
 import com.tempobox.model.QueueItem
 import com.tempobox.ui.components.ActionDialogHost
 import com.tempobox.ui.components.ConfirmDialog
+import com.tempobox.ui.components.FastScrollLazyColumn
 import com.tempobox.ui.components.LibraryItemMenu
 import com.tempobox.ui.components.TrackArt
 import com.tempobox.ui.library.LibraryActionsViewModel
@@ -138,7 +138,7 @@ fun QueuePanel(onBack: (() -> Unit)? = null, hostActionDialogs: Boolean = true) 
             },
         )
 
-        LazyColumn(Modifier.fillMaxSize()) {
+        FastScrollLazyColumn(Modifier.fillMaxSize()) {
             itemsIndexed(queue, key = { _, item -> item.uid }) { index, item ->
                 QueueRow(
                     item = item,

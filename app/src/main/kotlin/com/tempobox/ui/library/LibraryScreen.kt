@@ -9,9 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -55,6 +53,8 @@ import com.tempobox.ui.components.ActionDialogHost
 import com.tempobox.ui.components.ArtistImage
 import com.tempobox.ui.components.CollageArt
 import com.tempobox.ui.components.CollectionRow
+import com.tempobox.ui.components.FastScrollLazyColumn
+import com.tempobox.ui.components.FastScrollLazyVerticalGrid
 import com.tempobox.ui.components.LibraryItemMenu
 import com.tempobox.ui.components.SortMenuButton
 import com.tempobox.ui.components.SwipeableLibraryItem
@@ -239,7 +239,7 @@ private fun ArtistsTab(
         }
 
         if (layout == ViewLayout.CARD) {
-            LazyVerticalGrid(
+            FastScrollLazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 160.dp),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
@@ -283,7 +283,7 @@ private fun ArtistsTab(
                 }
             }
         } else {
-            LazyColumn(Modifier.fillMaxSize()) {
+            FastScrollLazyColumn(Modifier.fillMaxSize()) {
                 items(artists, key = { it.name }) { artist ->
                     val item = LibraryItem.ArtistItem(artist, byAlbumArtist)
                     SwipeableLibraryItem(item, ui.swipeLeft, ui.swipeRight, actions) {
@@ -320,7 +320,7 @@ fun AlbumsTab(
     onOpenAlbum: (String, String) -> Unit,
 ) {
     if (layout == ViewLayout.CARD) {
-        LazyVerticalGrid(
+        FastScrollLazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 160.dp),
             modifier = Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
@@ -365,7 +365,7 @@ fun AlbumsTab(
             }
         }
     } else {
-        LazyColumn(Modifier.fillMaxSize()) {
+        FastScrollLazyColumn(Modifier.fillMaxSize()) {
             items(albums, key = { "${it.albumArtist}|${it.name}" }) { album ->
                 val item = LibraryItem.AlbumItem(album)
                 SwipeableLibraryItem(item, swipeLeft, swipeRight, actions) {
@@ -401,7 +401,7 @@ fun GenresTab(
     onOpenGenre: (String) -> Unit,
 ) {
     if (layout == ViewLayout.CARD) {
-        LazyVerticalGrid(
+        FastScrollLazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 160.dp),
             modifier = Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
@@ -444,7 +444,7 @@ fun GenresTab(
             }
         }
     } else {
-        LazyColumn(Modifier.fillMaxSize()) {
+        FastScrollLazyColumn(Modifier.fillMaxSize()) {
             items(genres, key = { it.name }) { genre ->
                 val item = LibraryItem.GenreItem(genre)
                 SwipeableLibraryItem(item, swipeLeft, swipeRight, actions) {
@@ -478,7 +478,7 @@ fun TracksTab(
     swipeLeft: SwipeAction,
     swipeRight: SwipeAction,
 ) {
-    LazyColumn(Modifier.fillMaxSize()) {
+    FastScrollLazyColumn(Modifier.fillMaxSize()) {
         itemsIndexed(tracks, key = { _, t -> t.id }) { index, track ->
             val item = LibraryItem.TrackItem(track)
             SwipeableLibraryItem(item, swipeLeft, swipeRight, actions) {
@@ -540,7 +540,7 @@ fun PlaylistsTab(
                 Text("New auto playlist")
             }
         }
-        LazyColumn(Modifier.fillMaxSize()) {
+        FastScrollLazyColumn(Modifier.fillMaxSize()) {
             items(playlists, key = { it.id }) { playlist ->
                 val item = LibraryItem.PlaylistItem(playlist)
                 SwipeableLibraryItem(item, swipeLeft, swipeRight, actions) {

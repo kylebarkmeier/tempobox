@@ -89,6 +89,31 @@ keyed per view type. Playlist sorting is view-only: the detail ViewModel
 applies `SortSpec.sortTracks` to the displayed list and never writes a sorted
 order back through `PlaylistRepository`.
 
+### Fast scrolling
+
+Compose ships no scrollbar, so the library lists share one:
+[`FastScrollbar.kt`](../../app/src/main/kotlin/com/tempobox/ui/components/FastScrollbar.kt)
+provides `FastScrollLazyColumn` / `FastScrollLazyVerticalGrid`, drop-in
+wrappers that overlay a draggable thumb at the right edge of a `LazyColumn` /
+`LazyVerticalGrid`. The thumb mirrors viewport position and size, shows up
+while scrolling, hides two seconds after the last movement, and dragging it
+jumps the list (`scrollToItem` with index + pixel offset). All geometry is in
+[`ScrollbarMath`](../../app/src/main/kotlin/com/tempobox/ui/components/ScrollbarMath.kt)
+(pure, JVM-tested in `ScrollbarMathTest`): thumb fraction/size from the lazy
+layout's visible window, and the drag-position-to-item mapping, both working
+on the average visible line height so variable item heights stay a good
+approximation. Grids map the thumb to rows (`lineCount`), with the column
+count read from the visible items.
+
+Gesture safety is the reason the scrollbar is not composed at all while
+hidden: nothing overlays the rows, so swipe actions, long-press multi-select
+and the 3-dot menus keep their full hit areas. While visible, only the
+thumb-sized strip grabs input. Thumb drags call `scrollToItem` directly,
+which bypasses nested scroll, so dragging the queue's scrollbar never pulls
+the Now Playing sheet (§5). The wrappers are attached to the six library
+tabs (list and card layouts), the detail lists, and `QueuePanel`; short fixed
+lists (settings, dialogs) stay plain.
+
 ## 2. The single action layer
 
 The core UI design decision: **every content action in the app is implemented
@@ -310,3 +335,5 @@ is configuration-driven in two ways
   [`HiltTestRunner`](../../app/src/androidTest/kotlin/com/tempobox/HiltTestRunner.kt)
   and `GrantPermissionRule` to pre-grant runtime permissions. CI runs these on
   an emulator for pushes to `main` ([deep dive 10](10-build-and-ci.md)).
+  `FastScrollbarFlowTest` covers the fast scrollbar on a 60-track list:
+  hidden at rest, shown on scroll, and a thumb drag jumps to the list's end.
