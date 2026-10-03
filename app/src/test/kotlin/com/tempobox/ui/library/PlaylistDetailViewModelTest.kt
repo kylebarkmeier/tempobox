@@ -95,4 +95,24 @@ class PlaylistDetailViewModelTest {
         viewModel.removeEntry(1)
         coVerify { playlistRepository.replacePlaylistTracks(1, listOf(3L, 2L)) }
     }
+
+    @Test
+    fun `search filters the display and never writes the playlist`() {
+        viewModel.setSearchQuery("alp")
+        assertThat(viewModel.tracks.value.map { it.title }).containsExactly("Alpha")
+
+        viewModel.setSearchQuery("")
+        assertThat(viewModel.tracks.value).hasSize(3)
+        coVerify(exactly = 0) { playlistRepository.replacePlaylistTracks(any(), any()) }
+    }
+
+    @Test
+    fun `removeEntry under an active search removes the right stored entry`() {
+        viewModel.setSearchQuery("bravo")
+
+        // Displayed row 0 is "Bravo" (id 2); stored order must lose id 2 only.
+        viewModel.removeEntry(0)
+
+        coVerify { playlistRepository.replacePlaylistTracks(1, listOf(3L, 1L)) }
+    }
 }

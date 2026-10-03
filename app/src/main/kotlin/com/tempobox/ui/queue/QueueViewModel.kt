@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tempobox.model.NowPlayingState
 import com.tempobox.model.QueueItem
+import com.tempobox.model.filterQueueItems
 import com.tempobox.playback.PlayerConnection
 import com.tempobox.settings.SettingsRepository
 import com.tempobox.ui.library.LibraryItem
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
@@ -28,6 +30,24 @@ class QueueViewModel @Inject constructor(
 
     val queue: StateFlow<List<QueueItem>> = player.queue
     val state: StateFlow<NowPlayingState> = player.state
+
+    /**
+     * Free-form search over the queue list. View-only and transient: it
+     * narrows [visibleQueue], never the actual player queue, and the panel
+     * clears it on dispose. Playback, removal, and selection all address
+     * items by uid, so they stay correct while the view is filtered.
+     */
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
+    /** The queue as displayed: the full queue narrowed by the search query. */
+    val visibleQueue: StateFlow<List<QueueItem>> =
+        combine(queue, _searchQuery) { items, query -> items.filterQueueItems(query) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, queue.value)
 
     /** Selected uids, or null when multi-select is off. */
     private val _selection = MutableStateFlow<Set<Long>?>(null)

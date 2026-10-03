@@ -114,6 +114,29 @@ the Now Playing sheet (§5). The wrappers are attached to the six library
 tabs (list and card layouts), the detail lists, and `QueuePanel`; short fixed
 lists (settings, dialogs) stay plain.
 
+### List search
+
+Every list view (the six main tabs, all detail screens, and the queue panel)
+also has free-form search: a search icon in the top bar swaps the title for an
+inline text field
+([`SearchBar.kt`](../../app/src/main/kotlin/com/tempobox/ui/components/SearchBar.kt)),
+and typing filters the visible list live. Matching is a case- and
+diacritic-insensitive substring over the fields that identify the row type
+(tracks and queue entries: title/artist/album; albums: name/album artist;
+artists, genres, playlists: name). It lives in `core:model`
+([`Searching.kt`](../../core/model/src/main/kotlin/com/tempobox/model/Searching.kt))
+as pure functions, pinned by JVM tests (`SearchingTest`). The owning
+ViewModels apply the filter to the already-observed lists, after the sort, so
+the UI never requeries and the sort order survives inside the results.
+
+The query is transient view state, like the subview sorts but shorter-lived:
+it is never persisted, the main screen clears it on dismiss or tab change,
+detail queries die with their ViewModel on back navigation, and the queue
+panel clears its query on dispose. Queue search narrows only the displayed
+list (`QueueViewModel.visibleQueue`); playback, removal, and selection address
+queue items by uid, so they stay correct while the view is filtered, and the
+playing-row highlight matches by uid rather than list index.
+
 ## 2. The single action layer
 
 The core UI design decision: **every content action in the app is implemented

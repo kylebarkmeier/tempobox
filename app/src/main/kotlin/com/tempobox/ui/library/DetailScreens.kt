@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -30,15 +31,19 @@ import com.tempobox.model.ViewLayout
 import com.tempobox.model.sortKeys
 import com.tempobox.ui.components.ActionDialogHost
 import com.tempobox.ui.components.FastScrollLazyColumn
+import com.tempobox.ui.components.SearchIconButton
+import com.tempobox.ui.components.SearchTitleField
 import com.tempobox.ui.components.SortMenuButton
 import com.tempobox.ui.components.TrackRow
 
 /**
- * Detail screens share one scaffold: back button, play/shuffle and the same
- * sort menu as the main tabs in the bar, the standard action layer, and the
- * same tab/list building blocks as the main library — no duplicated list
- * logic. [sortMenu] is a slot because tabbed details (artist, genre) swap the
- * menu with the active tab.
+ * Detail screens share one scaffold: back button, search, play/shuffle and
+ * the same sort menu as the main tabs in the bar, the standard action layer,
+ * and the same tab/list building blocks as the main library (no duplicated
+ * list logic). [sortMenu] is a slot because tabbed details (artist, genre)
+ * swap the menu with the active tab. Search mirrors the main tabs: the icon
+ * swaps the title for a field whose query the detail ViewModel holds, and it
+ * resets when the screen is left (the ViewModel dies on back navigation).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,18 +52,37 @@ private fun DetailScaffold(
     item: LibraryItem?,
     actions: LibraryActionsViewModel,
     onBack: () -> Unit,
+    searchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
     sortMenu: @Composable () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
+    var searching by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text(title, maxLines = 1) },
+            title = {
+                if (searching) {
+                    SearchTitleField(
+                        query = searchQuery,
+                        onQueryChange = onSearchQueryChange,
+                        onClose = {
+                            searching = false
+                            onSearchQueryChange("")
+                        },
+                    )
+                } else {
+                    Text(title, maxLines = 1)
+                }
+            },
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                 }
             },
             actions = {
+                if (!searching) {
+                    SearchIconButton(onClick = { searching = true })
+                }
                 if (item != null) {
                     IconButton(onClick = { actions.play(item) }) {
                         Icon(Icons.Filled.PlayArrow, contentDescription = "Play $title")
@@ -122,6 +146,8 @@ fun ArtistDetailScreen(
         item = artistItem,
         actions = actions,
         onBack = onBack,
+        searchQuery = viewModel.searchQuery.collectAsState().value,
+        onSearchQueryChange = viewModel::setSearchQuery,
         sortMenu = {
             if (tab == 0) {
                 SubviewSortMenu(LibrarySubview.ARTIST_ALBUMS, albumsSort, viewModel::setAlbumsSort)
@@ -190,6 +216,8 @@ fun AlbumDetailScreen(
         item = albumItem,
         actions = actions,
         onBack = onBack,
+        searchQuery = viewModel.searchQuery.collectAsState().value,
+        onSearchQueryChange = viewModel::setSearchQuery,
         sortMenu = {
             SubviewSortMenu(LibrarySubview.ALBUM_TRACKS, tracksSort, viewModel::setTracksSort)
         },
@@ -235,6 +263,8 @@ fun GenreDetailScreen(
         item = genreItem,
         actions = actions,
         onBack = onBack,
+        searchQuery = viewModel.searchQuery.collectAsState().value,
+        onSearchQueryChange = viewModel::setSearchQuery,
         sortMenu = {
             when (tab) {
                 0 -> SubviewSortMenu(LibrarySubview.GENRE_ARTISTS, artistsSort, viewModel::setArtistsSort)
@@ -301,6 +331,8 @@ fun PlaylistDetailScreen(
         item = item,
         actions = actions,
         onBack = onBack,
+        searchQuery = viewModel.searchQuery.collectAsState().value,
+        onSearchQueryChange = viewModel::setSearchQuery,
         sortMenu = {
             // View-only: changes how the list reads, never the stored order.
             SubviewSortMenu(LibrarySubview.PLAYLIST_TRACKS, tracksSort, viewModel::setTracksSort)
