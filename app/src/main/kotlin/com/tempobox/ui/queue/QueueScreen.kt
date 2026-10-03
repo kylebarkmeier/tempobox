@@ -36,6 +36,7 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +55,8 @@ import com.tempobox.ui.components.ActionDialogHost
 import com.tempobox.ui.components.ConfirmDialog
 import com.tempobox.ui.components.FastScrollLazyColumn
 import com.tempobox.ui.components.LibraryItemMenu
+import com.tempobox.ui.components.SearchIconButton
+import com.tempobox.ui.components.SearchTitleField
 import com.tempobox.ui.components.TrackArt
 import com.tempobox.ui.library.LibraryActionsViewModel
 import com.tempobox.ui.library.LibraryItem
@@ -84,6 +87,7 @@ fun QueuePanel(onBack: (() -> Unit)? = null, hostActionDialogs: Boolean = true) 
     val actions: LibraryActionsViewModel = hiltViewModel()
 
     val queue by viewModel.queue.collectAsState()
+    val visibleQueue by viewModel.visibleQueue.collectAsState()
     val state by viewModel.state.collectAsState()
     val selection by viewModel.selection.collectAsState()
     val confirmClear by viewModel.confirmClear.collectAsState()
@@ -91,9 +95,31 @@ fun QueuePanel(onBack: (() -> Unit)? = null, hostActionDialogs: Boolean = true) 
 
     var showClearDialog by rememberSaveable { mutableStateOf(false) }
 
+    // Transient search over the queue view. The panel is hosted both as a
+    // screen and inside the Now Playing sheet, so clear the shared ViewModel's
+    // query whenever this instance leaves composition.
+    var searching by rememberSaveable { mutableStateOf(false) }
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.setSearchQuery("") }
+    }
+
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text(if (multiSelect) "${selection?.size ?: 0} selected" else "Queue (${queue.size})") },
+            title = {
+                when {
+                    multiSelect -> Text("${selection?.size ?: 0} selected")
+                    searching -> SearchTitleField(
+                        query = searchQuery,
+                        onQueryChange = viewModel::setSearchQuery,
+                        onClose = {
+                            searching = false
+                            viewModel.setSearchQuery("")
+                        },
+                    )
+                    else -> Text("Queue (${queue.size})")
+                }
+            },
             navigationIcon = {
                 if (onBack != null) {
                     IconButton(onClick = onBack) {
@@ -117,6 +143,9 @@ fun QueuePanel(onBack: (() -> Unit)? = null, hostActionDialogs: Boolean = true) 
                         LibraryItemMenu(item = item, actions = actions)
                     }
                 } else {
+                    if (!searching) {
+                        SearchIconButton(onClick = { searching = true })
+                    }
                     // Clear queue (top of list, spec) + multi-select toggle.
                     IconButton(onClick = {
                         if (confirmClear) showClearDialog = true else viewModel.clearQueue()
@@ -138,11 +167,14 @@ fun QueuePanel(onBack: (() -> Unit)? = null, hostActionDialogs: Boolean = true) 
             },
         )
 
+        // With a search active the display index no longer matches the player
+        // queue index, so the playing row is identified by uid instead.
+        val currentUid = queue.getOrNull(state.queueIndex)?.uid
         FastScrollLazyColumn(Modifier.fillMaxSize()) {
-            itemsIndexed(queue, key = { _, item -> item.uid }) { index, item ->
+            itemsIndexed(visibleQueue, key = { _, item -> item.uid }) { _, item ->
                 QueueRow(
                     item = item,
-                    isCurrent = index == state.queueIndex,
+                    isCurrent = item.uid == currentUid,
                     isPlaying = state.isPlaying,
                     selected = selection?.contains(item.uid) == true,
                     multiSelect = multiSelect,

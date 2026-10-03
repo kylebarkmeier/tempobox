@@ -56,6 +56,8 @@ import com.tempobox.ui.components.CollectionRow
 import com.tempobox.ui.components.FastScrollLazyColumn
 import com.tempobox.ui.components.FastScrollLazyVerticalGrid
 import com.tempobox.ui.components.LibraryItemMenu
+import com.tempobox.ui.components.SearchIconButton
+import com.tempobox.ui.components.SearchTitleField
 import com.tempobox.ui.components.SortMenuButton
 import com.tempobox.ui.components.SwipeableLibraryItem
 import com.tempobox.ui.components.TextInputDialog
@@ -86,15 +88,37 @@ fun LibraryScreen(
     val sorts by viewModel.sorts.collectAsState()
     val ui by viewModel.uiSettings.collectAsState()
 
+    // Search is transient view state (like the session sorts): opening swaps
+    // the title for the field, dismissing or switching tabs restores the list.
+    var searching by rememberSaveable { mutableStateOf(false) }
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    val closeSearch = {
+        searching = false
+        viewModel.setSearchQuery("")
+    }
+
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text("Library") },
+            title = {
+                if (searching) {
+                    SearchTitleField(
+                        query = searchQuery,
+                        onQueryChange = viewModel::setSearchQuery,
+                        onClose = closeSearch,
+                    )
+                } else {
+                    Text("Library")
+                }
+            },
             navigationIcon = {
                 IconButton(onClick = openDrawer) {
                     Icon(Icons.Filled.Menu, contentDescription = "Open navigation")
                 }
             },
             actions = {
+                if (!searching) {
+                    SearchIconButton(onClick = { searching = true })
+                }
                 // Card/list switch for the artist, album & genre tabs (product spec).
                 when (selectedTab) {
                     LibraryTab.ALBUM_ARTISTS, LibraryTab.ARTISTS -> LayoutToggle(ui.artistLayout) {
@@ -119,7 +143,12 @@ fun LibraryScreen(
             LibraryTab.entries.forEach { tab ->
                 Tab(
                     selected = tab == selectedTab,
-                    onClick = { selectedTab = tab },
+                    onClick = {
+                        if (tab != selectedTab) {
+                            selectedTab = tab
+                            closeSearch()
+                        }
+                    },
                     text = { Text(tabLabel(tab)) },
                 )
             }

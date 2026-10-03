@@ -115,4 +115,18 @@ class QueueViewModelTest {
         viewModel.remove(9)
         verify { player.removeQueueItems(listOf(9L)) }
     }
+
+    @Test
+    fun `search narrows the visible queue but never the real queue`() {
+        queueFlow.value = listOf(item(1, "Alpha"), item(2, "Beta"), item(3, "Alphabet"))
+
+        viewModel.setSearchQuery("alpha")
+        assertThat(viewModel.visibleQueue.value.map { it.track.title })
+            .containsExactly("Alpha", "Alphabet").inOrder()
+        assertThat(viewModel.queue.value).hasSize(3)
+        verify(exactly = 0) { player.removeQueueItems(any()) }
+
+        viewModel.setSearchQuery("")
+        assertThat(viewModel.visibleQueue.value).hasSize(3)
+    }
 }

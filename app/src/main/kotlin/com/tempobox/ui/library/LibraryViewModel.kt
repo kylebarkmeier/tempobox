@@ -12,6 +12,11 @@ import com.tempobox.model.Playlist
 import com.tempobox.model.SortSpec
 import com.tempobox.model.Track
 import com.tempobox.model.ViewLayout
+import com.tempobox.model.filterAlbums
+import com.tempobox.model.filterArtists
+import com.tempobox.model.filterGenres
+import com.tempobox.model.filterPlaylists
+import com.tempobox.model.filterTracks
 import com.tempobox.settings.SettingsRepository
 import com.tempobox.settings.UiSettings
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -50,6 +55,19 @@ class LibraryViewModel @Inject constructor(
         _sorts.value = _sorts.value + (tab to spec)
     }
 
+    /**
+     * Free-form search over the visible tab. Transient view state like the
+     * sorts: never persisted, cleared by the UI when search is dismissed or
+     * the tab changes. One query is enough because only one tab shows at a
+     * time, and it filters after the repository sort so sort order is kept.
+     */
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
     /** Genre sub-filter for the Album Artists tab (null = all genres). */
     val artistGenreFilter = MutableStateFlow<String?>(null)
 
@@ -78,10 +96,12 @@ class LibraryViewModel @Inject constructor(
 
     val tracks: StateFlow<List<Track>> = sortFlow(LibraryTab.TRACKS)
         .flatMapLatest { libraryRepository.observeTracks(it) }
+        .combine(_searchQuery) { list, query -> list.filterTracks(query) }
         .stateInList()
 
     val albums: StateFlow<List<Album>> = sortFlow(LibraryTab.ALBUMS)
         .flatMapLatest { libraryRepository.observeAlbums(sort = it) }
+        .combine(_searchQuery) { list, query -> list.filterAlbums(query) }
         .stateInList()
 
     val artists: StateFlow<List<AlbumArtist>> =
@@ -89,6 +109,7 @@ class LibraryViewModel @Inject constructor(
             .flatMapLatest { (sort, genre) ->
                 libraryRepository.observeAlbumArtists(genre = genre, sort = sort)
             }
+            .combine(_searchQuery) { list, query -> list.filterArtists(query) }
             .stateInList()
 
     /** Track-artist aggregation for the Artists tab. */
@@ -97,13 +118,16 @@ class LibraryViewModel @Inject constructor(
             .flatMapLatest { (sort, genre) ->
                 libraryRepository.observeTrackArtists(genre = genre, sort = sort)
             }
+            .combine(_searchQuery) { list, query -> list.filterArtists(query) }
             .stateInList()
 
     val genres: StateFlow<List<Genre>> = sortFlow(LibraryTab.GENRES)
         .flatMapLatest { libraryRepository.observeGenres(sort = it) }
+        .combine(_searchQuery) { list, query -> list.filterGenres(query) }
         .stateInList()
 
     val playlists: StateFlow<List<Playlist>> = playlistRepository.observePlaylists()
+        .combine(_searchQuery) { list, query -> list.filterPlaylists(query) }
         .stateInList()
 
     /** All known genre names (for the artist tab's filter chips). */

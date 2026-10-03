@@ -43,6 +43,10 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
 - Fast scrolling: every library list and grid (and the queue) shows a
   draggable scrollbar at the right edge while scrolling; drag the thumb to
   jump anywhere in a long list
+- Search in every list: a search icon in each view's top bar (main tabs,
+  detail views, and the play queue) filters the visible list as you type.
+  Matching ignores case and accents, looks at title/artist/album for tracks
+  and names elsewhere, and keeps the current sort order
 - Per-track 1-5★ ratings and play counts
 - In-app ID3/Vorbis/MP4 tag editing, single track or bulk
 - Remove-from-library and delete-from-device (both behind confirmations)
