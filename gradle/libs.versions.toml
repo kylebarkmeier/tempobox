@@ -4,7 +4,7 @@
 
 [versions]
 # --- Build tooling ---
-agp = "9.3.1"                     # Android Gradle Plugin (needs Gradle >= 9.5.0)
+agp = "9.4.1"                     # Android Gradle Plugin (needs Gradle >= 9.5.0)
 kotlin = "2.4.20"
 # KSP 2.3.x is versioned independently of Kotlin (no version-prefix matching anymore);
 # 2.3.1+ is required for AGP 9 built-in Kotlin, with AGP-9 fixes landing through 2.3.10.
