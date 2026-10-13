@@ -118,8 +118,13 @@ class LibraryRepository @Inject constructor(
         sinceMs: Long? = null,
         sort: SortSpec = SortSpec(),
     ): Flow<List<AlbumArtist>> =
-        trackDao.observeAlbumArtists(genre, sinceMs).map { rows ->
-            rows.map { it.toModel() }.sortedWith(artistComparator(sort))
+        combine(
+            trackDao.observeAlbumArtists(genre, sinceMs),
+            trackDao.observeAlbumArtistAlbumArt(),
+        ) { rows, artRows ->
+            val artByArtist = AlbumCollage.topArtPathsByKey(artRows)
+            rows.map { it.toModel(artworkTrackPaths = artByArtist[it.name].orEmpty()) }
+                .sortedWith(artistComparator(sort))
         }
 
     /** Track-artist aggregation (the Artists tab; album artists are separate). */
@@ -127,13 +132,18 @@ class LibraryRepository @Inject constructor(
         genre: String? = null,
         sort: SortSpec = SortSpec(),
     ): Flow<List<AlbumArtist>> =
-        trackDao.observeTrackArtists(genre).map { rows ->
-            rows.map { it.toModel() }.sortedWith(artistComparator(sort))
+        combine(
+            trackDao.observeTrackArtists(genre),
+            trackDao.observeTrackArtistAlbumArt(),
+        ) { rows, artRows ->
+            val artByArtist = AlbumCollage.topArtPathsByKey(artRows)
+            rows.map { it.toModel(artworkTrackPaths = artByArtist[it.name].orEmpty()) }
+                .sortedWith(artistComparator(sort))
         }
 
     fun observeGenres(sinceMs: Long? = null, sort: SortSpec = SortSpec()): Flow<List<Genre>> =
         combine(trackDao.observeGenres(sinceMs), trackDao.observeGenreAlbumArt()) { rows, artRows ->
-            val artByGenre = GenreCollage.topArtPathsByGenre(artRows)
+            val artByGenre = AlbumCollage.topArtPathsByKey(artRows)
             val base = rows.map { it.toModel(artworkTrackPaths = artByGenre[it.name].orEmpty()) }
             when (sort.key) {
                 SortKey.RECENTLY_ADDED, SortKey.LAST_MODIFIED ->

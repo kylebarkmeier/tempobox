@@ -243,11 +243,41 @@ class TrackDaoTest {
         )
         val rows = dao.observeGenreAlbumArt().first()
         assertThat(rows).hasSize(3)
-        val rockA = rows.single { it.genreName == "Rock" && it.album == "A" }
+        val rockA = rows.single { it.groupKey == "Rock" && it.album == "A" }
         assertThat(rockA.playCount).isEqualTo(5) // summed across the album's tracks
         assertThat(rockA.trackCount).isEqualTo(2)
         assertThat(rockA.artworkTrackPath).isEqualTo("/r1.mp3") // only the track WITH art
-        assertThat(rows.single { it.genreName == "Jazz" }.artworkTrackPath).isEqualTo("/j1.mp3")
+        assertThat(rows.single { it.groupKey == "Jazz" }.artworkTrackPath).isEqualTo("/j1.mp3")
+    }
+
+    @Test
+    fun `album artist album art yields one row per album, not per track`() = runTest {
+        dao.upsertKeepingUserData(
+            listOf(
+                entity("/a1.mp3", albumArtist = "X", album = "A", playCount = 1, hasArt = true),
+                entity("/a2.mp3", albumArtist = "X", album = "A", playCount = 2, hasArt = true),
+                entity("/b1.mp3", albumArtist = "X", album = "B", playCount = 0, hasArt = true),
+                entity("/bare.mp3", albumArtist = "X", album = "Bare", hasArt = false),
+            ),
+        )
+        val rows = dao.observeAlbumArtistAlbumArt().first()
+        assertThat(rows.map { it.album }).containsExactly("A", "B")
+        val a = rows.single { it.album == "A" }
+        assertThat(a.groupKey).isEqualTo("X")
+        assertThat(a.artworkTrackPath).isEqualTo("/a1.mp3")
+        assertThat(a.playCount).isEqualTo(3)
+    }
+
+    @Test
+    fun `track artist album art falls back to the album artist for blank artists`() = runTest {
+        dao.upsertKeepingUserData(
+            listOf(
+                entity("/1.mp3", artist = "Solo", albumArtist = "Band", album = "A", hasArt = true),
+                entity("/2.mp3", artist = "", albumArtist = "Band", album = "A", hasArt = true),
+            ),
+        )
+        val rows = dao.observeTrackArtistAlbumArt().first()
+        assertThat(rows.map { it.groupKey }).containsExactly("Band", "Solo")
     }
 
     @Test
@@ -269,7 +299,7 @@ class TrackDaoTest {
             listOf(entity("/1.mp3", genre = "", album = "A", hasArt = true)),
         )
         val row = dao.observeGenreAlbumArt().first().single()
-        assertThat(row.genreName).isEqualTo("Unknown Genre")
+        assertThat(row.groupKey).isEqualTo("Unknown Genre")
     }
 
     @Test
