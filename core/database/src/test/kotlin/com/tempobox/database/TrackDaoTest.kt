@@ -269,6 +269,23 @@ class TrackDaoTest {
     }
 
     @Test
+    fun `album artist album art honors the genre and cutoff filters`() = runTest {
+        dao.upsertKeepingUserData(
+            listOf(
+                entity("/rock.mp3", albumArtist = "X", album = "RockAlbum", genre = "Rock", added = 900, hasArt = true),
+                entity("/jazz.mp3", albumArtist = "X", album = "JazzAlbum", genre = "Jazz", added = 900, hasArt = true),
+                entity("/old.mp3", albumArtist = "X", album = "OldAlbum", genre = "Rock", added = 100, hasArt = true),
+            ),
+        )
+        assertThat(dao.observeAlbumArtistAlbumArt(genre = "Rock").first().map { it.album })
+            .containsExactly("RockAlbum", "OldAlbum")
+        assertThat(dao.observeAlbumArtistAlbumArt(sinceMs = 500).first().map { it.album })
+            .containsExactly("RockAlbum", "JazzAlbum")
+        assertThat(dao.observeTrackArtistAlbumArt(genre = "Jazz").first().map { it.album })
+            .containsExactly("JazzAlbum")
+    }
+
+    @Test
     fun `track artist album art falls back to the album artist for blank artists`() = runTest {
         dao.upsertKeepingUserData(
             listOf(

@@ -120,7 +120,7 @@ class LibraryRepository @Inject constructor(
     ): Flow<List<AlbumArtist>> =
         combine(
             trackDao.observeAlbumArtists(genre, sinceMs),
-            trackDao.observeAlbumArtistAlbumArt(),
+            trackDao.observeAlbumArtistAlbumArt(genre, sinceMs),
         ) { rows, artRows ->
             val artByArtist = AlbumCollage.topArtPathsByKey(artRows)
             rows.map { it.toModel(artworkTrackPaths = artByArtist[it.name].orEmpty()) }
@@ -134,7 +134,7 @@ class LibraryRepository @Inject constructor(
     ): Flow<List<AlbumArtist>> =
         combine(
             trackDao.observeTrackArtists(genre),
-            trackDao.observeTrackArtistAlbumArt(),
+            trackDao.observeTrackArtistAlbumArt(genre),
         ) { rows, artRows ->
             val artByArtist = AlbumCollage.topArtPathsByKey(artRows)
             rows.map { it.toModel(artworkTrackPaths = artByArtist[it.name].orEmpty()) }

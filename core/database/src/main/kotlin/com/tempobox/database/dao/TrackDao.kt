@@ -203,6 +203,8 @@ interface TrackDao {
     /**
      * Per-album-artist, per-album artwork rows feeding the artist collages:
      * one row (and so at most one collage slot) per album, not per track.
+     * Filters mirror [observeAlbumArtists] so a filtered artist list never
+     * shows artwork from outside the filter.
      */
     @Query(
         """
@@ -213,13 +215,18 @@ interface TrackDao {
                SUM(playCount) AS playCount,
                COUNT(*) AS trackCount
         FROM tracks
+        WHERE (:genre IS NULL OR (CASE WHEN genre = '' THEN 'Unknown Genre' ELSE genre END) = :genre)
+          AND (:sinceMs IS NULL OR dateAddedMs >= :sinceMs)
         GROUP BY albumArtist, album
         HAVING MIN(CASE WHEN hasEmbeddedArt THEN filePath ELSE NULL END) IS NOT NULL
         """,
     )
-    fun observeAlbumArtistAlbumArt(): Flow<List<CollageAlbumRow>>
+    fun observeAlbumArtistAlbumArt(
+        genre: String? = null,
+        sinceMs: Long? = null,
+    ): Flow<List<CollageAlbumRow>>
 
-    /** Track-artist variant of [observeAlbumArtistAlbumArt] (same fallback as [observeTrackArtists]). */
+    /** Track-artist variant of [observeAlbumArtistAlbumArt] (same fallback and filter as [observeTrackArtists]). */
     @Query(
         """
         SELECT (CASE WHEN artist = '' THEN albumArtist ELSE artist END) AS groupKey,
@@ -229,11 +236,12 @@ interface TrackDao {
                SUM(playCount) AS playCount,
                COUNT(*) AS trackCount
         FROM tracks
+        WHERE (:genre IS NULL OR (CASE WHEN genre = '' THEN 'Unknown Genre' ELSE genre END) = :genre)
         GROUP BY groupKey, album, albumArtist
         HAVING MIN(CASE WHEN hasEmbeddedArt THEN filePath ELSE NULL END) IS NOT NULL
         """,
     )
-    fun observeTrackArtistAlbumArt(): Flow<List<CollageAlbumRow>>
+    fun observeTrackArtistAlbumArt(genre: String? = null): Flow<List<CollageAlbumRow>>
 
     // ---------------------------------------------------------------- library-managed columns
 
