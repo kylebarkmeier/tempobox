@@ -39,12 +39,13 @@ data class AlbumArtistRow(
     val trackCount: Int,
     /** Comma-joined distinct genres (GROUP_CONCAT); split in the mapper. */
     val genresConcat: String?,
-    /** Comma-joined representative artwork paths (up to 4 used by the collage). */
-    val artPathsConcat: String?,
     val dateAddedMs: Long,
     val dateModifiedMs: Long,
 ) {
-    fun toModel(imageUrl: String? = null): AlbumArtist = AlbumArtist(
+    fun toModel(
+        imageUrl: String? = null,
+        artworkTrackPaths: List<String> = emptyList(),
+    ): AlbumArtist = AlbumArtist(
         name = name,
         albumCount = albumCount,
         trackCount = trackCount,
@@ -56,11 +57,7 @@ data class AlbumArtistRow(
             ?.sorted()
             .orEmpty(),
         imageUrl = imageUrl,
-        artworkTrackPaths = artPathsConcat?.split(GROUP_CONCAT_SEP)
-            ?.filter { it.isNotBlank() }
-            ?.distinct()
-            ?.take(4)
-            .orEmpty(),
+        artworkTrackPaths = artworkTrackPaths,
         dateAddedMs = dateAddedMs,
         dateModifiedMs = dateModifiedMs,
     )
@@ -90,13 +87,13 @@ data class GenreRow(
 }
 
 /**
- * One album inside one genre, with its artwork path and aggregate play count.
- * Input to the genre collage: the repository picks each genre's most played
- * albums from these rows. Albums without embedded art are filtered out by the
- * query itself.
+ * One album inside one collage group (a genre or an artist), with its artwork
+ * path and aggregate play count. Input to the collages: the repository picks
+ * each group's most played albums from these rows, one slot per album. Albums
+ * without embedded art are filtered out by the query itself.
  */
-data class GenreAlbumArtRow(
-    val genreName: String,
+data class CollageAlbumRow(
+    val groupKey: String,
     val album: String,
     val albumArtist: String,
     val artworkTrackPath: String,

@@ -9,7 +9,7 @@ import androidx.room.Update
 import com.tempobox.database.entity.TrackEntity
 import com.tempobox.database.pojo.AlbumArtistRow
 import com.tempobox.database.pojo.AlbumRow
-import com.tempobox.database.pojo.GenreAlbumArtRow
+import com.tempobox.database.pojo.CollageAlbumRow
 import com.tempobox.database.pojo.GenreRow
 import com.tempobox.database.pojo.TrackScanMeta
 import kotlinx.coroutines.flow.Flow
@@ -138,7 +138,6 @@ interface TrackDao {
                COUNT(DISTINCT album) AS albumCount,
                COUNT(*) AS trackCount,
                GROUP_CONCAT(CASE WHEN genre = '' THEN 'Unknown Genre' ELSE genre END, CHAR(31)) AS genresConcat,
-               GROUP_CONCAT(CASE WHEN hasEmbeddedArt THEN filePath ELSE NULL END, CHAR(31)) AS artPathsConcat,
                MAX(dateAddedMs) AS dateAddedMs,
                MAX(dateModifiedMs) AS dateModifiedMs
         FROM tracks
@@ -159,7 +158,6 @@ interface TrackDao {
                COUNT(DISTINCT album) AS albumCount,
                COUNT(*) AS trackCount,
                GROUP_CONCAT(CASE WHEN genre = '' THEN 'Unknown Genre' ELSE genre END, CHAR(31)) AS genresConcat,
-               GROUP_CONCAT(CASE WHEN hasEmbeddedArt THEN filePath ELSE NULL END, CHAR(31)) AS artPathsConcat,
                MAX(dateAddedMs) AS dateAddedMs,
                MAX(dateModifiedMs) AS dateModifiedMs
         FROM tracks
@@ -189,18 +187,61 @@ interface TrackDao {
      */
     @Query(
         """
-        SELECT (CASE WHEN genre = '' THEN 'Unknown Genre' ELSE genre END) AS genreName,
+        SELECT (CASE WHEN genre = '' THEN 'Unknown Genre' ELSE genre END) AS groupKey,
                album AS album,
                albumArtist AS albumArtist,
                MIN(CASE WHEN hasEmbeddedArt THEN filePath ELSE NULL END) AS artworkTrackPath,
                SUM(playCount) AS playCount,
                COUNT(*) AS trackCount
         FROM tracks
-        GROUP BY genreName, album, albumArtist
+        GROUP BY groupKey, album, albumArtist
         HAVING MIN(CASE WHEN hasEmbeddedArt THEN filePath ELSE NULL END) IS NOT NULL
         """,
     )
-    fun observeGenreAlbumArt(): Flow<List<GenreAlbumArtRow>>
+    fun observeGenreAlbumArt(): Flow<List<CollageAlbumRow>>
+
+    /**
+     * Per-album-artist, per-album artwork rows feeding the artist collages:
+     * one row (and so at most one collage slot) per album, not per track.
+     * Filters mirror [observeAlbumArtists] so a filtered artist list never
+     * shows artwork from outside the filter.
+     */
+    @Query(
+        """
+        SELECT albumArtist AS groupKey,
+               album AS album,
+               albumArtist AS albumArtist,
+               MIN(CASE WHEN hasEmbeddedArt THEN filePath ELSE NULL END) AS artworkTrackPath,
+               SUM(playCount) AS playCount,
+               COUNT(*) AS trackCount
+        FROM tracks
+        WHERE (:genre IS NULL OR (CASE WHEN genre = '' THEN 'Unknown Genre' ELSE genre END) = :genre)
+          AND (:sinceMs IS NULL OR dateAddedMs >= :sinceMs)
+        GROUP BY albumArtist, album
+        HAVING MIN(CASE WHEN hasEmbeddedArt THEN filePath ELSE NULL END) IS NOT NULL
+        """,
+    )
+    fun observeAlbumArtistAlbumArt(
+        genre: String? = null,
+        sinceMs: Long? = null,
+    ): Flow<List<CollageAlbumRow>>
+
+    /** Track-artist variant of [observeAlbumArtistAlbumArt] (same fallback and filter as [observeTrackArtists]). */
+    @Query(
+        """
+        SELECT (CASE WHEN artist = '' THEN albumArtist ELSE artist END) AS groupKey,
+               album AS album,
+               albumArtist AS albumArtist,
+               MIN(CASE WHEN hasEmbeddedArt THEN filePath ELSE NULL END) AS artworkTrackPath,
+               SUM(playCount) AS playCount,
+               COUNT(*) AS trackCount
+        FROM tracks
+        WHERE (:genre IS NULL OR (CASE WHEN genre = '' THEN 'Unknown Genre' ELSE genre END) = :genre)
+        GROUP BY groupKey, album, albumArtist
+        HAVING MIN(CASE WHEN hasEmbeddedArt THEN filePath ELSE NULL END) IS NOT NULL
+        """,
+    )
+    fun observeTrackArtistAlbumArt(genre: String? = null): Flow<List<CollageAlbumRow>>
 
     // ---------------------------------------------------------------- library-managed columns
 

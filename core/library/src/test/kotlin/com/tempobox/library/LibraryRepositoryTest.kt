@@ -282,6 +282,33 @@ class LibraryRepositoryTest {
     }
 
     @Test
+    fun `artist rows carry one artwork path per album, most played first`() = runTest {
+        suspend fun seedArt(path: String, album: String, plays: Long = 0) {
+            db.trackDao().insert(
+                Track(
+                    filePath = path, title = path, artist = "X", albumArtist = "X",
+                    album = album, playCount = plays, hasEmbeddedArt = true,
+                ).toEntity(),
+            )
+        }
+        // Four art-bearing tracks on one album must fill ONE collage slot, not four.
+        seedArt("/hit1.mp3", album = "Hit", plays = 9)
+        seedArt("/hit2.mp3", album = "Hit", plays = 9)
+        seedArt("/hit3.mp3", album = "Hit", plays = 9)
+        seedArt("/hit4.mp3", album = "Hit", plays = 9)
+        seedArt("/rare.mp3", album = "Rare", plays = 1)
+
+        val byAlbumArtist = repository.observeAlbumArtists().first().single()
+        assertThat(byAlbumArtist.artworkTrackPaths)
+            .containsExactly("/hit1.mp3", "/rare.mp3")
+            .inOrder()
+        val byTrackArtist = repository.observeTrackArtists().first().single()
+        assertThat(byTrackArtist.artworkTrackPaths)
+            .containsExactly("/hit1.mp3", "/rare.mp3")
+            .inOrder()
+    }
+
+    @Test
     fun `genres sort by recently added descending`() = runTest {
         seedFull("/1.mp3", genre = "Old", added = 100)
         seedFull("/2.mp3", genre = "New", added = 900)

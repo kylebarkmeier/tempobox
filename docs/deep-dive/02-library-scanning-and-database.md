@@ -73,24 +73,27 @@ Some details in the DAO:
 - Rows land in plain projection POJOs
   ([`AggregateRows.kt`](../../core/database/src/main/kotlin/com/tempobox/database/pojo/AggregateRows.kt));
   Room maps columns to fields by alias name.
-- Artist rows need *lists* (genres, up to 4 artwork paths for the collage),
-  which SQL can't return. The query `GROUP_CONCAT(..., CHAR(31))`s them with
-  the ASCII unit separator (a character that can't appear in genres or file
-  paths) and the mapper splits/dedups in Kotlin, because SQLite's
-  `GROUP_CONCAT` can't combine `DISTINCT` with a custom separator.
+- Artist rows need a *list* of genres, which SQL can't return. The query
+  `GROUP_CONCAT(..., CHAR(31))`s them with the ASCII unit separator (a
+  character that can't appear in a genre) and the mapper splits/dedups in
+  Kotlin, because SQLite's `GROUP_CONCAT` can't combine `DISTINCT` with a
+  custom separator.
 - Blank tags are normalized *inside the SQL* (`CASE WHEN genre = '' THEN
   'Unknown Genre' …`) so grouping and filtering agree with the Kotlin-side
   `Track.effectiveGenre`; a DAO comment pins the two together.
 - There are two artist aggregations: by `albumArtist` (the Album Artists tab)
   and by *track* artist with an albumArtist fallback (the Artists tab):
   same shape, different `GROUP BY` key.
-- Genre collages have their own aggregate (`observeGenreAlbumArt`): one row
-  per genre + album carrying the album's art path and summed play count
-  (albums with no embedded art are dropped in the `HAVING` clause). The
-  ranking (most played, then most tracks, then name) lives in
-  [`GenreCollage`](../../core/library/src/main/kotlin/com/tempobox/library/GenreCollage.kt),
-  which keeps the top 4 per genre; `LibraryRepository.observeGenres` combines
-  that with the plain genre rows.
+- The 2x2 collages (genre tiles, artist cards) have their own aggregates
+  (`observeGenreAlbumArt`, `observeAlbumArtistAlbumArt`,
+  `observeTrackArtistAlbumArt`): one row per group + album carrying the
+  album's art path and summed play count (albums with no embedded art are
+  dropped in the `HAVING` clause). One row per *album*, not per track, so a
+  collage never repeats one album's cover. The ranking (most played, then
+  most tracks, then name) lives in
+  [`AlbumCollage`](../../core/library/src/main/kotlin/com/tempobox/library/AlbumCollage.kt),
+  which keeps the top 4 per group; the `LibraryRepository` observers combine
+  that with the plain genre/artist rows.
 
 One deliberate oddity: **final sorting happens in Kotlin, not SQL**.
 [`LibraryRepository`](../../core/library/src/main/kotlin/com/tempobox/library/LibraryRepository.kt)

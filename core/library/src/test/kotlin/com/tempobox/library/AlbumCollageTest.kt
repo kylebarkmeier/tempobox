@@ -1,21 +1,21 @@
 package com.tempobox.library
 
 import com.google.common.truth.Truth.assertThat
-import com.tempobox.database.pojo.GenreAlbumArtRow
+import com.tempobox.database.pojo.CollageAlbumRow
 import org.junit.Test
 
-/** Pure JVM tests for the genre collage's top-album selection. */
-class GenreCollageTest {
+/** Pure JVM tests for the collage's top-album selection (genres and artists). */
+class AlbumCollageTest {
 
     private fun row(
-        genre: String = "Rock",
+        key: String = "Rock",
         album: String,
         artist: String = "Artist",
         path: String = "/$album.mp3",
         plays: Long = 0,
         tracks: Int = 10,
-    ) = GenreAlbumArtRow(
-        genreName = genre,
+    ) = CollageAlbumRow(
+        groupKey = key,
         album = album,
         albumArtist = artist,
         artworkTrackPath = path,
@@ -25,7 +25,7 @@ class GenreCollageTest {
 
     @Test
     fun `most played albums come first`() {
-        val paths = GenreCollage.topArtPathsByGenre(
+        val paths = AlbumCollage.topArtPathsByKey(
             listOf(
                 row(album = "Quiet", plays = 1),
                 row(album = "Loud", plays = 9),
@@ -36,16 +36,16 @@ class GenreCollageTest {
     }
 
     @Test
-    fun `at most four paths per genre`() {
+    fun `at most four paths per group`() {
         val rows = (1..6).map { row(album = "A$it", plays = it.toLong()) }
-        val paths = GenreCollage.topArtPathsByGenre(rows).getValue("Rock")
+        val paths = AlbumCollage.topArtPathsByKey(rows).getValue("Rock")
         assertThat(paths).hasSize(4)
         assertThat(paths.first()).isEqualTo("/A6.mp3") // highest play count leads
     }
 
     @Test
     fun `zero play counts fall back to track count, then album name`() {
-        val paths = GenreCollage.topArtPathsByGenre(
+        val paths = AlbumCollage.topArtPathsByKey(
             listOf(
                 row(album = "Single", tracks = 1),
                 row(album = "Zebra", tracks = 12),
@@ -58,7 +58,7 @@ class GenreCollageTest {
 
     @Test
     fun `alphabetical fallback is article-aware`() {
-        val paths = GenreCollage.topArtPathsByGenre(
+        val paths = AlbumCollage.topArtPathsByKey(
             listOf(
                 row(album = "The Bends"),
                 row(album = "Amnesiac"),
@@ -72,11 +72,11 @@ class GenreCollageTest {
     }
 
     @Test
-    fun `genres are ranked independently`() {
-        val result = GenreCollage.topArtPathsByGenre(
+    fun `groups are ranked independently`() {
+        val result = AlbumCollage.topArtPathsByKey(
             listOf(
-                row(genre = "Rock", album = "R", plays = 1),
-                row(genre = "Jazz", album = "J", plays = 99),
+                row(key = "Rock", album = "R", plays = 1),
+                row(key = "Jazz", album = "J", plays = 99),
             ),
         )
         assertThat(result.getValue("Rock")).containsExactly("/R.mp3")
@@ -90,13 +90,13 @@ class GenreCollageTest {
             row(album = "A", plays = 2),
             row(album = "C", plays = 2),
         )
-        val forward = GenreCollage.topArtPathsByGenre(rows).getValue("Rock")
-        val backward = GenreCollage.topArtPathsByGenre(rows.reversed()).getValue("Rock")
+        val forward = AlbumCollage.topArtPathsByKey(rows).getValue("Rock")
+        val backward = AlbumCollage.topArtPathsByKey(rows.reversed()).getValue("Rock")
         assertThat(forward).isEqualTo(backward)
     }
 
     @Test
-    fun `no rows yields no entry, leaving the genre art empty`() {
-        assertThat(GenreCollage.topArtPathsByGenre(emptyList())).isEmpty()
+    fun `no rows yields no entry, leaving the group art empty`() {
+        assertThat(AlbumCollage.topArtPathsByKey(emptyList())).isEmpty()
     }
 }
