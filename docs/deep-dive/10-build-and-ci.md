@@ -102,7 +102,7 @@ version strings in build files.
 The catalog doubles as a compatibility ledger: its comments record *why*
 floors exist, which is gold when bumping:
 
-- `agp = 9.3.1` needs Gradle ≥ 9.5.0; KSP `2.3.x` is versioned independently
+- `agp = 9.4.1` needs Gradle ≥ 9.6.0 (the wrapper is 9.8.0); KSP `2.3.x` is versioned independently
   of Kotlin now, with ≥ 2.3.1 required for AGP 9's built-in Kotlin;
 - Room ≥ 2.8 because 2.6 predates KSP2 ("unexpected jvm signature V");
   `room-ktx` is gone (merged into runtime in 2.7);
@@ -110,9 +110,9 @@ floors exist, which is gold when bumping:
   found");
 - `compileSdk = 37` is forced by core-ktx 1.19 / Compose 1.12 / navigation
   2.10; `minSdk = 26` is jaudiotagger's `java.nio` floor;
-- Robolectric 4.14 supports at most SDK 35 → the per-module
-  `robolectric.properties` pin (`sdk=35`), since Robolectric otherwise
-  inherits compileSdk ([deep dive 7 §5](07-settings.md)).
+- Robolectric 4.17 emulates SDK 36+ only on a JDK 21 runtime, and CI tests
+  on JDK 17 → the per-module `robolectric.properties` pin (`sdk=35`), since
+  Robolectric otherwise inherits compileSdk ([deep dive 7 §5](07-settings.md)).
 
 ## 4. App module specifics
 

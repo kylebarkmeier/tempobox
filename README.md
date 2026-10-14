@@ -81,7 +81,7 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
 
 ## Requirements
 
-- **Android Studio** / **IntelliJ IDEA** recent enough for AGP 9.3 (2025.2+),
+- **Android Studio** / **IntelliJ IDEA** recent enough for AGP 9.4,
   or VS Code (see below)
 - **JDK 17+** (the Gradle toolchain targets 17)
 - **Android SDK** with platform 37 (`compileSdk 37`); minimum device API is 26

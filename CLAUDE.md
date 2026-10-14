@@ -4,7 +4,7 @@ Concise context for AI agents (and humans) working on this repo. Design rational
 
 ## What this is
 Android music player. Kotlin 2.4 / Jetpack Compose / Material 3 / Media3 (ExoPlayer) / Room / Hilt / DataStore.
-Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.5.0 + AGP 9.3.1 (built-in Kotlin, no kotlin-android plugin), convention plugins in `build-logic/`.
+Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.8.0 + AGP 9.4.1 (built-in Kotlin, no kotlin-android plugin), convention plugins in `build-logic/`.
 
 ## Module map (dependencies point downward only)
 - `core:model`: pure Kotlin data types. No Android deps. Everything depends on it.
@@ -54,7 +54,7 @@ Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.5
 
 ## Gotchas
 - jaudiotagger: use `AndroidArtwork` (never awt-based artwork classes); requires `minSdk 26` (java.nio).
-- Robolectric 4.14 supports at most SDK 35 (compileSdk is 37): each module with Robolectric tests pins `sdk=35` in `src/test/resources/robolectric.properties`.
+- Robolectric tests pin `sdk=35` in each module's `src/test/resources/robolectric.properties`: Robolectric 4.17 can emulate SDK 36+ only on a JDK 21 runtime, and CI runs tests on JDK 17.
 - Media3: the service side is a `MediaSessionService`; UI code always goes through `PlayerConnection` (never a raw ExoPlayer reference in composables).
 - Never loop per-item timeline ops (`moveMediaItem`/`removeMediaItem`) over a queue: each timeline change re-broadcasts the whole queue to Bluetooth AVRCP, which can OOM the BT stack and ANR the app. Batch through `QueueReorder`.
 - CodeQL cannot parse Kotlin 2.4 yet, so the CodeQL workflow scans only the `actions` language. Re-enable `java-kotlin` when the extractor catches up.

@@ -262,8 +262,8 @@ Everything above tests on the JVM, no emulator:
   [`TrackDaoTest`](../../core/database/src/test/kotlin/com/tempobox/database/TrackDaoTest.kt)
   and [`MediaScannerTest`](../../core/library/src/test/kotlin/com/tempobox/library/MediaScannerTest.kt).
   Each such module pins `sdk=35` in `src/test/resources/robolectric.properties`
-  because Robolectric 4.14 doesn't support SDK 37 (the compileSdk) yet, an
-  easy thing to trip over when bumping compileSdk.
+  because Robolectric 4.17 emulates SDK 36+ only on a JDK 21 runtime and CI
+  tests on JDK 17, an easy thing to trip over when bumping compileSdk.
 - Tag IO is faked by
   [`FakeTagIO`](../../core/library/src/test/kotlin/com/tempobox/library/Fakes.kt),
   which derives "tags" from the file name (`Artist__Album__Title.mp3`), so
