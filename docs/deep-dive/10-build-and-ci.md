@@ -110,7 +110,7 @@ floors exist, which is gold when bumping:
   found");
 - `compileSdk = 37` is forced by core-ktx 1.19 / Compose 1.12 / navigation
   2.10; `minSdk = 26` is jaudiotagger's `java.nio` floor;
-- Robolectric 4.17 emulates SDK 36+ only on a JDK 21 runtime, and CI tests
+- Robolectric 4.17 needs at least JDK 21 to emulate SDK 36+, and CI tests
   on JDK 17 → the per-module `robolectric.properties` pin (`sdk=35`), since
   Robolectric otherwise inherits compileSdk ([deep dive 7 §5](07-settings.md)).
 

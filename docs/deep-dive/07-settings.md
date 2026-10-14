@@ -179,5 +179,5 @@ dispatcher (so execution stays deterministic), explicit cancel in `@After`.
 
 And the module-level pin that applies to every Robolectric suite here:
 `core/settings/src/test/resources/robolectric.properties` sets `sdk=35`
-because Robolectric 4.17 needs a JDK 21 runtime to emulate SDK 36+ and CI
+because Robolectric 4.17 needs at least JDK 21 to emulate SDK 36+ and CI
 tests on JDK 17 ([deep dive 10](10-build-and-ci.md)).

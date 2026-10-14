@@ -54,7 +54,7 @@ Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.8
 
 ## Gotchas
 - jaudiotagger: use `AndroidArtwork` (never awt-based artwork classes); requires `minSdk 26` (java.nio).
-- Robolectric tests pin `sdk=35` in each module's `src/test/resources/robolectric.properties`: Robolectric 4.17 can emulate SDK 36+ only on a JDK 21 runtime, and CI runs tests on JDK 17.
+- Robolectric tests pin `sdk=35` in each module's `src/test/resources/robolectric.properties`: Robolectric 4.17 needs at least JDK 21 to emulate SDK 36+, and CI runs tests on JDK 17.
 - Media3: the service side is a `MediaSessionService`; UI code always goes through `PlayerConnection` (never a raw ExoPlayer reference in composables).
 - Never loop per-item timeline ops (`moveMediaItem`/`removeMediaItem`) over a queue: each timeline change re-broadcasts the whole queue to Bluetooth AVRCP, which can OOM the BT stack and ANR the app. Batch through `QueueReorder`.
 - CodeQL cannot parse Kotlin 2.4 yet, so the CodeQL workflow scans only the `actions` language. Re-enable `java-kotlin` when the extractor catches up.
