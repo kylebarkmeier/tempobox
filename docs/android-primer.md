@@ -37,11 +37,12 @@ Two manifest details matter later:
   re-launching the app resumes the existing instance instead of stacking a new
   one.
 - `PlaybackService` declares
-  `foregroundServiceType="mediaPlayback"` and an intent filter for
-  `androidx.media3.session.MediaSessionService`. The type is a *declared
-  capability contract*: since Android 14 the OS refuses to start a foreground
-  service whose type wasn't declared up front (think: a container that must
-  declare its ports at build time).
+  `foregroundServiceType="mediaPlayback"` and intent filters for
+  `androidx.media3.session.MediaLibraryService` plus the legacy
+  `android.media.browse.MediaBrowserService` (how Android Auto finds media
+  apps). The type is a *declared capability contract*: since Android 14 the
+  OS refuses to start a foreground service whose type wasn't declared up
+  front (think: a container that must declare its ports at build time).
 
 **Intents** are the message envelopes between components: a typed,
 OS-mediated event bus. `Intent(ACTION_VIEW, …)` from a file manager can open
@@ -89,9 +90,10 @@ not courtesy UX.
 
 For media apps the notification is doubly load-bearing: it *is* the playback
 controls (play/pause/next with album art) on the lockscreen and in the shade.
-Media3's `MediaSessionService` (which `PlaybackService` extends) manages the
-foreground lifecycle and builds that notification automatically from the
-session state. TempoBox never constructs the notification by hand; it feeds
+Media3's `MediaLibraryService` (which `PlaybackService` extends; it is a
+`MediaSessionService` that additionally serves a browsable library, e.g. to
+Android Auto) manages the foreground lifecycle and builds that notification
+automatically from the session state. TempoBox never constructs the notification by hand; it feeds
 the session good metadata and artwork and the system renders it.
 
 Related manifest permissions: `FOREGROUND_SERVICE`,

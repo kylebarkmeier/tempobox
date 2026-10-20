@@ -38,6 +38,16 @@ data class NowPlayingState(
     val queueSize: Int = 0,
 )
 
+/**
+ * One selectable audio output (speaker, wired, Bluetooth A2DP, USB…).
+ * [id] is the platform AudioDeviceInfo id, valid only while the device is
+ * connected; `null` selection means "automatic" (the system routes).
+ */
+data class AudioOutputDevice(
+    val id: Int,
+    val name: String,
+)
+
 /** Fields that can be shown under the track title in Now Playing (configurable). */
 @Serializable
 enum class TrackInfoField {

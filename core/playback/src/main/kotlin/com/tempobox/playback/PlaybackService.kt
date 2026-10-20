@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
 import android.net.Uri
+import android.os.Bundle
 import android.os.PowerManager
 import android.util.Log
 import android.view.KeyEvent
@@ -21,8 +22,12 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.PlaybackStatsListener
 import androidx.media3.session.CacheBitmapLoader
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.tempobox.common.IoDispatcher
@@ -46,6 +51,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -53,15 +59,21 @@ import java.io.File
 import javax.inject.Inject
 
 /**
- * Foreground media service: owns the [ExoPlayer] and [MediaSession].
+ * Foreground media service: owns the [ExoPlayer] and the
+ * [MediaLibraryService.MediaLibrarySession].
  *
  * Responsibilities beyond vanilla Media3 wiring:
  *  - lockscreen/notification media controls with embedded-tag artwork
  *    ([ArtworkBitmapLoader]) — this is the "lockscreen integration"
+ *  - the Android Auto browse tree ([LibraryBrowseTree]) and playback
+ *    resumption from the persisted queue
  *  - play counting + Last.fm scrobbling via [PlaybackStatsListener]
  *  - queue persistence/restore across process death ([PlaybackStateStore])
  *  - Bluetooth: start-on-connect, media button remapping, volume triple-tap
  *    gestures with screen off
+ *  - call guarding: automatic playback (start-on-connect, spurious resumes,
+ *    AVRCP PLAY from car head units) is suppressed while a call is active
+ *    ([CallGuard])
  *
  * Format support: ExoPlayer's bundled decoders play MP3, FLAC and OGG
  * (Vorbis/Opus); ALAC (.m4a) decodes through the device MediaCodec (present on
@@ -71,20 +83,32 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 @OptIn(UnstableApi::class)
-class PlaybackService : MediaSessionService() {
+class PlaybackService : MediaLibraryService() {
 
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var libraryRepository: LibraryRepository
     @Inject lateinit var scrobbler: Scrobbler
     @Inject lateinit var stateStore: PlaybackStateStore
     @Inject lateinit var tagReader: TagReader
+    @Inject lateinit var browseTree: LibraryBrowseTree
     @Inject @IoDispatcher lateinit var ioDispatcher: CoroutineDispatcher
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private lateinit var player: ExoPlayer
-    private var session: MediaSession? = null
+    private var session: MediaLibrarySession? = null
     private lateinit var settingsState: StateFlow<AppSettings?>
+    private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
+
+    /**
+     * Uid allocator for queue items the service builds itself (Android Auto
+     * tap-to-queue, resumption). Epoch-seeded so these never collide with
+     * PlayerConnection's small counter uids: on a collision, shuffle-off there
+     * could restore a bogus "original" order.
+     */
+    private val serviceUid = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
+
+    private fun nextServiceUid(): Long = serviceUid.getAndIncrement()
 
     private var bluetoothReceiver: BroadcastReceiver? = null
     private var volumeReceiver: BroadcastReceiver? = null
@@ -125,8 +149,7 @@ class PlaybackService : MediaSessionService() {
 
         player.addListener(playerListener)
 
-        session = MediaSession.Builder(this, player)
-            .setCallback(sessionCallback)
+        session = MediaLibrarySession.Builder(this, player, sessionCallback)
             .setBitmapLoader(
                 CacheBitmapLoader(ArtworkBitmapLoader(tagReader, scope, ioDispatcher)),
             )
@@ -139,7 +162,7 @@ class PlaybackService : MediaSessionService() {
         startPeriodicSnapshots()
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
     /**
      * Content intent for the media notification and lockscreen session: tapping
@@ -176,24 +199,195 @@ class PlaybackService : MediaSessionService() {
 
     // ------------------------------------------------------------------ session callback
 
-    private val sessionCallback = object : MediaSession.Callback {
+    private val sessionCallback = object : MediaLibrarySession.Callback {
+
+        /**
+         * Default commands for everyone; the app's own commands (audio output
+         * selection) only for the app's own controllers. The service is
+         * exported for Android Auto, so any app can connect, and output
+         * routing must not be theirs to command.
+         */
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): MediaSession.ConnectionResult {
+            if (controller.packageName != packageName) {
+                return MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
+            }
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(
+                    MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
+                        .buildUpon()
+                        .add(SessionCommand(ACTION_SET_AUDIO_OUTPUT, Bundle.EMPTY))
+                        .build(),
+                )
+                .build()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction != ACTION_SET_AUDIO_OUTPUT) {
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+            }
+            val deviceId = args.getInt(EXTRA_AUDIO_DEVICE_ID, AUDIO_DEVICE_AUTO)
+            val device = if (deviceId == AUDIO_DEVICE_AUTO) {
+                null // back to automatic system routing
+            } else {
+                audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                    .firstOrNull { it.id == deviceId }
+                    ?: return Futures.immediateFuture(
+                        SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE),
+                    )
+            }
+            player.setPreferredAudioDevice(device)
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+
+        // ------------------------------------------------------ browse tree (Android Auto)
+
+        override fun onGetLibraryRoot(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            params: LibraryParams?,
+        ): ListenableFuture<LibraryResult<MediaItem>> =
+            Futures.immediateFuture(LibraryResult.ofItem(browseTree.root(), params))
+
+        override fun onGetChildren(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?,
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
+            val children = browseTree.children(parentId)
+                ?: return@future LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+            // Long math: hosts may page with pageSize = Int.MAX_VALUE.
+            val from = page.toLong() * pageSize
+            val pageItems = when {
+                from >= children.size -> emptyList()
+                else -> children.subList(
+                    from.toInt(),
+                    minOf(children.size.toLong(), from + pageSize).toInt(),
+                )
+            }
+            LibraryResult.ofItemList(ImmutableList.copyOf(pageItems), params)
+        }
+
+        override fun onGetItem(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            mediaId: String,
+        ): ListenableFuture<LibraryResult<MediaItem>> = scope.future {
+            browseTree.item(mediaId)
+                ?.let { LibraryResult.ofItem(it, null) }
+                ?: LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+        }
+
+        /**
+         * A track tapped in a browse list arrives as one item whose id names
+         * the track and the node it was browsed under — queue that whole
+         * context (album, playlist) with the tapped track first, like tapping
+         * a row in the app does.
+         */
+        override fun onSetMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>,
+            startIndex: Int,
+            startPositionMs: Long,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            val node = mediaItems.singleOrNull()?.let { BrowseIds.decode(it.mediaId) }
+            if (node !is BrowseIds.Node.Track) {
+                return super.onSetMediaItems(
+                    mediaSession, controller, mediaItems, startIndex, startPositionMs,
+                )
+            }
+            return scope.future {
+                val tracks = browseTree.tracksFor(node)
+                // A stale cached id (deleted playlist, retagged album): fail the
+                // request so the user's current queue is left alone.
+                if (tracks.isEmpty()) {
+                    throw UnsupportedOperationException("browse context ${node.parent} is empty")
+                }
+                val items = tracks.map { MediaItems.toMediaItem(it, uid = nextServiceUid()) }
+                // Prefer the tapped row's position (exact for duplicate playlist
+                // entries); fall back to the first copy, then to the context's
+                // start when the track itself vanished in a rescan.
+                val start = node.index
+                    ?.takeIf { it in tracks.indices && tracks[it].id == node.trackId }
+                    ?: tracks.indexOfFirst { it.id == node.trackId }.coerceAtLeast(0)
+                MediaSession.MediaItemsWithStartPosition(items, start, 0)
+            }
+        }
+
+        /**
+         * Play button on Android Auto / the notification before the app ran:
+         * bring back the persisted queue instead of doing nothing.
+         */
+        override fun onPlaybackResumption(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
+            // Honor the same opt-out as restoreQueue: with persistence off, a
+            // stale snapshot must not come back through the car's play button.
+            if (settingsState.value?.queue?.persistQueue == false) {
+                throw UnsupportedOperationException("queue persistence is off")
+            }
+            val snapshot = stateStore.load()
+                ?: throw UnsupportedOperationException("nothing to resume")
+            val tracks = libraryRepository.getTracksByIds(snapshot.trackIds)
+            if (tracks.isEmpty()) throw UnsupportedOperationException("nothing to resume")
+            val items = tracks.map { MediaItems.toMediaItem(it, uid = nextServiceUid()) }
+            player.repeatMode = when (snapshot.repeatMode) {
+                RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+                RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+                RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+            }
+            MediaSession.MediaItemsWithStartPosition(
+                items,
+                snapshot.currentIndex.coerceIn(0, items.lastIndex),
+                snapshot.positionMs,
+            )
+        }
 
         /**
          * MediaItems arrive from controllers without their file URI (Media3
-         * strips localConfiguration crossing the binder) — rebuild it from the
-         * path we stash in the metadata extras.
+         * strips localConfiguration crossing the binder). Rebuild it from the
+         * path stashed in the metadata extras (the app's own items), or from
+         * the library for browse-tree leaf ids, which carry no URI at all and
+         * can arrive here through multi-item sets or add-to-queue from any
+         * MediaBrowser client.
          */
         override fun onAddMediaItems(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>,
-        ): ListenableFuture<MutableList<MediaItem>> {
-            val resolved = mediaItems.map { item ->
+        ): ListenableFuture<MutableList<MediaItem>> = scope.future {
+            val leafIds = mediaItems.mapNotNull {
+                (BrowseIds.decode(it.mediaId) as? BrowseIds.Node.Track)?.trackId
+            }
+            val tracksById =
+                if (leafIds.isEmpty()) emptyMap()
+                else libraryRepository.getTracksByIds(leafIds).associateBy { it.id }
+            mediaItems.mapNotNull { item ->
                 val path = item.mediaMetadata.extras?.getString("path")
-                if (path.isNullOrBlank()) item
-                else item.buildUpon().setUri(Uri.fromFile(File(path))).build()
+                val leaf = BrowseIds.decode(item.mediaId) as? BrowseIds.Node.Track
+                when {
+                    !path.isNullOrBlank() ->
+                        item.buildUpon().setUri(Uri.fromFile(File(path))).build()
+                    leaf != null ->
+                        // Drop leaves the library no longer has instead of
+                        // handing ExoPlayer an unplayable URI-less item.
+                        tracksById[leaf.trackId]
+                            ?.let { MediaItems.toMediaItem(it, uid = nextServiceUid()) }
+                    else -> item
+                }
             }.toMutableList()
-            return Futures.immediateFuture(resolved)
         }
 
         /** Bluetooth/headset media-button remapping (Settings ▸ Bluetooth). */
@@ -244,6 +438,20 @@ class PlaybackService : MediaSessionService() {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             scheduleSnapshot()
             refreshWidget()
+            // Cars can re-start playback into an active call (spurious focus
+            // gains, AVRCP PLAY on source switches). Re-check after a settle
+            // delay: when a call ENDS, focus can return a beat before the
+            // audio mode drops back to NORMAL, and pausing then would kill
+            // the legitimate auto-resume.
+            if (CallGuard.shouldPauseNow(isPlaying, audioManager.mode)) {
+                scope.launch {
+                    delay(CallGuard.RECHECK_DELAY_MS)
+                    if (CallGuard.shouldPauseNow(player.isPlaying, audioManager.mode)) {
+                        Log.i(TAG, "Pausing playback that started during a call")
+                        player.pause()
+                    }
+                }
+            }
         }
 
         override fun onRepeatModeChanged(repeatMode: Int) {
@@ -342,15 +550,22 @@ class PlaybackService : MediaSessionService() {
                 // ACTION_HEADSET_PLUG is sticky: registration replays the last
                 // plug event immediately — ignore it, only react to real ones.
                 if (isInitialStickyBroadcast) return
-                val startOnConnect = settingsState.value?.bluetooth?.startOnConnect ?: false
-                if (!startOnConnect) return
                 val isConnect = intent.action == BluetoothDevice.ACTION_ACL_CONNECTED ||
                     (intent.action == AudioManager.ACTION_HEADSET_PLUG &&
                         intent.getIntExtra("state", 0) == 1)
-                if (isConnect && player.mediaItemCount > 0) {
+                val autoplay = CallGuard.shouldAutoplay(
+                    startOnConnect = settingsState.value?.bluetooth?.startOnConnect ?: false,
+                    isConnectEvent = isConnect,
+                    hasQueue = player.mediaItemCount > 0,
+                    audioMode = audioManager.mode,
+                )
+                if (autoplay) {
                     // Small delay: the audio route needs a moment to switch over.
                     scope.launch {
                         delay(1_500)
+                        // A car answering a call also fires connect events —
+                        // never autoplay into the call.
+                        if (CallGuard.isCallMode(audioManager.mode)) return@launch
                         player.prepare()
                         player.play()
                     }
@@ -445,6 +660,15 @@ class PlaybackService : MediaSessionService() {
          * shuffle mode changes (not a player event the service can observe).
          */
         const val ACTION_WIDGET_REFRESH = "com.tempobox.action.WIDGET_REFRESH"
+
+        /**
+         * Custom session command: route playback to one output device.
+         * [EXTRA_AUDIO_DEVICE_ID] holds the AudioDeviceInfo id, or
+         * [AUDIO_DEVICE_AUTO] to return to automatic system routing.
+         */
+        const val ACTION_SET_AUDIO_OUTPUT = "com.tempobox.action.SET_AUDIO_OUTPUT"
+        const val EXTRA_AUDIO_DEVICE_ID = "deviceId"
+        const val AUDIO_DEVICE_AUTO = -1
 
         // Hidden-but-stable AudioManager broadcast constants.
         private const val VOLUME_CHANGED_ACTION = "android.media.VOLUME_CHANGED_ACTION"

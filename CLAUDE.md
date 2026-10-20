@@ -14,7 +14,7 @@ Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.8
 - `core:tags`: jaudiotagger wrapper. Read/write ID3v2 / Vorbis / MP4 tags and artwork.
 - `core:playlist`: M3U/M3U8 parse and write (writes are always M3U8), smart-playlist rule engine.
 - `core:library`: scanner, file watcher, `LibraryRepository`, file delete/remove ops.
-- `core:playback`: `PlaybackService` (a `MediaSessionService`), `PlayerConnection`, queue reordering, shuffle engines, Bluetooth glue.
+- `core:playback`: `PlaybackService` (a `MediaLibraryService`: session + Android Auto browse tree), `PlayerConnection`, queue reordering, shuffle engines, Bluetooth glue.
 - `core:scrobble`: SLS broadcasts handing played tracks to the user's scrobbler app.
 - `core:artwork`: Discogs artist images and album-art collage fallback.
 - `app`: all Compose UI, navigation drawer/tabs, widget (Glance), DI wiring.
@@ -55,7 +55,7 @@ Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.8
 ## Gotchas
 - jaudiotagger: use `AndroidArtwork` (never awt-based artwork classes); requires `minSdk 26` (java.nio).
 - Robolectric tests pin `sdk=35` in each module's `src/test/resources/robolectric.properties`: Robolectric 4.17 needs at least JDK 21 to emulate SDK 36+, and CI runs tests on JDK 17.
-- Media3: the service side is a `MediaSessionService`; UI code always goes through `PlayerConnection` (never a raw ExoPlayer reference in composables).
+- Media3: the service side is a `MediaLibraryService` (serves Android Auto's browse tree too); UI code always goes through `PlayerConnection` (never a raw ExoPlayer reference in composables).
 - Never loop per-item timeline ops (`moveMediaItem`/`removeMediaItem`) over a queue: each timeline change re-broadcasts the whole queue to Bluetooth AVRCP, which can OOM the BT stack and ANR the app. Batch through `QueueReorder`.
 - CodeQL cannot parse Kotlin 2.4 yet, so the CodeQL workflow scans only the `actions` language. Re-enable `java-kotlin` when the extractor catches up.
 - ALAC plays via device MediaCodec; see README "Codecs".

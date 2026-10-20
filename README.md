@@ -64,6 +64,14 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
   they update themselves as your library changes and are exported as `.m3u8`
 
 **Integrations**
+- **Android Auto**: browse Playlists, Artists, Albums and Genres on the car
+  screen; tapping a track queues its album or playlist, and the car's play
+  button resumes your persisted queue. Sideloaded builds need "Unknown
+  sources" enabled in the Android Auto app's developer settings
+- Calls stay clean: music pauses for calls (audio focus) and TempoBox refuses
+  to let car stereos restart it mid-call; it resumes when the call ends
+- Pick the output: an audio-output button in Now Playing routes playback to
+  any connected device (Bluetooth, wired, USB) or back to automatic
 - Scrobbling through your scrobbler app: TempoBox broadcasts played tracks in
   the standard SLS format, which the Last.fm app, Pano Scrobbler, Simple
   Scrobbler, etc. pick up. No account or API keys in TempoBox

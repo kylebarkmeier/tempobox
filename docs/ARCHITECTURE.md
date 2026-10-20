@@ -80,9 +80,10 @@ the UI can point users at the All-files-access grant.
 
 ## Playback pipeline details
 
-- `PlaybackService` (MediaSessionService) owns the ExoPlayer. Lockscreen,
-  notification, and AVRCP all derive from the MediaSession; embedded tag art
-  is served by a custom `BitmapLoader` resolving `tempobox-art:///` URIs.
+- `PlaybackService` (MediaLibraryService) owns the ExoPlayer. Lockscreen,
+  notification, AVRCP, and the Android Auto browse tree all derive from the
+  MediaLibrarySession; embedded tag art is served by a custom `BitmapLoader`
+  resolving `tempobox-art:///` URIs.
 - Play counting + scrobbling share one rule (`PlayedThreshold`): >30s track,
   half played or 4 minutes. `PlaybackStatsListener` reports per-item play time
   when a playback session ends.

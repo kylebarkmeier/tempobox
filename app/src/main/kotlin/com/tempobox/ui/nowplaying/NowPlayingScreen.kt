@@ -27,15 +27,19 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Wallpaper
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +60,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.tempobox.common.TimeFormat
+import com.tempobox.model.AudioOutputDevice
 import com.tempobox.model.Corner
 import com.tempobox.model.CornerAction
 import com.tempobox.model.RepeatMode
@@ -94,6 +99,7 @@ fun NowPlayingContent(
     val track = state.track
 
     var showRemaining by rememberSaveable { mutableStateOf(false) }
+    var showOutputPicker by rememberSaveable { mutableStateOf(false) }
 
     val snackbar = LocalSnackbar.current
     LaunchedEffect(viewModel) {
@@ -115,11 +121,26 @@ fun NowPlayingContent(
                 }
             },
             actions = {
+                IconButton(onClick = { showOutputPicker = true }) {
+                    Icon(Icons.Filled.Speaker, contentDescription = "Audio output")
+                }
                 IconButton(onClick = onOpenQueue) {
                     Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "Show queue")
                 }
             },
         )
+
+        if (showOutputPicker) {
+            AudioOutputDialog(
+                outputs = viewModel.player.audioOutputs.collectAsState().value,
+                selectedId = viewModel.player.selectedOutputId.collectAsState().value,
+                onSelect = { id ->
+                    viewModel.player.selectAudioOutput(id)
+                    showOutputPicker = false
+                },
+                onDismiss = { showOutputPicker = false },
+            )
+        }
 
         if (track == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -233,6 +254,50 @@ fun NowPlayingContent(
 }
 
 // --------------------------------------------------------------------- pieces
+
+/**
+ * Output routing picker: "Automatic" (the system decides, the default) plus
+ * every connected output the player can target. The choice lasts for the
+ * session; a device that disconnects falls back to Automatic.
+ */
+@Composable
+private fun AudioOutputDialog(
+    outputs: List<AudioOutputDevice>,
+    selectedId: Int?,
+    onSelect: (Int?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Audio output") },
+        text = {
+            Column {
+                OutputRow("Automatic", selected = selectedId == null) { onSelect(null) }
+                outputs.forEach { device ->
+                    OutputRow(device.name, selected = selectedId == device.id) {
+                        onSelect(device.id)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+    )
+}
+
+@Composable
+private fun OutputRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
 
 /**
  * Pinch-to-zoom album art with up to four configurable corner buttons.
