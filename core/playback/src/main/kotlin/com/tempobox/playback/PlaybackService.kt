@@ -35,10 +35,12 @@ import com.tempobox.library.LibraryRepository
 import com.tempobox.model.MediaButton
 import com.tempobox.model.MediaButtonAction
 import com.tempobox.model.RepeatMode
+import com.tempobox.model.Track
 import com.tempobox.model.VolumeTapAction
 import com.tempobox.scrobble.Scrobbler
 import com.tempobox.settings.AppSettings
 import com.tempobox.settings.SettingsRepository
+import com.tempobox.settings.ShuffleSettings
 import com.tempobox.tags.TagReader
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineDispatcher
@@ -50,6 +52,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.isActive
@@ -91,6 +94,8 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var stateStore: PlaybackStateStore
     @Inject lateinit var tagReader: TagReader
     @Inject lateinit var browseTree: LibraryBrowseTree
+    @Inject lateinit var voiceSearch: VoiceSearch
+    @Inject lateinit var shuffleEngine: ShuffleEngine
     @Inject @IoDispatcher lateinit var ioDispatcher: CoroutineDispatcher
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -109,6 +114,15 @@ class PlaybackService : MediaLibraryService() {
     private val serviceUid = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
 
     private fun nextServiceUid(): Long = serviceUid.getAndIncrement()
+
+    /** One browse/search result page. Long math: hosts may page with pageSize = Int.MAX_VALUE. */
+    private fun <T> List<T>.page(page: Int, pageSize: Int): List<T> {
+        val from = page.toLong() * pageSize
+        return when {
+            from >= size -> emptyList()
+            else -> subList(from.toInt(), minOf(size.toLong(), from + pageSize).toInt())
+        }
+    }
 
     private var bluetoothReceiver: BroadcastReceiver? = null
     private var volumeReceiver: BroadcastReceiver? = null
@@ -266,16 +280,7 @@ class PlaybackService : MediaLibraryService() {
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
             val children = browseTree.children(parentId)
                 ?: return@future LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
-            // Long math: hosts may page with pageSize = Int.MAX_VALUE.
-            val from = page.toLong() * pageSize
-            val pageItems = when {
-                from >= children.size -> emptyList()
-                else -> children.subList(
-                    from.toInt(),
-                    minOf(children.size.toLong(), from + pageSize).toInt(),
-                )
-            }
-            LibraryResult.ofItemList(ImmutableList.copyOf(pageItems), params)
+            LibraryResult.ofItemList(ImmutableList.copyOf(children.page(page, pageSize)), params)
         }
 
         override fun onGetItem(
@@ -301,6 +306,14 @@ class PlaybackService : MediaLibraryService() {
             startIndex: Int,
             startPositionMs: Long,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            // Assistant / Gemini "play X on TempoBox" arrives as one item whose
+            // request metadata carries the recognized text (Media3's mapping of
+            // the legacy playFromSearch).
+            val searchQuery = mediaItems.singleOrNull()?.requestMetadata?.searchQuery
+            if (searchQuery != null) {
+                return scope.future { voiceQueue(searchQuery) }
+            }
+
             val node = mediaItems.singleOrNull()?.let { BrowseIds.decode(it.mediaId) }
             if (node !is BrowseIds.Node.Track) {
                 return super.onSetMediaItems(
@@ -333,26 +346,37 @@ class PlaybackService : MediaLibraryService() {
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
-            // Honor the same opt-out as restoreQueue: with persistence off, a
-            // stale snapshot must not come back through the car's play button.
-            if (settingsState.value?.queue?.persistQueue == false) {
-                throw UnsupportedOperationException("queue persistence is off")
-            }
-            val snapshot = stateStore.load()
-                ?: throw UnsupportedOperationException("nothing to resume")
-            val tracks = libraryRepository.getTracksByIds(snapshot.trackIds)
-            if (tracks.isEmpty()) throw UnsupportedOperationException("nothing to resume")
-            val items = tracks.map { MediaItems.toMediaItem(it, uid = nextServiceUid()) }
-            player.repeatMode = when (snapshot.repeatMode) {
-                RepeatMode.OFF -> Player.REPEAT_MODE_OFF
-                RepeatMode.ALL -> Player.REPEAT_MODE_ALL
-                RepeatMode.ONE -> Player.REPEAT_MODE_ONE
-            }
-            MediaSession.MediaItemsWithStartPosition(
-                items,
-                snapshot.currentIndex.coerceIn(0, items.lastIndex),
-                snapshot.positionMs,
+            resumptionQueue() ?: throw UnsupportedOperationException("nothing to resume")
+        }
+
+        // ------------------------------------------------------ voice search
+
+        /** Android Auto's search screen: resolve, then announce the count. */
+        override fun onSearch(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            params: LibraryParams?,
+        ): ListenableFuture<LibraryResult<Void>> = scope.future {
+            val resolution = voiceSearch.resolve(query)
+            Log.i(TAG, "onSearch '$query' -> ${resolution?.description ?: "no match"}")
+            session.notifySearchResultChanged(
+                browser, query, resolution?.tracks?.size ?: 0, params,
             )
+            LibraryResult.ofVoid(params)
+        }
+
+        override fun onGetSearchResult(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?,
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
+            val tracks = voiceSearch.resolve(query)?.tracks.orEmpty()
+            val items = browseTree.searchResultItems(tracks).page(page, pageSize)
+            LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
         }
 
         /**
@@ -460,6 +484,64 @@ class PlaybackService : MediaLibraryService() {
             scheduleSnapshot()
             refreshWidget()
         }
+    }
+
+    /**
+     * Queue for a voice query: the resolved match (shuffled with the user's
+     * flavor when asked), or, for an empty/unmatched query, the persisted
+     * queue, or the whole library shuffled. Voice must always play something.
+     */
+    private suspend fun voiceQueue(query: String): MediaSession.MediaItemsWithStartPosition {
+        val resolution = voiceSearch.resolve(query)
+        Log.i(TAG, "Voice query '$query' -> ${resolution?.description ?: "no match, falling back"}")
+        if (resolution == null) {
+            resumptionQueue()?.let { return it }
+            val all = libraryRepository.observeTracks().first()
+            if (all.isEmpty()) throw UnsupportedOperationException("library is empty")
+            return MediaSession.MediaItemsWithStartPosition(
+                orderForVoice(all, shuffle = true)
+                    .map { MediaItems.toMediaItem(it, uid = nextServiceUid()) },
+                0,
+                0,
+            )
+        }
+        val ordered = orderForVoice(resolution.tracks, resolution.shuffle)
+        return MediaSession.MediaItemsWithStartPosition(
+            ordered.map { MediaItems.toMediaItem(it, uid = nextServiceUid()) },
+            0,
+            0,
+        )
+    }
+
+    private fun orderForVoice(tracks: List<Track>, shuffle: Boolean): List<Track> {
+        if (!shuffle) return tracks
+        val mode = PlayerConnection.defaultShuffleMode(
+            settingsState.value?.shuffle ?: ShuffleSettings(),
+        )
+        return shuffleEngine.order(tracks, mode).map { tracks[it] }
+    }
+
+    /**
+     * The persisted queue as a resumption payload, or null when persistence is
+     * off (a stale snapshot must not come back through the car's play button)
+     * or nothing usable was saved. Also restores the saved repeat mode.
+     */
+    private suspend fun resumptionQueue(): MediaSession.MediaItemsWithStartPosition? {
+        if (settingsState.value?.queue?.persistQueue == false) return null
+        val snapshot = stateStore.load() ?: return null
+        val tracks = libraryRepository.getTracksByIds(snapshot.trackIds)
+        if (tracks.isEmpty()) return null
+        val items = tracks.map { MediaItems.toMediaItem(it, uid = nextServiceUid()) }
+        player.repeatMode = when (snapshot.repeatMode) {
+            RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+            RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+        }
+        return MediaSession.MediaItemsWithStartPosition(
+            items,
+            snapshot.currentIndex.coerceIn(0, items.lastIndex),
+            snapshot.positionMs,
+        )
     }
 
     /** Tells the app's home-screen widget to re-render (receiver in :app). */
