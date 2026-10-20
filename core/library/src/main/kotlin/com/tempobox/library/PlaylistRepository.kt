@@ -80,6 +80,14 @@ class PlaylistRepository @Inject constructor(
             trackDao.observeAll().map { rows -> engine.evaluate(rule, rows.map { it.toModel() }) }
         } ?: playlistDao.observePlaylistTracks(playlist.id).map { rows -> rows.map { it.toModel() } }
 
+    /**
+     * Lightweight listing (no live stats, no smart-rule evaluation): names and
+     * ids only, for consumers like the media-browse tree that never show counts.
+     */
+    suspend fun getPlaylists(): List<Playlist> = withContext(ioDispatcher) {
+        playlistDao.getAll().map { it.toModel() }
+    }
+
     suspend fun getPlaylist(id: Long): Playlist? = withContext(ioDispatcher) {
         playlistDao.getById(id)?.toModel()
     }

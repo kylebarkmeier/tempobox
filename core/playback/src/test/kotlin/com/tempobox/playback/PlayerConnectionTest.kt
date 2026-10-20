@@ -82,6 +82,28 @@ class PlayerConnectionTest {
     }
 
     @Test
+    fun `a queue replaced outside the connection drops the stale shuffle flag`() {
+        connection.playShuffled(listOf(track(1), track(2), track(3)))
+        idleMain()
+        assertThat(connection.state.value.shuffleMode).isNotEqualTo(ShuffleMode.OFF)
+
+        // Simulate Android Auto swapping the whole timeline in the service:
+        // the controller now reports items whose uids we never allocated.
+        val foreign = listOf(
+            MediaItems.toMediaItem(track(9), uid = 5_000_000_001L),
+            MediaItems.toMediaItem(track(10), uid = 5_000_000_002L),
+        )
+        every { controller.mediaItemCount } returns foreign.size
+        every { controller.getMediaItemAt(0) } returns foreign[0]
+        every { controller.getMediaItemAt(1) } returns foreign[1]
+
+        connection.seekTo(0) // any command path runs refresh()
+        idleMain()
+
+        assertThat(connection.state.value.shuffleMode).isEqualTo(ShuffleMode.OFF)
+    }
+
+    @Test
     fun `shuffle mode changes nudge the home-screen widget`() {
         connection.playShuffled(listOf(track(1), track(2), track(3)))
         idleMain()

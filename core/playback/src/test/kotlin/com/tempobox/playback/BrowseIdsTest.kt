@@ -49,6 +49,26 @@ class BrowseIdsTest {
     }
 
     @Test
+    fun `track ids with a position round trip and stay unique per copy`() {
+        val parent = BrowseIds.Node.Playlist(7)
+        val first = BrowseIds.Node.Track(trackId = 42, parent = parent, index = 3)
+        val second = BrowseIds.Node.Track(trackId = 42, parent = parent, index = 40)
+        assertThat(BrowseIds.decode(BrowseIds.encode(first))).isEqualTo(first)
+        assertThat(BrowseIds.decode(BrowseIds.encode(second))).isEqualTo(second)
+        assertThat(BrowseIds.encode(first)).isNotEqualTo(BrowseIds.encode(second))
+    }
+
+    @Test
+    fun `broken percent escapes decode to null, never throw`() {
+        listOf(
+            "artist/%zz", "artist/%", "genre/%G1", "album/%zz/x",
+            "album/x/%", "track/5?parent=artist/%zz", "track/5@x?parent=albums",
+        ).forEach { id ->
+            assertThat(BrowseIds.decode(id)).isNull()
+        }
+    }
+
+    @Test
     fun `playlist ids round trip`() {
         val node = BrowseIds.Node.Playlist(7)
         assertThat(BrowseIds.decode(BrowseIds.encode(node))).isEqualTo(node)

@@ -38,9 +38,15 @@ object CallGuard {
      * mode [RECHECK_DELAY_MS] to settle first: when a call ends, focus can
      * return a beat before the mode drops back to NORMAL, and pausing then
      * would kill the legitimate auto-resume.
+     *
+     * Deliberately narrower than [isCallMode]: only a cellular call
+     * (MODE_IN_CALL) qualifies. During VoIP calls (MODE_IN_COMMUNICATION,
+     * which apps can hold for hours) the user must stay able to start music
+     * on purpose, and VoIP apps take permanent audio focus anyway, which
+     * already pauses us without resuming.
      */
     fun shouldPauseNow(isPlaying: Boolean, audioMode: Int): Boolean =
-        isPlaying && isCallMode(audioMode)
+        isPlaying && audioMode == AudioManager.MODE_IN_CALL
 
     /** Delay before re-checking the mode and pausing mid-call playback. */
     const val RECHECK_DELAY_MS = 1_200L

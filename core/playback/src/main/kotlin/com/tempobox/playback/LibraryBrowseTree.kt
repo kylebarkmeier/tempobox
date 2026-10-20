@@ -42,9 +42,13 @@ class LibraryBrowseTree @Inject constructor(
             is BrowseIds.Node.Genre -> browsable(node, node.name)
             is BrowseIds.Node.Playlist ->
                 playlistRepository.getPlaylist(node.id)?.let { browsable(node, it.name) }
-            is BrowseIds.Node.Track ->
-                tracksFor(node.parent).firstOrNull { it.id == node.trackId }
-                    ?.let { playable(it, node.parent) }
+            is BrowseIds.Node.Track -> {
+                val tracks = tracksFor(node.parent)
+                val track = node.index?.let { tracks.getOrNull(it) }
+                    ?.takeIf { it.id == node.trackId }
+                    ?: tracks.firstOrNull { it.id == node.trackId }
+                track?.let { playable(it, node.parent, node.index) }
+            }
         }
     }
 
@@ -59,7 +63,9 @@ class LibraryBrowseTree @Inject constructor(
                 browsable(BrowseIds.Node.Genres, "Genres"),
             )
             BrowseIds.Node.Playlists ->
-                playlistRepository.observePlaylists().first().map {
+                // Names only: the stats-bearing observePlaylists() would load the
+                // whole library and evaluate every smart rule per listing.
+                playlistRepository.getPlaylists().map {
                     browsable(BrowseIds.Node.Playlist(it.id), it.name)
                 }
             BrowseIds.Node.Artists ->
@@ -98,7 +104,7 @@ class LibraryBrowseTree @Inject constructor(
                     )
                 }
             is BrowseIds.Node.Album, is BrowseIds.Node.Playlist ->
-                tracksFor(node).map { playable(it, node) }
+                tracksFor(node).mapIndexed { i, track -> playable(track, node, index = i) }
             is BrowseIds.Node.Track -> emptyList()
         }
     }
@@ -147,10 +153,11 @@ class LibraryBrowseTree @Inject constructor(
     /**
      * A playable leaf. No file URI on purpose: the id round-trips through the
      * controller, and onSetMediaItems rebuilds real queue items (with URIs)
-     * from the library, exactly like every other enqueue path.
+     * from the library, exactly like every other enqueue path. [index] keeps
+     * ids unique when a playlist holds the same track twice.
      */
-    private fun playable(track: Track, parent: BrowseIds.Node): MediaItem = MediaItem.Builder()
-        .setMediaId(BrowseIds.encode(BrowseIds.Node.Track(track.id, parent)))
+    private fun playable(track: Track, parent: BrowseIds.Node, index: Int? = null): MediaItem = MediaItem.Builder()
+        .setMediaId(BrowseIds.encode(BrowseIds.Node.Track(track.id, parent, index)))
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(track.title)

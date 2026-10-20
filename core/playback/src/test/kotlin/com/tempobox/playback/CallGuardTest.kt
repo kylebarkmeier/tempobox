@@ -58,4 +58,16 @@ class CallGuardTest {
         assertThat(CallGuard.shouldPauseNow(isPlaying = false, audioMode = AudioManager.MODE_IN_CALL)).isFalse()
         assertThat(CallGuard.shouldPauseNow(isPlaying = true, audioMode = AudioManager.MODE_NORMAL)).isFalse()
     }
+
+    @Test
+    fun `deliberate playback during VoIP calls and ringing is never force-paused`() {
+        // VoIP apps hold MODE_IN_COMMUNICATION for the whole call; the user
+        // must still be able to play music on purpose during one.
+        assertThat(
+            CallGuard.shouldPauseNow(isPlaying = true, audioMode = AudioManager.MODE_IN_COMMUNICATION),
+        ).isFalse()
+        assertThat(
+            CallGuard.shouldPauseNow(isPlaying = true, audioMode = AudioManager.MODE_RINGTONE),
+        ).isFalse()
+    }
 }

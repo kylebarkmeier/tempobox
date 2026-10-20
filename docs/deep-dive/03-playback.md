@@ -134,9 +134,12 @@ Three OS contracts in one builder:
   restarting music into the call.
   [`CallGuard`](../../core/playback/src/main/kotlin/com/tempobox/playback/CallGuard.kt)
   closes that hole using the audio mode (no phone permission needed): the
-  start-on-connect autoplay never fires during a call, and playback that
+  start-on-connect autoplay never fires during any call, and playback that
   starts mid-call is paused again after a settle delay (the delay protects
-  the legitimate auto-resume when the call ends).
+  the legitimate auto-resume when the call ends). The mid-call pause applies
+  to cellular calls only (MODE_IN_CALL): during VoIP calls the user must
+  stay able to start music on purpose, and VoIP apps hold permanent audio
+  focus anyway.
 - **Becoming noisy**: the OS broadcasts "audio is about to route to the
   loudspeaker" when headphones unplug; handling it means no accidental
   music-out-loud on the train.
@@ -164,8 +167,9 @@ The callback also serves Android Auto:
   loads its whole context (the album or playlist) and queues it with the
   tapped track first, like tapping a row in the app.
 - **Resumption**: `onPlaybackResumption` rebuilds the persisted queue
-  (`PlaybackStateStore`) so the play button on the car screen or the
-  post-reboot notification works before the app has run.
+  (`PlaybackStateStore`), repeat mode included, so the play button on the
+  car screen or the post-reboot notification works before the app has run.
+  It honors the persist-queue setting, same as the in-app restore.
 - **Output routing**: a custom session command
   (`ACTION_SET_AUDIO_OUTPUT`) lets `PlayerConnection` route playback to one
   connected output (`ExoPlayer.setPreferredAudioDevice`); the Now Playing

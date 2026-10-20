@@ -66,8 +66,8 @@ class LibraryBrowseTreeTest {
         every {
             library.observeAlbumTracks(album = "Back in Black", albumArtist = "AC/DC", sort = any())
         } returns flowOf(listOf(track(1, "Hells Bells"), track(2, "Shoot to Thrill")))
-        every { playlists.observePlaylists() } returns
-            flowOf(listOf(Playlist(id = 7, name = "Road Trip")))
+        coEvery { playlists.getPlaylists() } returns
+            listOf(Playlist(id = 7, name = "Road Trip"))
     }
 
     @Test
@@ -147,5 +147,20 @@ class LibraryBrowseTreeTest {
     @Test
     fun `unknown parent ids yield null, not a crash`() = runTest {
         assertThat(tree.children("not-a-node")).isNull()
+    }
+
+    @Test
+    fun `duplicate playlist entries get distinct ids carrying their position`() = runTest {
+        val roadTrip = Playlist(id = 7, name = "Road Trip")
+        coEvery { playlists.getPlaylist(7) } returns roadTrip
+        coEvery { playlists.getPlaylistTracks(roadTrip) } returns
+            listOf(track(1, "Hells Bells"), track(2, "Shoot to Thrill"), track(1, "Hells Bells"))
+
+        val children = tree.children(BrowseIds.encode(BrowseIds.Node.Playlist(7)))!!
+        assertThat(children.map { it.mediaId }.distinct()).hasSize(3)
+        val nodes = children.map { BrowseIds.decode(it.mediaId) as BrowseIds.Node.Track }
+        assertThat(nodes.map { it.index }).containsExactly(0, 1, 2).inOrder()
+        assertThat(nodes[0].trackId).isEqualTo(1)
+        assertThat(nodes[2].trackId).isEqualTo(1)
     }
 }

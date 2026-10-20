@@ -100,6 +100,16 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var settingsState: StateFlow<AppSettings?>
     private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
 
+    /**
+     * Uid allocator for queue items the service builds itself (Android Auto
+     * tap-to-queue, resumption). Epoch-seeded so these never collide with
+     * PlayerConnection's small counter uids: on a collision, shuffle-off there
+     * could restore a bogus "original" order.
+     */
+    private val serviceUid = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis())
+
+    private fun nextServiceUid(): Long = serviceUid.getAndIncrement()
+
     private var bluetoothReceiver: BroadcastReceiver? = null
     private var volumeReceiver: BroadcastReceiver? = null
     private val tripleTap = VolumeTripleTapDetector()
@@ -191,12 +201,20 @@ class PlaybackService : MediaLibraryService() {
 
     private val sessionCallback = object : MediaLibrarySession.Callback {
 
-        /** Default commands plus the app's own (audio output selection). */
+        /**
+         * Default commands for everyone; the app's own commands (audio output
+         * selection) only for the app's own controllers. The service is
+         * exported for Android Auto, so any app can connect, and output
+         * routing must not be theirs to command.
+         */
         override fun onConnect(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
-        ): MediaSession.ConnectionResult =
-            MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+        ): MediaSession.ConnectionResult {
+            if (controller.packageName != packageName) {
+                return MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
+            }
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(
                     MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
                         .buildUpon()
@@ -204,6 +222,7 @@ class PlaybackService : MediaLibraryService() {
                         .build(),
                 )
                 .build()
+        }
 
         override fun onCustomCommand(
             session: MediaSession,
@@ -247,7 +266,16 @@ class PlaybackService : MediaLibraryService() {
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
             val children = browseTree.children(parentId)
                 ?: return@future LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
-            LibraryResult.ofItemList(ImmutableList.copyOf(children), params)
+            // Long math: hosts may page with pageSize = Int.MAX_VALUE.
+            val from = page.toLong() * pageSize
+            val pageItems = when {
+                from >= children.size -> emptyList()
+                else -> children.subList(
+                    from.toInt(),
+                    minOf(children.size.toLong(), from + pageSize).toInt(),
+                )
+            }
+            LibraryResult.ofItemList(ImmutableList.copyOf(pageItems), params)
         }
 
         override fun onGetItem(
@@ -281,8 +309,18 @@ class PlaybackService : MediaLibraryService() {
             }
             return scope.future {
                 val tracks = browseTree.tracksFor(node)
-                val items = tracks.mapIndexed { i, t -> MediaItems.toMediaItem(t, uid = i.toLong()) }
-                val start = tracks.indexOfFirst { it.id == node.trackId }.coerceAtLeast(0)
+                // A stale cached id (deleted playlist, retagged album): fail the
+                // request so the user's current queue is left alone.
+                if (tracks.isEmpty()) {
+                    throw UnsupportedOperationException("browse context ${node.parent} is empty")
+                }
+                val items = tracks.map { MediaItems.toMediaItem(it, uid = nextServiceUid()) }
+                // Prefer the tapped row's position (exact for duplicate playlist
+                // entries); fall back to the first copy, then to the context's
+                // start when the track itself vanished in a rescan.
+                val start = node.index
+                    ?.takeIf { it in tracks.indices && tracks[it].id == node.trackId }
+                    ?: tracks.indexOfFirst { it.id == node.trackId }.coerceAtLeast(0)
                 MediaSession.MediaItemsWithStartPosition(items, start, 0)
             }
         }
@@ -295,11 +333,21 @@ class PlaybackService : MediaLibraryService() {
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
+            // Honor the same opt-out as restoreQueue: with persistence off, a
+            // stale snapshot must not come back through the car's play button.
+            if (settingsState.value?.queue?.persistQueue == false) {
+                throw UnsupportedOperationException("queue persistence is off")
+            }
             val snapshot = stateStore.load()
                 ?: throw UnsupportedOperationException("nothing to resume")
             val tracks = libraryRepository.getTracksByIds(snapshot.trackIds)
             if (tracks.isEmpty()) throw UnsupportedOperationException("nothing to resume")
-            val items = tracks.mapIndexed { i, t -> MediaItems.toMediaItem(t, uid = i.toLong()) }
+            val items = tracks.map { MediaItems.toMediaItem(it, uid = nextServiceUid()) }
+            player.repeatMode = when (snapshot.repeatMode) {
+                RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+                RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+                RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+            }
             MediaSession.MediaItemsWithStartPosition(
                 items,
                 snapshot.currentIndex.coerceIn(0, items.lastIndex),
@@ -309,20 +357,37 @@ class PlaybackService : MediaLibraryService() {
 
         /**
          * MediaItems arrive from controllers without their file URI (Media3
-         * strips localConfiguration crossing the binder) — rebuild it from the
-         * path we stash in the metadata extras.
+         * strips localConfiguration crossing the binder). Rebuild it from the
+         * path stashed in the metadata extras (the app's own items), or from
+         * the library for browse-tree leaf ids, which carry no URI at all and
+         * can arrive here through multi-item sets or add-to-queue from any
+         * MediaBrowser client.
          */
         override fun onAddMediaItems(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>,
-        ): ListenableFuture<MutableList<MediaItem>> {
-            val resolved = mediaItems.map { item ->
+        ): ListenableFuture<MutableList<MediaItem>> = scope.future {
+            val leafIds = mediaItems.mapNotNull {
+                (BrowseIds.decode(it.mediaId) as? BrowseIds.Node.Track)?.trackId
+            }
+            val tracksById =
+                if (leafIds.isEmpty()) emptyMap()
+                else libraryRepository.getTracksByIds(leafIds).associateBy { it.id }
+            mediaItems.mapNotNull { item ->
                 val path = item.mediaMetadata.extras?.getString("path")
-                if (path.isNullOrBlank()) item
-                else item.buildUpon().setUri(Uri.fromFile(File(path))).build()
+                val leaf = BrowseIds.decode(item.mediaId) as? BrowseIds.Node.Track
+                when {
+                    !path.isNullOrBlank() ->
+                        item.buildUpon().setUri(Uri.fromFile(File(path))).build()
+                    leaf != null ->
+                        // Drop leaves the library no longer has instead of
+                        // handing ExoPlayer an unplayable URI-less item.
+                        tracksById[leaf.trackId]
+                            ?.let { MediaItems.toMediaItem(it, uid = nextServiceUid()) }
+                    else -> item
+                }
             }.toMutableList()
-            return Futures.immediateFuture(resolved)
         }
 
         /** Bluetooth/headset media-button remapping (Settings ▸ Bluetooth). */

@@ -23,6 +23,7 @@ object BrowseIds {
 
     private const val TRACK_PREFIX = "track/"
     private const val PARENT_SEP = "?parent="
+    private const val INDEX_SEP = '@'
 
     sealed interface Node {
         data object Root : Node
@@ -34,7 +35,13 @@ object BrowseIds {
         data class Album(val albumArtist: String, val album: String) : Node
         data class Genre(val name: String) : Node
         data class Playlist(val id: Long) : Node
-        data class Track(val trackId: Long, val parent: Node) : Node
+
+        /**
+         * A playable track under [parent]. [index] is its position in the
+         * parent's track list when known: it keeps ids unique and the tapped
+         * row exact when the same track appears twice in one playlist.
+         */
+        data class Track(val trackId: Long, val parent: Node, val index: Int? = null) : Node
     }
 
     fun encode(node: Node): String = when (node) {
@@ -47,17 +54,34 @@ object BrowseIds {
         is Node.Album -> "album/${enc(node.albumArtist)}/${enc(node.album)}"
         is Node.Genre -> "genre/${enc(node.name)}"
         is Node.Playlist -> "playlist/${node.id}"
-        is Node.Track -> "$TRACK_PREFIX${node.trackId}$PARENT_SEP${encode(node.parent)}"
+        is Node.Track -> buildString {
+            append(TRACK_PREFIX).append(node.trackId)
+            node.index?.let { append(INDEX_SEP).append(it) }
+            append(PARENT_SEP).append(encode(node.parent))
+        }
     }
 
-    fun decode(id: String): Node? {
+    /**
+     * Inverse of [encode]. Ids come from arbitrary controllers, so anything
+     * malformed (bad structure, broken % escapes) decodes to null, never throws.
+     */
+    fun decode(id: String): Node? = runCatching { decodeOrThrow(id) }.getOrNull()
+
+    private fun decodeOrThrow(id: String): Node? {
         if (id.startsWith(TRACK_PREFIX)) {
             val rest = id.removePrefix(TRACK_PREFIX)
             val sep = rest.indexOf(PARENT_SEP)
             if (sep < 0) return null
-            val trackId = rest.take(sep).toLongOrNull() ?: return null
-            val parent = decode(rest.substring(sep + PARENT_SEP.length)) ?: return null
-            return Node.Track(trackId, parent)
+            val head = rest.take(sep)
+            val trackPart = head.substringBefore(INDEX_SEP)
+            val indexPart = head.substringAfter(INDEX_SEP, missingDelimiterValue = "")
+            val trackId = trackPart.toLongOrNull() ?: return null
+            val index = when {
+                indexPart.isEmpty() -> null
+                else -> indexPart.toIntOrNull() ?: return null
+            }
+            val parent = decodeOrThrow(rest.substring(sep + PARENT_SEP.length)) ?: return null
+            return Node.Track(trackId, parent, index)
         }
         return when {
             id == ROOT -> Node.Root
@@ -79,5 +103,7 @@ object BrowseIds {
 
     // java.net URL coding is JVM-pure (unit-testable) and encodes '/' and '?'.
     private fun enc(s: String): String = URLEncoder.encode(s, Charsets.UTF_8.name())
+
+    // Throws IllegalArgumentException on broken % escapes; decode() maps that to null.
     private fun dec(s: String): String = URLDecoder.decode(s, Charsets.UTF_8.name())
 }

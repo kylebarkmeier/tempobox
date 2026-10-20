@@ -422,8 +422,16 @@ class PlayerConnection internal constructor(
 
         // Seed the uid counter above anything already in the restored queue.
         items.maxOfOrNull { it.uid }?.let { maxUid -> if (maxUid >= nextUid) nextUid = maxUid + 1 }
-        if (originalOrderUids.isEmpty() && items.isNotEmpty()) {
+        val knownUids = originalOrderUids.toSet()
+        if (knownUids.isEmpty() && items.isNotEmpty()) {
             originalOrderUids = items.map { it.uid }
+        } else if (items.isNotEmpty() && items.none { it.uid in knownUids }) {
+            // The queue was replaced outside this connection (Android Auto's
+            // tap-to-queue, playback resumption): none of our bookkept uids
+            // survive. Adopt the new order and drop the stale shuffle flag,
+            // or the widget would keep showing the old queue's mode.
+            originalOrderUids = items.map { it.uid }
+            _shuffleMode.value = ShuffleMode.OFF
         }
 
         val currentTrack = c.currentMediaItem?.let { MediaItems.toTrack(it) }
