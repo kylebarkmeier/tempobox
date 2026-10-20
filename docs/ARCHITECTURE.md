@@ -3,11 +3,6 @@
 Companion to the concise `CLAUDE.md` guiderails. Read that first; this file
 explains the *why* behind the bigger decisions.
 
-Longer-form walkthroughs of every subsystem (written for readers new to
-Android) live in [docs/README.md](README.md) → [deep-dive/](deep-dive/); the
-Android concepts themselves are explained in the
-[Android primer](android-primer.md).
-
 ## Module graph
 
 ```
