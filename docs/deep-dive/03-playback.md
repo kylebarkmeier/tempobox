@@ -15,7 +15,7 @@ sequenceDiagram
     participant AVM as LibraryActionsViewModel
     participant PC as PlayerConnection<br/>(singleton, UI process side)
     participant MC as MediaController<br/>(binder client)
-    participant PS as PlaybackService<br/>(MediaSessionService)
+    participant PS as PlaybackService<br/>(MediaLibraryService)
     participant EXO as ExoPlayer
     participant OS as OS surfaces<br/>(notification, lockscreen,<br/>Bluetooth AVRCP)
 
@@ -110,9 +110,10 @@ doesn't silently produce unplayable items.
 ## 3. Inside the service: ExoPlayer setup
 
 [`PlaybackService`](../../core/playback/src/main/kotlin/com/tempobox/playback/PlaybackService.kt)
-extends Media3's `MediaSessionService`: the framework base class that owns
-the foreground-service lifecycle and the media notification. `onCreate`
-builds the engine:
+extends Media3's `MediaLibraryService` (a `MediaSessionService` subclass that
+additionally serves a browsable content tree, which is what Android Auto
+displays): the framework base owns the foreground-service lifecycle and the
+media notification. `onCreate` builds the engine:
 
 ```kotlin
 player = ExoPlayer.Builder(this)
@@ -128,7 +129,14 @@ Three OS contracts in one builder:
   `handleAudioFocus = true`, ExoPlayer pauses when another app takes focus
   (a navigation prompt ducks you, a phone call pauses you) and resumes after
   transient losses. Opting out of this is how apps end up playing over phone
-  calls.
+  calls. Focus alone is not enough around cars, though: answering a call on
+  a head unit can re-fire Bluetooth connect events and AVRCP PLAY commands,
+  restarting music into the call.
+  [`CallGuard`](../../core/playback/src/main/kotlin/com/tempobox/playback/CallGuard.kt)
+  closes that hole using the audio mode (no phone permission needed): the
+  start-on-connect autoplay never fires during a call, and playback that
+  starts mid-call is paused again after a settle delay (the delay protects
+  the legitimate auto-resume when the call ends).
 - **Becoming noisy**: the OS broadcasts "audio is about to route to the
   loudspeaker" when headphones unplug; handling it means no accidental
   music-out-loud on the train.
@@ -138,12 +146,30 @@ Three OS contracts in one builder:
 Then the session:
 
 ```kotlin
-session = MediaSession.Builder(this, player)
-    .setCallback(sessionCallback)
+session = MediaLibrarySession.Builder(this, player, sessionCallback)
     .setBitmapLoader(CacheBitmapLoader(ArtworkBitmapLoader(tagReader, scope, ioDispatcher)))
     .apply { launchAppPendingIntent()?.let(::setSessionActivity) }
     .build()
 ```
+
+The callback also serves Android Auto:
+
+- **Browse tree**: `onGetLibraryRoot` / `onGetChildren` / `onGetItem` answer
+  from [`LibraryBrowseTree`](../../core/playback/src/main/kotlin/com/tempobox/playback/LibraryBrowseTree.kt),
+  four root tabs (Playlists, Artists, Albums, Genres) over the same
+  repositories the app UI uses. Node ids are the URL-encoded scheme in
+  [`BrowseIds`](../../core/playback/src/main/kotlin/com/tempobox/playback/BrowseIds.kt);
+  a playable track id carries the node it was browsed under.
+- **Tap-to-queue**: `onSetMediaItems` sees a single browse-originated track,
+  loads its whole context (the album or playlist) and queues it with the
+  tapped track first, like tapping a row in the app.
+- **Resumption**: `onPlaybackResumption` rebuilds the persisted queue
+  (`PlaybackStateStore`) so the play button on the car screen or the
+  post-reboot notification works before the app has run.
+- **Output routing**: a custom session command
+  (`ACTION_SET_AUDIO_OUTPUT`) lets `PlayerConnection` route playback to one
+  connected output (`ExoPlayer.setPreferredAudioDevice`); the Now Playing
+  "Audio output" picker sends it, and "Automatic" clears it.
 
 `onGetSession` returns it, and from that moment Media3 does the rest: builds
 the media notification from session state, promotes the service to foreground

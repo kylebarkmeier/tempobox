@@ -61,13 +61,20 @@
             </intent-filter>
         </activity>
 
-        <!-- Media playback service: lockscreen controls, notification, AVRCP -->
+        <!-- Android Auto: declares this as a media app for the car screen -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+
+        <!-- Media playback service: lockscreen controls, notification, AVRCP,
+             and the media-browser tree for Android Auto -->
         <service
             android:name="com.tempobox.playback.PlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
-                <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="androidx.media3.session.MediaLibraryService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
 

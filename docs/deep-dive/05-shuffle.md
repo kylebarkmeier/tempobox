@@ -31,7 +31,11 @@ untouched so nothing audibly changes
 One consequence: since the timeline order *is* the shuffle,
 `ShuffleMode` is app-level state, not player state, which is why the widget
 needs a dedicated refresh nudge from `PlayerConnection` when it changes
-([deep dive 3 §7](03-playback.md)).
+([deep dive 3 §7](03-playback.md)). For the same reason the public
+`PlayerConnection.state` overlays the mode at combine time instead of copying
+it on the next controller event: a play command that forces shuffle off
+(`playTracks`) is visible to the UI and the widget immediately, never one
+event round-trip late.
 
 ## 2. The engine
 

@@ -3,10 +3,19 @@ package com.tempobox.playback
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
+import com.tempobox.model.AudioOutputDevice
 import com.tempobox.model.NowPlayingState
 import com.tempobox.model.QueueItem
 import com.tempobox.model.RepeatMode
@@ -20,10 +29,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -43,26 +55,42 @@ import javax.inject.Singleton
  * anti-repeat and rating-biased modes possible.
  */
 @Singleton
-class PlayerConnection @Inject constructor(
-    @ApplicationContext private val context: Context,
+class PlayerConnection internal constructor(
+    private val context: Context,
     private val shuffleEngine: ShuffleEngine,
     private val settingsRepository: SettingsRepository,
+    controllerOverride: ListenableFuture<MediaController>?,
 ) {
+    @Inject constructor(
+        @ApplicationContext context: Context,
+        shuffleEngine: ShuffleEngine,
+        settingsRepository: SettingsRepository,
+    ) : this(context, shuffleEngine, settingsRepository, controllerOverride = null)
+
     /** Controller calls must happen on the thread it connected on (main). */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    private val controllerFuture = MediaController.Builder(
+    private val controllerFuture = controllerOverride ?: MediaController.Builder(
         context,
         SessionToken(context, ComponentName(context, PlaybackService::class.java)),
     ).buildAsync()
 
     private val _state = MutableStateFlow(NowPlayingState())
-    val state: StateFlow<NowPlayingState> = _state.asStateFlow()
 
     private val _queue = MutableStateFlow<List<QueueItem>>(emptyList())
     val queue: StateFlow<List<QueueItem>> = _queue.asStateFlow()
 
     private val _shuffleMode = MutableStateFlow(ShuffleMode.OFF)
+
+    /**
+     * Shuffle is overlaid from [_shuffleMode] at combine time, not copied in by
+     * [refresh]: the UI and the home-screen widget see a mode change the
+     * instant it is set (e.g. playTracks forcing OFF), never a stale value
+     * from before the controller's next event round-trip.
+     */
+    val state: StateFlow<NowPlayingState> =
+        combine(_state, _shuffleMode) { s, mode -> s.copy(shuffleMode = mode) }
+            .stateIn(scope, SharingStarted.Eagerly, NowPlayingState())
 
     /** Queue order before shuffle was applied (uids); restored on shuffle-off. */
     private var originalOrderUids: List<Long> = emptyList()
@@ -282,6 +310,60 @@ class PlayerConnection @Inject constructor(
         }
     }
 
+    // ------------------------------------------------------------------ audio output
+
+    private val audioManager =
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    private val _audioOutputs = MutableStateFlow(currentOutputs())
+
+    /** Connected outputs the user can route playback to (live-updated). */
+    val audioOutputs: StateFlow<List<AudioOutputDevice>> = _audioOutputs.asStateFlow()
+
+    private val _selectedOutputId = MutableStateFlow<Int?>(null)
+
+    /** The output chosen in the picker; null means automatic system routing. */
+    val selectedOutputId: StateFlow<Int?> = _selectedOutputId.asStateFlow()
+
+    init {
+        audioManager.registerAudioDeviceCallback(
+            object : AudioDeviceCallback() {
+                override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) = onChanged()
+                override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) = onChanged()
+                private fun onChanged() {
+                    val outputs = currentOutputs()
+                    _audioOutputs.value = outputs
+                    // A picked device that disconnected falls back to automatic
+                    // routing (the player does the same with a stale preference).
+                    if (_selectedOutputId.value?.let { id -> outputs.none { it.id == id } } == true) {
+                        _selectedOutputId.value = null
+                    }
+                }
+            },
+            Handler(Looper.getMainLooper()),
+        )
+    }
+
+    private fun currentOutputs(): List<AudioOutputDevice> =
+        AudioOutputs.pickable(
+            audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList(),
+        )
+
+    /** Routes playback to output [id], or back to automatic when null. */
+    fun selectAudioOutput(id: Int?) = withController { c ->
+        val args = Bundle().apply {
+            putInt(
+                PlaybackService.EXTRA_AUDIO_DEVICE_ID,
+                id ?: PlaybackService.AUDIO_DEVICE_AUTO,
+            )
+        }
+        c.sendCustomCommand(
+            SessionCommand(PlaybackService.ACTION_SET_AUDIO_OUTPUT, Bundle.EMPTY),
+            args,
+        )
+        _selectedOutputId.value = id
+    }
+
     fun setRepeatMode(mode: RepeatMode) = withController { c ->
         c.repeatMode = when (mode) {
             RepeatMode.OFF -> Player.REPEAT_MODE_OFF
@@ -350,7 +432,7 @@ class PlayerConnection @Inject constructor(
             isPlaying = c.isPlaying,
             positionMs = c.currentPosition.coerceAtLeast(0),
             durationMs = c.duration.takeIf { it > 0 } ?: currentTrack?.durationMs ?: 0,
-            shuffleMode = _shuffleMode.value,
+            // shuffleMode is overlaid from _shuffleMode in the public [state].
             repeatMode = when (c.repeatMode) {
                 Player.REPEAT_MODE_ALL -> RepeatMode.ALL
                 Player.REPEAT_MODE_ONE -> RepeatMode.ONE

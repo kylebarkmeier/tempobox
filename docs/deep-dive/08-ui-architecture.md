@@ -282,7 +282,10 @@ event; [deep dive 3 §7](03-playback.md)) broadcasts the package-scoped
 `com.tempobox.action.WIDGET_REFRESH` → `TempoBoxWidgetReceiver.onReceive`
 calls `TempoBoxWidget().updateAll(context)` under `goAsync()` (the
 BroadcastReceiver idiom for "I need a moment of async work before you may
-freeze my process").
+freeze my process"). The state the widget then reads has the shuffle mode
+overlaid directly from `PlayerConnection`'s app-level flow, so a render can
+never catch the stale mode of the previous queue (the "shuffle pill stays on
+after a normal play" bug).
 
 **Input path**: each button is an `actionRunCallback<T>()`; the `ActionCallback`
 classes (`PlayPauseAction`, `NextAction`, `ShuffleAction`, …) resolve
