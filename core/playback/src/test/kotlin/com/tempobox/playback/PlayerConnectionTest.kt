@@ -2,6 +2,7 @@ package com.tempobox.playback
 
 import android.app.Application
 import android.os.Looper
+import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
@@ -114,6 +115,19 @@ class PlayerConnectionTest {
         idleMain()
 
         assertThat(connection.state.value.shuffleMode).isEqualTo(ShuffleMode.OFF)
+    }
+
+    @Test
+    fun `playFromSearch sends one item carrying the spoken query`() {
+        connection.playFromSearch("lamb of god")
+        idleMain()
+
+        val items = slot<List<MediaItem>>()
+        verify { controller.setMediaItems(capture(items)) }
+        assertThat(items.captured).hasSize(1)
+        assertThat(items.captured.single().requestMetadata.searchQuery).isEqualTo("lamb of god")
+        verify { controller.prepare() }
+        verify { controller.play() }
     }
 
     @Test
