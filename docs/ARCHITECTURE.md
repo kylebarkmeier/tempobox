@@ -71,7 +71,9 @@ defaults). `AppSettings` defaults are the product defaults, asserted by tests
 **Tag IO has exactly one door.** Only `core:tags` (jaudiotagger) touches audio
 file metadata. `LibraryRepository.editTags` writes files first, then re-syncs
 DB rows from what actually landed on disk, and reports per-file failures so
-the UI can point users at the All-files-access grant.
+the UI can point users at the All-files-access grant. Embedded artwork goes
+through the same door: `LibraryRepository.editArtwork` writes via `TagWriter`
+and bumps each row's mtime so the path+mtime artwork cache key misses.
 
 ## Playback pipeline details
 
@@ -79,6 +81,27 @@ the UI can point users at the All-files-access grant.
   notification, AVRCP, and the Android Auto browse tree all derive from the
   MediaLibrarySession; embedded tag art is served by a custom `BitmapLoader`
   resolving `tempobox-art:///` URIs.
+- The Android Auto browse tree is `LibraryBrowseTree` over `BrowseIds`, a
+  URL-encoded id scheme whose decode never throws (malformed ids from external
+  controllers resolve to null, not a crash). Tapping a browse leaf expands in
+  `onSetMediaItems` to its whole context (album or playlist) with the tapped
+  track first, the same contract as tapping a row in the app; the car's play
+  button rebuilds the persisted queue via `onPlaybackResumption`.
+- Voice queries (Assistant play-from-search arrives as
+  `requestMetadata.searchQuery`; Auto's search screen via `onSearch`) resolve
+  in `VoiceSearch`: normalized exact-then-substring matching with bucket
+  priority playlist > artist > album > genre > track title, a "shuffle" token
+  setting the user's configured shuffle flavor. An unmatched query falls back
+  to the persisted queue, else a whole-library shuffle, so voice always plays
+  something. Every query logs one line under the `PlaybackService` tag.
+- `CallGuard` (pure logic, audio-mode based, no phone permission) stops car
+  stereos restarting music mid-call: start-on-connect is refused during any
+  call mode, and playback that starts mid-call is paused after a recheck
+  delay, but only for cellular calls (`MODE_IN_CALL`); VoIP is exempt so a
+  deliberate play during a Meet/Discord call sticks.
+- The Now Playing output picker routes audio with
+  `ExoPlayer.setPreferredAudioDevice`, reached through a custom session
+  command that `onConnect` grants only to TempoBox's own package.
 - Play counting + scrobbling share one rule (`PlayedThreshold`): >30s track,
   half played or 4 minutes. `PlaybackStatsListener` reports per-item play time
   when a playback session ends.
