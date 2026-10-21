@@ -182,7 +182,7 @@ core/playback      Media3 service, queue, shuffle engines, Bluetooth glue
 core/scrobble      SLS broadcasts to the user's scrobbler app
 core/artwork       Embedded-art Coil fetcher + Discogs artist images
 build-logic/       Gradle convention plugins shared by all modules
-docs/              Architecture notes, Android primer, subsystem deep dives
+docs/              Architecture notes, user guide, release guide
 ```
 
 See `docs/ARCHITECTURE.md` for the module graph and key design decisions, and
@@ -192,12 +192,8 @@ See `docs/ARCHITECTURE.md` for the module graph and key design decisions, and
 
 [docs/README.md](docs/README.md) is the index for all project documentation:
 
-- **[Android primer](docs/android-primer.md)**: the Android/Jetpack concepts
-  this app uses, explained for backend/web developers.
-- **[Deep dives](docs/deep-dive/)**: one walkthrough per subsystem (startup &
-  DI, scanning & the database, playback, the queue, shuffle, playlists,
-  settings, UI, tag editing, build & CI), tracing real code paths with file
-  references.
+- **[User guide](https://github.com/kylebarkmeier/tempobox/wiki)**: features and how to use the app,
+  written for end users.
 - **[Architecture](docs/ARCHITECTURE.md)**: the one-page decision record.
 - **[Releasing](docs/RELEASING.md)**: cutting and signing releases.
 
@@ -227,8 +223,8 @@ support, but it must be built from source and is intentionally not a default
 dependency.)
 
 **Bluetooth quality:** Android negotiates the Bluetooth codec (LDAC, aptX/HD,
-AAC, LC3/LE Audio) at the OS level; apps can't pick it. TempoBox outputs
-bit-perfect PCM to the audio stack so the system can use the best codec your
+AAC, LC3/LE Audio) at the OS level; apps can't pick it. TempoBox supplies
+PCM audio to the audio stack so the system can use the best codec your
 headphones support, and speaks AVRCP through its MediaSession for metadata and
 controls.
 
