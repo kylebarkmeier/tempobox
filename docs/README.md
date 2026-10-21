@@ -2,7 +2,7 @@
 
 Start here.
 
-- **[User guide](user-guide/index.md)**: features and how to use the app,
+- **[User guide](https://github.com/kylebarkmeier/tempobox/wiki)**: features and how to use the app,
   written for end users (install, library, playback, playlists, tags,
   Android Auto, settings, troubleshooting).
 - **[Architecture](ARCHITECTURE.md)**: the concise decision record, with the

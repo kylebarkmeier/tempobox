@@ -1,6 +1,6 @@
 # TempoBox agent guiderails
 
-Concise context for AI agents (and humans) working on this repo. Design rationale: `docs/ARCHITECTURE.md`. Subsystem walkthroughs: `docs/deep-dive/`.
+Concise context for AI agents (and humans) working on this repo. Design rationale: `docs/ARCHITECTURE.md`.
 
 ## What this is
 Android music player. Kotlin 2.4 / Jetpack Compose / Material 3 / Media3 (ExoPlayer) / Room / Hilt / DataStore.
@@ -44,7 +44,7 @@ Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.8
 
 ## Accuracy
 - Verify names and behavior against the code before writing docs, comments, or this file. Stale references have burned us before (`TagEditor`, `QueuePersistence`, and `MediaLibraryService` were all wrong here at one point).
-- A behavioral change updates its documentation in the same PR: `docs/ARCHITECTURE.md`, the matching `docs/deep-dive/` page, and the README when user-facing.
+- A behavioral change updates its documentation in the same PR: `docs/ARCHITECTURE.md` and the README when user-facing. When the change is user-visible, update the wiki user guide (https://github.com/kylebarkmeier/tempobox/wiki) alongside the merge.
 - Report test results as they are. A change that only compiled is not "tested"; name the tasks that ran.
 
 ## Writing style (docs, comments, PR bodies)

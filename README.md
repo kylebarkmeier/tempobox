@@ -192,7 +192,7 @@ See `docs/ARCHITECTURE.md` for the module graph and key design decisions, and
 
 [docs/README.md](docs/README.md) is the index for all project documentation:
 
-- **[User guide](docs/user-guide/index.md)**: features and how to use the app,
+- **[User guide](https://github.com/kylebarkmeier/tempobox/wiki)**: features and how to use the app,
   written for end users.
 - **[Architecture](docs/ARCHITECTURE.md)**: the one-page decision record.
 - **[Releasing](docs/RELEASING.md)**: cutting and signing releases.
@@ -223,8 +223,8 @@ support, but it must be built from source and is intentionally not a default
 dependency.)
 
 **Bluetooth quality:** Android negotiates the Bluetooth codec (LDAC, aptX/HD,
-AAC, LC3/LE Audio) at the OS level; apps can't pick it. TempoBox outputs
-bit-perfect PCM to the audio stack so the system can use the best codec your
+AAC, LC3/LE Audio) at the OS level; apps can't pick it. TempoBox supplies
+PCM audio to the audio stack so the system can use the best codec your
 headphones support, and speaks AVRCP through its MediaSession for metadata and
 controls.
 
