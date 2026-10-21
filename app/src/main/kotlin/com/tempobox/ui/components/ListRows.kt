@@ -46,6 +46,7 @@ fun TrackRow(
     actions: LibraryActionsViewModel,
     modifier: Modifier = Modifier,
     subtitle: String = track.artist.ifBlank { track.effectiveAlbumArtist },
+    menuExtras: List<Pair<String, () -> Unit>> = emptyList(),
     onClick: () -> Unit,
 ) {
     Row(
@@ -86,7 +87,7 @@ fun TrackRow(
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        LibraryItemMenu(item = LibraryItem.TrackItem(track), actions = actions)
+        LibraryItemMenu(item = LibraryItem.TrackItem(track), actions = actions, extras = menuExtras)
     }
 }
 

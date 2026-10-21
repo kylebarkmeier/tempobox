@@ -78,6 +78,7 @@ fun ActionDialogHost(actions: LibraryActionsViewModel) {
                     trackCount = tracks.size,
                     form = TagEditForm.from(tracks),
                     onApply = { actions.applyTagEdit(current.item, it) },
+                    onPickArtwork = { actions.applyArtwork(current.item, it) },
                     onDismiss = actions::dismissDialog,
                 )
             }

@@ -350,6 +350,13 @@ fun PlaylistDetailScreen(
                 TrackRow(
                     track = track,
                     actions = actions,
+                    // Static playlists only: smart playlists derive their
+                    // content from the rule, so single entries can't be removed.
+                    menuExtras = if (playlist?.isSmart == false) {
+                        listOf("Remove from playlist" to { viewModel.removeEntry(index) })
+                    } else {
+                        emptyList()
+                    },
                     onClick = { actions.playFrom(tracks, index) },
                 )
             }

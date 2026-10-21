@@ -1,7 +1,10 @@
 package com.tempobox.ui.library
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tempobox.common.IoDispatcher
 import com.tempobox.library.LibraryRepository
 import com.tempobox.library.PlaylistRepository
 import com.tempobox.model.RuleField
@@ -12,6 +15,9 @@ import com.tempobox.model.TagData
 import com.tempobox.model.Track
 import com.tempobox.playback.PlayerConnection
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -36,6 +42,8 @@ class LibraryActionsViewModel @Inject constructor(
     private val libraryRepository: LibraryRepository,
     private val playlistRepository: PlaylistRepository,
     private val playerConnection: PlayerConnection,
+    @ApplicationContext private val appContext: Context,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
 
     /** Which modal is currently open (rendered by ActionDialogHost). */
@@ -200,6 +208,38 @@ class LibraryActionsViewModel @Inject constructor(
         _dialog.value = null
     }
 
+    /**
+     * "Choose image" in the tag editor: embeds the picked image as the artwork
+     * of every selected track. Applies immediately (the pick is the explicit
+     * confirmation), independent of the dialog's Save.
+     */
+    fun applyArtwork(item: LibraryItem, imageUri: Uri) = withTracks(item) { tracks ->
+        val mime = appContext.contentResolver.getType(imageUri) ?: "image/jpeg"
+        if (!mime.startsWith("image/")) {
+            toast("That file is not an image")
+            return@withTracks
+        }
+        val bytes = withContext(ioDispatcher) {
+            runCatching {
+                appContext.contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
+            }.getOrNull()
+        }
+        if (bytes == null || bytes.isEmpty()) {
+            toast("Could not read the image")
+            return@withTracks
+        }
+        if (bytes.size > MAX_ARTWORK_BYTES) {
+            toast("Image is larger than 10 MB — pick a smaller one")
+            return@withTracks
+        }
+        val failed = libraryRepository.editArtwork(tracks.map { it.id }, bytes, mime)
+        toast(
+            if (failed.isEmpty()) "Artwork set on ${countLabel(tracks.size)}"
+            else "Failed to write ${failed.size} file(s) — grant All files access in Settings ▸ Library",
+        )
+        _dialog.value = null
+    }
+
     // ------------------------------------------------------------------ swipes
 
     /** Runs a configured swipe gesture (Settings ▸ UI) against any item. */
@@ -268,6 +308,9 @@ class LibraryActionsViewModel @Inject constructor(
     private fun countLabel(count: Int) = if (count == 1) "1 track" else "$count tracks"
 
     companion object {
+        /** jaudiotagger embeds the bytes verbatim; huge images bloat every file. */
+        private const val MAX_ARTWORK_BYTES = 10 * 1024 * 1024
+
         /**
          * Artist detail destination for "Go to artist", or null where the entry
          * makes no sense (artist/genre/playlist items, multi-track selections).

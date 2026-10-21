@@ -48,7 +48,8 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
   Matching ignores case and accents, looks at title/artist/album for tracks
   and names elsewhere, and keeps the current sort order
 - Per-track 1-5★ ratings and play counts
-- In-app ID3/Vorbis/MP4 tag editing, single track or bulk
+- In-app ID3/Vorbis/MP4 tag editing, single track or bulk, including setting
+  the embedded album art from an image on your device
 - Remove-from-library and delete-from-device (both behind confirmations)
 - Artist images from Discogs (optional, bring your own token) with an
   album-art collage fallback
@@ -58,6 +59,8 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
 **Playlists**
 - Native M3U and M3U8 support; playlists found in your library folders are
   imported automatically
+- Remove single entries from a playlist with the row menu (duplicates are
+  removable one copy at a time)
 - Everything the app creates or modifies is written as UTF-8 **M3U8**
 - **Auto (smart) playlists** built from Album Artist / Artist / Genre / Year /
   Rating conditions with AND/OR combinations and `<` / `>` for Year & Rating;
