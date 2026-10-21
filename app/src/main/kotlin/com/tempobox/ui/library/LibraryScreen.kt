@@ -576,9 +576,13 @@ fun PlaylistsTab(
                     CollectionRow(
                         item = item,
                         title = playlist.name + if (playlist.isSmart) "  ✨" else "",
-                        subtitle = "${playlist.trackCount} tracks · " +
-                            TimeFormat.duration(playlist.durationMs) +
-                            if (playlist.isSmart) " · auto" else "",
+                        subtitle = if (playlist.ruleBroken) {
+                            "Auto playlist — its rule failed to load"
+                        } else {
+                            "${playlist.trackCount} tracks · " +
+                                TimeFormat.duration(playlist.durationMs) +
+                                if (playlist.isSmart) " · auto" else ""
+                        },
                         actions = actions,
                         artwork = {
                             Icon(

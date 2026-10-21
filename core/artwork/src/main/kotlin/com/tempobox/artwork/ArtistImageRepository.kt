@@ -25,9 +25,11 @@ import javax.inject.Singleton
  * Artist images for the Album Artist card view.
  *
  * Source: the Discogs search API, authenticated with the user's personal
- * token (Settings ▸ UI ▸ Artist images). Results — including misses — are
- * cached on disk so each artist is queried at most once per [CACHE_TTL_MS].
- * Without a token (or on a miss) the UI falls back to an album-art collage.
+ * token (Settings ▸ UI ▸ Artist images). Genuine results — including "no
+ * image" misses — are cached on disk so each artist is queried at most once
+ * per [CACHE_TTL_MS]. Failures (bad token, rate limit, server/transport
+ * errors) are never cached: the next browse retries. Without a token (or on a
+ * miss) the UI falls back to an album-art collage.
  */
 @Singleton
 class ArtistImageRepository @Inject constructor(
@@ -65,16 +67,21 @@ class ArtistImageRepository @Inject constructor(
 
         // …but the network call happens OUTSIDE it, so one slow request
         // can't stall every other artist card's image load.
-        val url = runCatching { queryDiscogs(artistName, token) }
+        val lookup = runCatching { queryDiscogs(artistName, token) }
             .onFailure { Log.w(TAG, "Discogs lookup failed for $artistName: ${it.message}") }
-            .getOrNull()
+            .getOrElse { Lookup.Failed }
 
-        mutex.withLock {
-            val map = loadCache()
-            map[key] = CacheEntry(url, now)
-            persistCache(map)
+        // Only genuine answers are cached. A failure (bad token, rate limit,
+        // server error, transport) must NOT become a 30-day "no image".
+        when (lookup) {
+            is Lookup.Found, Lookup.NoImage -> mutex.withLock {
+                val map = loadCache()
+                map[key] = CacheEntry((lookup as? Lookup.Found)?.url, now)
+                persistCache(map)
+            }
+            Lookup.Failed -> Unit
         }
-        url
+        (lookup as? Lookup.Found)?.url
     }
 
     /** Settings ▸ "Clear artist image cache". */
@@ -87,21 +94,33 @@ class ArtistImageRepository @Inject constructor(
 
     // ------------------------------------------------------------------ internals
 
-    private fun queryDiscogs(artistName: String, token: String): String? {
+    /** One Discogs answer: an image, a genuine miss, or a failure (not cacheable). */
+    private sealed interface Lookup {
+        data class Found(val url: String) : Lookup
+        data object NoImage : Lookup
+        data object Failed : Lookup
+    }
+
+    private fun queryDiscogs(artistName: String, token: String): Lookup {
         val q = URLEncoder.encode(artistName, "UTF-8")
         val request = Request.Builder()
             .url("https://api.discogs.com/database/search?type=artist&q=$q&per_page=1&token=$token")
             .header("User-Agent", USER_AGENT)
             .build()
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return null
-            val body = response.body?.string() ?: return null
+            if (!response.isSuccessful) {
+                // 401/403 = bad token, 429 = rate limited, 5xx = Discogs down.
+                Log.w(TAG, "Discogs returned HTTP ${response.code} for $artistName")
+                return Lookup.Failed
+            }
+            val body = response.body?.string() ?: return Lookup.Failed
             // Minimal parse: first result's cover_image (skip Discogs' grey
             // "spacer.gif" placeholder).
             val cover = Regex("\"cover_image\"\\s*:\\s*\"([^\"]+)\"").find(body)
                 ?.groupValues?.get(1)
                 ?.replace("\\/", "/")
-            return cover?.takeIf { "spacer.gif" !in it }
+                ?.takeIf { "spacer.gif" !in it }
+            return if (cover == null) Lookup.NoImage else Lookup.Found(cover)
         }
     }
 
@@ -109,6 +128,7 @@ class ArtistImageRepository @Inject constructor(
         cache?.let { return it }
         val loaded = if (cacheFile.exists()) {
             runCatching { json.decodeFromString(cacheSerializer, cacheFile.readText()) }
+                .onFailure { Log.w(TAG, "Corrupt artist image cache; starting fresh", it) }
                 .getOrElse { emptyMap() }
         } else {
             emptyMap()

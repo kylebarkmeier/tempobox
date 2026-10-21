@@ -48,11 +48,29 @@ class MediaScanner @Inject constructor(
             _state.value = ScanState.Scanning(0, 0)
 
             // 1. Enumerate every supported audio file under the locations.
+            // A location that cannot be read (missing folder, revoked
+            // permission, unmounted SD card) must not look like an EMPTY
+            // location: it is counted here and disables the removal phase
+            // below, or one bad mount would wipe the rows (and their ratings
+            // and play counts) of every track under it.
+            var unreadableLocations = 0
+            var walkFailed = false
             val filesOnDisk = locations
                 .map(::File)
-                .filter { it.isDirectory }
+                .filter { root ->
+                    val readable = root.isDirectory && root.canRead()
+                    if (!readable) {
+                        unreadableLocations++
+                        Log.w(TAG, "Library location not readable, skipping: ${root.absolutePath}")
+                    }
+                    readable
+                }
                 .flatMap { root ->
                     root.walkTopDown()
+                        .onFail { dir, e ->
+                            walkFailed = true
+                            Log.w(TAG, "Could not list $dir during scan", e)
+                        }
                         .onEnter { dir -> !File(dir, ".nomedia").exists() } // honor .nomedia
                         .filter { it.isFile && it.extension.lowercase() in AudioFormat.SUPPORTED_EXTENSIONS }
                         .toList()
@@ -65,6 +83,7 @@ class MediaScanner @Inject constructor(
             val known = trackDao.getAllScanMeta().associateBy { it.filePath }
             var added = 0
             var updated = 0
+            var skippedFiles = 0
             val now = System.currentTimeMillis()
             val toUpsert = buildList {
                 filesOnDisk.forEachIndexed { index, file ->
@@ -74,7 +93,10 @@ class MediaScanner @Inject constructor(
                         existing.sizeBytes != file.length()
                     if (changed) {
                         // 3. Read tags only for new/changed files.
-                        tagReader.readTrack(file)?.let { track ->
+                        val track = tagReader.readTrack(file)
+                        if (track == null) {
+                            skippedFiles++ // unreadable file; any existing row is kept
+                        } else {
                             add(track.copy(dateAddedMs = existing?.dateAddedMs ?: now).toEntity())
                             if (existing == null) added++ else updated++
                         }
@@ -86,14 +108,36 @@ class MediaScanner @Inject constructor(
             }
             trackDao.upsertKeepingUserData(toUpsert)
 
-            // 4. Drop rows whose files vanished (chunked: SQLite's 999-var limit).
-            val diskPaths = filesOnDisk.mapTo(HashSet()) { it.absolutePath }
-            val missing = known.keys.filterNot { it in diskPaths }
-            missing.chunked(DELETE_CHUNK).forEach { trackDao.deleteByPaths(it) }
+            // 4. Drop rows whose files vanished (chunked: SQLite's 999-var
+            // limit) — but ONLY when every location was enumerated completely.
+            // After a partial walk, "not seen on disk" does not mean "gone".
+            val removed: Int
+            if (unreadableLocations == 0 && !walkFailed) {
+                val diskPaths = filesOnDisk.mapTo(HashSet()) { it.absolutePath }
+                val missing = known.keys.filterNot { it in diskPaths }
+                missing.chunked(DELETE_CHUNK).forEach { trackDao.deleteByPaths(it) }
+                removed = missing.size
+            } else {
+                removed = 0
+                Log.w(
+                    TAG,
+                    "Skipping removal phase: $unreadableLocations unreadable location(s)" +
+                        if (walkFailed) " and at least one folder listing failed" else "",
+                )
+            }
 
-            Log.i(TAG, "Scan done: +$added ~$updated -${missing.size} (of ${filesOnDisk.size} files)")
-            ScanState.Done(added = added, updated = updated, removed = missing.size)
-                .also { _state.value = it }
+            Log.i(
+                TAG,
+                "Scan done: +$added ~$updated -$removed, $skippedFiles skipped, " +
+                    "$unreadableLocations unreadable location(s) (of ${filesOnDisk.size} files)",
+            )
+            ScanState.Done(
+                added = added,
+                updated = updated,
+                removed = removed,
+                skippedFiles = skippedFiles,
+                unreadableLocations = unreadableLocations,
+            ).also { _state.value = it }
         }
     }
 

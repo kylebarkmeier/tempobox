@@ -45,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import com.tempobox.MainActivity
 import com.tempobox.R
+import com.tempobox.common.resultOf
 import com.tempobox.model.NowPlayingState
 import com.tempobox.playback.PlaybackService
 import com.tempobox.playback.PlayerConnection
@@ -323,13 +324,21 @@ class TempoBoxWidgetReceiver : GlanceAppWidgetReceiver() {
         if (intent.action == ACTION_REFRESH) {
             val pending = goAsync()
             scope.launch {
-                runCatching { TempoBoxWidget().updateAll(context) }
-                pending.finish()
+                try {
+                    // resultOf, not runCatching: updateAll suspends, and a
+                    // cancelled refresh is not a render failure.
+                    resultOf { TempoBoxWidget().updateAll(context) }
+                        .onFailure { android.util.Log.e(TAG, "Widget refresh failed", it) }
+                } finally {
+                    pending.finish()
+                }
             }
         }
     }
 
     companion object {
+        private const val TAG = "TempoBoxWidget"
+
         /** Single source of truth lives in core:playback (also in the manifest). */
         const val ACTION_REFRESH = PlaybackService.ACTION_WIDGET_REFRESH
     }

@@ -84,6 +84,13 @@ fun AppRoot(navController: NavHostController = rememberNavController()) {
     val snackbarHostState = remember { SnackbarHostState() }
     val sheetState = rememberNowPlayingSheetState()
 
+    // Playback problems (player errors, failed output switches) surface here,
+    // in the app shell, so they are visible whatever screen is open — Now
+    // Playing is only composed while the sheet is expanded.
+    androidx.compose.runtime.LaunchedEffect(viewModel.player) {
+        viewModel.player.errors.collect { snackbarHostState.showSnackbar(it) }
+    }
+
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 

@@ -2,6 +2,7 @@ package com.tempobox.ui.library
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tempobox.common.IoDispatcher
@@ -90,8 +91,14 @@ class LibraryActionsViewModel @Inject constructor(
     fun shuffle(item: LibraryItem) = withTracks(item) { playerConnection.playShuffled(it) }
 
     fun addToQueue(item: LibraryItem) = withTracks(item) {
-        playerConnection.addToQueue(it)
-        toast("Added ${countLabel(it.size)} to queue")
+        val added = playerConnection.addToQueue(it)
+        toast(
+            when {
+                added == 0 -> "Already in queue"
+                added < it.size -> "Added ${countLabel(added)} to queue (rest already queued)"
+                else -> "Added ${countLabel(added)} to queue"
+            },
+        )
     }
 
     fun playNext(item: LibraryItem) = withTracks(item) {
@@ -158,8 +165,15 @@ class LibraryActionsViewModel @Inject constructor(
     fun confirmDelete(item: LibraryItem) {
         if (item is LibraryItem.PlaylistItem) {
             viewModelScope.launch {
-                playlistRepository.deletePlaylist(item.playlist.id)
-                toast("Deleted playlist \"${item.title}\"")
+                val fileDeleted = playlistRepository.deletePlaylist(item.playlist.id)
+                toast(
+                    if (fileDeleted) {
+                        "Deleted playlist \"${item.title}\""
+                    } else {
+                        "Removed playlist \"${item.title}\", but its file could not be deleted — " +
+                            "grant All files access in Settings ▸ Library"
+                    },
+                )
                 _dialog.value = null
             }
             return
@@ -176,8 +190,11 @@ class LibraryActionsViewModel @Inject constructor(
 
     fun addToExistingPlaylist(item: LibraryItem, playlistId: Long, playlistName: String) =
         withTracks(item) { tracks ->
-            playlistRepository.addToPlaylist(playlistId, tracks.map { it.id })
-            toast("Added ${countLabel(tracks.size)} to \"$playlistName\"")
+            val added = playlistRepository.addToPlaylist(playlistId, tracks.map { it.id })
+            toast(
+                if (added) "Added ${countLabel(tracks.size)} to \"$playlistName\""
+                else "Can't add tracks to \"$playlistName\" — its auto rule picks the tracks",
+            )
             _dialog.value = null
         }
 
@@ -222,6 +239,8 @@ class LibraryActionsViewModel @Inject constructor(
         val bytes = withContext(ioDispatcher) {
             runCatching {
                 appContext.contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
+            }.onFailure {
+                Log.w(TAG, "Could not read picked artwork image $imageUri", it)
             }.getOrNull()
         }
         if (bytes == null || bytes.isEmpty()) {
@@ -308,6 +327,8 @@ class LibraryActionsViewModel @Inject constructor(
     private fun countLabel(count: Int) = if (count == 1) "1 track" else "$count tracks"
 
     companion object {
+        private const val TAG = "LibraryActions"
+
         /** jaudiotagger embeds the bytes verbatim; huge images bloat every file. */
         private const val MAX_ARTWORK_BYTES = 10 * 1024 * 1024
 

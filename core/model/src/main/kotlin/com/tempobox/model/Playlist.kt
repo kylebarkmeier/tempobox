@@ -12,12 +12,17 @@ package com.tempobox.model
  *
  * @property filePath Absolute path of the backing playlist file, or null for a
  *                    smart playlist that has not been exported yet.
+ * @property ruleBroken True when a stored smart rule failed to decode. The
+ *                      playlist is then neither usable as smart (no rule) nor
+ *                      as static (its entries are rule-driven); the UI says so
+ *                      instead of showing an empty static playlist.
  */
 data class Playlist(
     val id: Long = 0,
     val name: String,
     val filePath: String? = null,
     val smartRule: SmartRule? = null,
+    val ruleBroken: Boolean = false,
     val trackCount: Int = 0,
     val durationMs: Long = 0,
     val dateAddedMs: Long = 0,

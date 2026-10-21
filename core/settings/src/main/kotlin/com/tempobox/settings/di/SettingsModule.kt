@@ -23,6 +23,10 @@ import javax.inject.Singleton
  */
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "tempobox_settings",
+    // A corrupt file would otherwise crash every settings collector forever;
+    // log + reset to defaults instead (per-group decode failures are handled
+    // and preserved separately in DataStoreSettingsRepository).
+    corruptionHandler = DataStoreSettingsRepository.corruptionHandler(),
 )
 
 /** Hilt bindings for the settings DataStore and repository. */

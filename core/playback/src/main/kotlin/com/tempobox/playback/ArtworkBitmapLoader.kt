@@ -9,7 +9,6 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.tempobox.tags.TagReader
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.guava.future
 import java.io.File
 
 /**
@@ -27,13 +26,15 @@ class ArtworkBitmapLoader(
 
     override fun supportsMimeType(mimeType: String): Boolean = mimeType.startsWith("image/")
 
+    // loggedFuture: Media3 consumes these futures' failures silently, and a
+    // track without embedded art fails loadBitmap by design (logged at I).
     override fun decodeBitmap(data: ByteArray): ListenableFuture<Bitmap> =
-        scope.future(ioDispatcher) {
+        scope.loggedFuture(TAG, "decodeBitmap", ioDispatcher) {
             requireNotNull(decodeScaled(data)) { "Could not decode artwork bytes" }
         }
 
     override fun loadBitmap(uri: Uri): ListenableFuture<Bitmap> =
-        scope.future(ioDispatcher) {
+        scope.loggedFuture(TAG, "loadBitmap($uri)", ioDispatcher) {
             val path = MediaItems.pathFromArtworkUri(uri)
                 ?: uri.path.takeIf { uri.scheme == "file" }
             val bytes = path?.let { tagReader.readEmbeddedArtwork(File(it)) }
@@ -55,6 +56,7 @@ class ArtworkBitmapLoader(
     }
 
     private companion object {
+        const val TAG = "ArtworkBitmapLoader"
         const val MAX_DIMENSION_PX = 1024
     }
 }

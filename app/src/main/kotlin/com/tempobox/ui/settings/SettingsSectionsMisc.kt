@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
@@ -33,6 +35,7 @@ import com.tempobox.model.ThemeConfig
 import com.tempobox.model.TrackInfoField
 import com.tempobox.model.VolumeTapAction
 import com.tempobox.ui.nowplaying.cornerLabel
+import com.tempobox.ui.permissions.rememberAppPermissions
 
 // ---------------------------------------------------------------- Now Playing
 
@@ -139,11 +142,29 @@ fun BluetoothSection(viewModel: SettingsViewModel) {
     val tapActions = VolumeTapAction.entries
     val remapActions = MediaButtonAction.entries
 
+    // Start-on-connect listens for ACL_CONNECTED broadcasts, which API 31+
+    // only delivers with BLUETOOTH_CONNECT granted. The other Bluetooth
+    // features (button remap, volume taps) need no runtime permission.
+    val permissions by rememberAppPermissions()
+    val bluetoothPermissionRequest = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { /* rememberAppPermissions re-checks on resume */ }
+
     SettingsSection("Connection") {
         SwitchRow(
             title = "Start playback on connect",
             subtitle = "Resume automatically when a Bluetooth device or headset connects",
             checked = settings.bluetooth.startOnConnect,
+            gateReason = if (permissions.bluetoothConnect) {
+                null
+            } else {
+                "Needs the Nearby devices (Bluetooth) permission — tap to grant"
+            },
+            onGateClick = {
+                bluetoothPermissionRequest.launch(
+                    arrayOf(android.Manifest.permission.BLUETOOTH_CONNECT),
+                )
+            },
             onToggle = { on -> viewModel.updateBluetooth { it.copy(startOnConnect = on) } },
         )
     }

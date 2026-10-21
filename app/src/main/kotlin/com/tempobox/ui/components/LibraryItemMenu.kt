@@ -6,6 +6,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -14,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.tempobox.ui.library.LibraryActionsViewModel
 import com.tempobox.ui.library.LibraryItem
+import com.tempobox.ui.permissions.rememberAppPermissions
 
 /**
  * The standard 3-dot "more" menu every library item shows (product spec):
@@ -47,6 +49,13 @@ private fun MenuContent(
     open: Boolean,
     onDismiss: () -> Unit,
 ) {
+    // Tag editing and permanent deletion write/delete files in arbitrary
+    // library folders, which needs All files access on API 30+. Grey the
+    // entries out (disabled with the reason, not hidden) instead of letting
+    // the operation fail afterwards; the failure snackbars stay as backstop.
+    val permissions by rememberAppPermissions()
+    val canWriteFiles = permissions.allFilesAccess
+
     DropdownMenu(expanded = open, onDismissRequest = onDismiss) {
         if (item.isCollection) {
             DropdownMenuItem(
@@ -86,7 +95,8 @@ private fun MenuContent(
                 onClick = { onDismiss(); actions.requestCreateAutoPlaylist(item) },
             )
             DropdownMenuItem(
-                text = { Text("Edit ID3 tags") },
+                enabled = canWriteFiles,
+                text = { GatedMenuLabel("Edit ID3 tags", enabled = canWriteFiles) },
                 onClick = { onDismiss(); actions.requestEditTags(item) },
             )
         }
@@ -108,8 +118,25 @@ private fun MenuContent(
         )
         if (item !is LibraryItem.PlaylistItem || item.playlist.filePath != null) {
             DropdownMenuItem(
-                text = { Text("Delete permanently") },
+                enabled = canWriteFiles,
+                text = { GatedMenuLabel("Delete permanently", enabled = canWriteFiles) },
                 onClick = { onDismiss(); actions.requestDelete(item) },
+            )
+        }
+    }
+}
+
+/** Menu entry label with the missing-permission reason under it when disabled. */
+@Composable
+private fun GatedMenuLabel(title: String, enabled: Boolean) {
+    if (enabled) {
+        Text(title)
+    } else {
+        androidx.compose.foundation.layout.Column {
+            Text(title)
+            Text(
+                "Needs All files access (Settings ▸ Library)",
+                style = MaterialTheme.typography.bodySmall,
             )
         }
     }

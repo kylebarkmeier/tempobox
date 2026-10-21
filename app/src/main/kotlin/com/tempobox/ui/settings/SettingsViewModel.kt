@@ -93,9 +93,6 @@ class SettingsViewModel @Inject constructor(
         current.copy(locations = current.locations - path)
     }
 
-    /** True when tag edits / deletes can touch arbitrary library folders. */
-    fun hasAllFilesAccess(): Boolean = LibraryPermissions.hasAllFilesAccess()
-
     fun allFilesAccessIntent() = LibraryPermissions.allFilesAccessIntent(context)
 
     fun clearArtistImageCache() = launch { artistImageRepository.clearCache() }

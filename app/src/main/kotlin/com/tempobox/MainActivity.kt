@@ -1,6 +1,7 @@
 package com.tempobox
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -19,8 +20,13 @@ import dagger.hilt.android.AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     private val permissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-            // Results are re-checked reactively by the UI; nothing to do here.
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+            // The UI re-checks grants on resume (permission-aware greying);
+            // a denial is still worth a trace when "the library is empty".
+            val denied = results.filterValues { !it }.keys
+            if (denied.isNotEmpty()) {
+                Log.w(TAG, "Permissions denied at first launch: ${denied.joinToString()}")
+            }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,5 +40,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             AppRoot()
         }
+    }
+
+    private companion object {
+        const val TAG = "MainActivity"
     }
 }
