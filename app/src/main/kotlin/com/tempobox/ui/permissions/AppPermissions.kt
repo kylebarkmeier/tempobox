@@ -2,8 +2,11 @@ package com.tempobox.ui.permissions
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
@@ -55,6 +58,21 @@ object PermissionGates {
         } else {
             Manifest.permission.READ_EXTERNAL_STORAGE
         }
+}
+
+/**
+ * Opens the system App info page for this app: the recovery path once Android
+ * stops showing a permission dialog after repeated denials (the launcher then
+ * reports denial without any UI). [rememberAppPermissions] picks up a grant
+ * made there on the next resume.
+ */
+fun openAppSettings(context: Context) {
+    context.startActivity(
+        Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", context.packageName, null),
+        ),
+    )
 }
 
 /** Current grants, checked fresh every call. */

@@ -28,13 +28,18 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -42,6 +47,7 @@ import com.tempobox.common.TimeFormat
 import com.tempobox.model.NetworkDevice
 import com.tempobox.remoteplay.DidlLite
 import com.tempobox.ui.permissions.PermissionGates
+import com.tempobox.ui.permissions.openAppSettings
 import com.tempobox.ui.permissions.rememberAppPermissions
 
 /**
@@ -62,8 +68,14 @@ fun NetworkBrowseScreen(openDrawer: () -> Unit) {
     // without it only produces EPERM, so discovery waits for the grant
     // (rememberAppPermissions re-checks on resume, after the dialog closes).
     val permissions by rememberAppPermissions()
+    // After repeated denials Android reports denial without showing a dialog,
+    // so a denied result switches the note to the system-settings path.
+    var permissionDenied by remember { mutableStateOf(false) }
     val permissionLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            permissionDenied = !granted
+        }
+    val context = LocalContext.current
 
     // Discovery (and its multicast lock) only while this screen shows.
     DisposableEffect(viewModel, permissions.localNetwork) {
@@ -110,7 +122,9 @@ fun NetworkBrowseScreen(openDrawer: () -> Unit) {
         Box(Modifier.fillMaxSize().padding(padding)) {
             when {
                 !permissions.localNetwork -> LocalNetworkPermissionNote(
+                    requestDenied = permissionDenied,
                     onAllow = { permissionLauncher.launch(PermissionGates.ACCESS_LOCAL_NETWORK) },
+                    onOpenSettings = { openAppSettings(context) },
                 )
                 state.server == null -> ServerList(
                     servers,
@@ -132,17 +146,29 @@ fun NetworkBrowseScreen(openDrawer: () -> Unit) {
 }
 
 @Composable
-private fun LocalNetworkPermissionNote(onAllow: () -> Unit) {
+private fun LocalNetworkPermissionNote(
+    requestDenied: Boolean,
+    onAllow: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                "Finding media servers on your Wi-Fi needs the \"Local network\" permission.",
+                if (requestDenied) {
+                    "Local network access was denied. Allow it under Permissions " +
+                        "in the app's system settings."
+                } else {
+                    "Finding media servers on your Wi-Fi needs the \"Local network\" permission."
+                },
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth().padding(24.dp),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
             Button(onClick = onAllow) { Text("Allow") }
+            if (requestDenied) {
+                TextButton(onClick = onOpenSettings) { Text("Open system settings") }
+            }
         }
     }
 }

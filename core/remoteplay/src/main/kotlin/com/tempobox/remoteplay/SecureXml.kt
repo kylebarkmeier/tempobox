@@ -17,7 +17,21 @@ internal object SecureXml {
 
     private const val TAG = "SecureXml"
 
+    // Catches the declaration anywhere so a DTD can't hide behind leading
+    // comments or processing instructions.
+    private val DOCTYPE = Regex("<!DOCTYPE", RegexOption.IGNORE_CASE)
+
     fun parse(xml: String): Document? {
+        // Android's platform parser ignores the disallow-doctype-decl feature
+        // (the trySet below has to swallow that refusal) and would process an
+        // internal DTD, expanding attacker-chosen entities. No UPnP device
+        // description, SOAP response, or DIDL-Lite document legitimately
+        // carries a DTD, so DOCTYPE input is rejected outright on every
+        // parser instead of trusting the feature to be enforced.
+        if (DOCTYPE.containsMatchIn(xml)) {
+            Log.w(TAG, "Rejected XML carrying a DOCTYPE declaration")
+            return null
+        }
         // Each hardening setter is applied individually: Android's platform
         // parser factory throws UnsupportedOperationException for setters the
         // JDK's accepts (setXIncludeAware), and one refused option must not
