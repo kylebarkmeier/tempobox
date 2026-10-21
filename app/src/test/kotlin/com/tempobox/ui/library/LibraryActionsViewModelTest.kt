@@ -36,6 +36,7 @@ class LibraryActionsViewModelTest {
     private val libraryRepository: LibraryRepository = mockk(relaxed = true)
     private val playlistRepository: PlaylistRepository = mockk(relaxed = true)
     private val player: PlayerConnection = mockk(relaxed = true)
+    private val appContext: android.content.Context = mockk(relaxed = true)
 
     private lateinit var viewModel: LibraryActionsViewModel
 
@@ -46,7 +47,10 @@ class LibraryActionsViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
-        viewModel = LibraryActionsViewModel(libraryRepository, playlistRepository, player)
+        viewModel = LibraryActionsViewModel(
+            libraryRepository, playlistRepository, player,
+            appContext, UnconfinedTestDispatcher(),
+        )
     }
 
     @After

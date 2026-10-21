@@ -97,6 +97,27 @@ class LibraryRepositoryTest {
     }
 
     @Test
+    fun `editArtwork embeds art, refreshes the cache key, and reports failures`() = runTest {
+        val good = File(tmp.root, "A__X__Good.mp3").apply { writeText("x") }
+        val locked = File(tmp.root, "A__X__Locked.mp3").apply { writeText("x") }
+        tagIO.failingPaths += locked.absolutePath
+        val goodId = seed(good.absolutePath, title = "Good")
+        val lockedId = seed(locked.absolutePath, title = "Locked")
+        val mtimeBefore = db.trackDao().getById(goodId)!!.dateModifiedMs
+
+        val failed = repository.editArtwork(
+            listOf(goodId, lockedId), byteArrayOf(1, 2, 3), "image/jpeg",
+        )
+
+        assertThat(failed.map { it.id }).containsExactly(lockedId)
+        val updated = db.trackDao().getById(goodId)!!
+        assertThat(updated.hasEmbeddedArt).isTrue()
+        // The artwork cache keys on path + mtime; the row's mtime must move.
+        assertThat(updated.dateModifiedMs).isGreaterThan(mtimeBefore)
+        assertThat(db.trackDao().getById(lockedId)!!.hasEmbeddedArt).isFalse()
+    }
+
+    @Test
     fun `editTags reports unwritable files and leaves them unchanged`() = runTest {
         val file = File(tmp.root, "A__X__Locked.mp3").apply { writeText("x") }
         tagIO.failingPaths += file.absolutePath

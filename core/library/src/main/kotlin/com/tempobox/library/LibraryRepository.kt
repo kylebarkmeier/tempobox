@@ -194,6 +194,34 @@ class LibraryRepository @Inject constructor(
         failed
     }
 
+    /**
+     * Embeds [imageBytes] as the artwork of every track in [trackIds] via
+     * [TagWriter], then updates the rows so the UI refreshes: hasEmbeddedArt
+     * plus dateModifiedMs, which the artwork cache keys on (path + mtime).
+     * Returns the tracks whose file could not be written.
+     */
+    suspend fun editArtwork(
+        trackIds: List<Long>,
+        imageBytes: ByteArray,
+        mimeType: String,
+    ): List<Track> = withContext(ioDispatcher) {
+        val tracks = getTracksByIds(trackIds)
+        val (written, failed) = tracks.partition { track ->
+            tagWriter.writeArtwork(File(track.filePath), imageBytes, mimeType)
+        }
+        written.forEach { track ->
+            trackDao.getById(track.id)?.let { entity ->
+                // The artwork cache keys on path + mtime: the stored mtime must
+                // change or stale art keeps rendering. Fall back to now when
+                // the filesystem reports nothing useful.
+                val mtime = File(track.filePath).lastModified()
+                    .takeIf { it > entity.dateModifiedMs } ?: System.currentTimeMillis()
+                trackDao.update(entity.copy(hasEmbeddedArt = true, dateModifiedMs = mtime))
+            }
+        }
+        failed
+    }
+
     // ------------------------------------------------------------------ removal
 
     /** Removes tracks from the library DB only — files stay on disk. */

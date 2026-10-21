@@ -1,5 +1,9 @@
 package com.tempobox.ui.components
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,6 +45,7 @@ fun TagEditorDialog(
     trackCount: Int,
     form: TagEditForm,
     onApply: (TagData) -> Unit,
+    onPickArtwork: (Uri) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val bulk = trackCount > 1
@@ -85,6 +90,7 @@ fun TagEditorDialog(
                         NumberField("Disc #", discNo, form.discNumber, discNoValid, Modifier.weight(1f)) { discNo = it }
                     }
                 }
+                ArtworkPickerRow(trackCount = trackCount, onPickArtwork = onPickArtwork)
             }
         },
         confirmButton = {
@@ -111,6 +117,39 @@ fun TagEditorDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+/**
+ * Embedded-artwork row: the photo picker needs no storage permission, and the
+ * pick applies immediately (independent of Save) because the image write is a
+ * different operation from the dirty-field tag write.
+ */
+@Composable
+private fun ArtworkPickerRow(trackCount: Int, onPickArtwork: (Uri) -> Unit) {
+    val picker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri -> uri?.let(onPickArtwork) }
+    Row(
+        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Artwork", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                if (trackCount > 1) "Applies to all $trackCount tracks right away"
+                else "Applies right away",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        TextButton(
+            onClick = {
+                picker.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                )
+            },
+        ) { Text("Choose image") }
+    }
 }
 
 /** "Multiple values" hint under a field whose selected tracks disagree. */
