@@ -24,6 +24,7 @@ import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -65,6 +66,10 @@ class PlayerConnectionTest {
     fun setUp() {
         every { settingsRepository.settings } returns flowOf(AppSettings())
         every { controller.mediaItemCount } returns 0
+        // A relaxed child mock of MediaItem has no mediaMetadata; refresh()
+        // would NPE on it in a background coroutine (invisible to plain tests,
+        // but runTest-based ones fail on the accumulated uncaught exceptions).
+        every { controller.currentMediaItem } returns null
         connection = PlayerConnection(
             context = ApplicationProvider.getApplicationContext(),
             shuffleEngine = ShuffleEngine(),

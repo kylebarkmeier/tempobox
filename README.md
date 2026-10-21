@@ -32,6 +32,10 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
 **Library**
 - Fast scanner over your chosen folders: only new/changed files get their tags
   re-read; ratings and play counts always survive rescans
+- A folder that can't be read (unmounted SD card, revoked permission) is
+  skipped, never treated as empty: the scan removes nothing that run, and the
+  scan status line in Settings ▸ Library reports skipped files and unreadable
+  folders
 - Automatic rescan on startup + live folder watching (default on, configurable)
 - Browse by Album Artist, Artist, Album, Genre, Tracks, and Playlists
   (each with sub-browsing, card/list switches, and 5-way sorting in both
@@ -153,6 +157,14 @@ adb shell am start -n com.tempobox.debug/com.tempobox.MainActivity
 4. For **tag editing and file deletion**, grant *All files access* from
    Settings ▸ Library (Android requires this for modifying files in arbitrary
    folders on API 30+).
+
+Anything that can't work without a permission you haven't granted is greyed
+out with the reason instead of failing afterwards: the *Edit ID3 tags* and
+*Delete permanently* menu entries without All files access, Bluetooth
+start-on-connect without the Nearby devices permission (Android 12+), and
+rescanning without music access. Tapping a greyed settings row requests the
+permission or opens the right system screen, and granting it un-greys the
+entries when you return.
 
 ## Running tests
 
