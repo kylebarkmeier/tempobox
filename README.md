@@ -74,7 +74,10 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
 - Voice playback (experimental): "Hey Google, play [artist/album/playlist/
   genre/track] on TempoBox", with "shuffle ..." honored; Android Auto's
   search screen works too. Matching is exact-then-substring for now, and
-  whether Assistant/Gemini targets a sideloaded app can vary by device
+  whether Assistant/Gemini targets a sideloaded app can vary by device.
+  Setup and troubleshooting:
+  [Voice commands](https://github.com/kylebarkmeier/tempobox/wiki/Voice-Commands)
+  in the wiki
 - Calls stay clean: music pauses for calls (audio focus) and TempoBox refuses
   to let car stereos restart it mid-call; it resumes when the call ends
 - Pick the output: an audio-output button in Now Playing routes playback to
