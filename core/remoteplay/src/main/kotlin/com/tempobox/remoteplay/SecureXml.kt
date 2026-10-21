@@ -1,5 +1,6 @@
 package com.tempobox.remoteplay
 
+import android.util.Log
 import org.w3c.dom.Document
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
@@ -14,28 +15,36 @@ import javax.xml.parsers.DocumentBuilderFactory
  */
 internal object SecureXml {
 
-    fun parse(xml: String): Document? = try {
-        val factory = DocumentBuilderFactory.newInstance().apply {
-            isNamespaceAware = false
-            isXIncludeAware = false
-            isExpandEntityReferences = false
-            // Not every parser (JDK Xerces vs Android's) knows every feature;
-            // apply the ones it does rather than failing setup.
-            trySetFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-            trySetFeature("http://xml.org/sax/features/external-general-entities", false)
-            trySetFeature("http://xml.org/sax/features/external-parameter-entities", false)
-            trySetFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+    private const val TAG = "SecureXml"
+
+    fun parse(xml: String): Document? {
+        // Each hardening setter is applied individually: Android's platform
+        // parser factory throws UnsupportedOperationException for setters the
+        // JDK's accepts (setXIncludeAware), and one refused option must not
+        // take the whole parser down with it.
+        val factory = DocumentBuilderFactory.newInstance()
+        trySet { factory.isNamespaceAware = false }
+        trySet { factory.isXIncludeAware = false }
+        trySet { factory.isExpandEntityReferences = false }
+        trySet { factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
+        trySet { factory.setFeature("http://xml.org/sax/features/external-general-entities", false) }
+        trySet { factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
+        trySet { factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false) }
+        return try {
+            factory.newDocumentBuilder().parse(InputSource(StringReader(xml)))
+        } catch (e: Exception) {
+            // Untrusted input, so a failure is expected and non-fatal, but it
+            // is the first thing to know when a device "does not appear".
+            Log.w(TAG, "XML parse failed: $e")
+            null
         }
-        factory.newDocumentBuilder().parse(InputSource(StringReader(xml)))
-    } catch (_: Exception) {
-        null
     }
 
-    private fun DocumentBuilderFactory.trySetFeature(feature: String, value: Boolean) {
+    private inline fun trySet(block: () -> Unit) {
         try {
-            setFeature(feature, value)
+            block()
         } catch (_: Exception) {
-            // Parser doesn't know this feature; the remaining hardening applies.
+            // Parser doesn't support this option; the remaining hardening applies.
         }
     }
 

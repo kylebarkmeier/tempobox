@@ -65,6 +65,8 @@ class DefaultRemotePlayController @Inject constructor(
         .map { devices -> devices.filter { it.isServer }.map { NetworkDevice(it.udn, it.friendlyName) } }
         .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
+    override val discoveryBlocked: StateFlow<Boolean> = discovery.blocked
+
     private val _state = MutableStateFlow(RemotePlaybackState())
     override val state: StateFlow<RemotePlaybackState> = _state.asStateFlow()
 

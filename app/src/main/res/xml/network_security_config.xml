@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DLNA/UPnP is cleartext HTTP to arbitrary LAN addresses: device
+     descriptions, SOAP control, and the audio streams themselves. Android
+     blocks cleartext by default, and domain configs cannot express IP ranges,
+     so cleartext is permitted globally. The app's only internet traffic
+     (Discogs) is HTTPS regardless. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

@@ -166,6 +166,14 @@ saves. No new dependencies.
   screen is visible. All of SSDP, descriptions, SOAP responses and DIDL-Lite
   are untrusted network input: parsing is DTD-disabled (`SecureXml`) and
   returns null/empty instead of throwing.
+- **Platform gates**: DLNA is cleartext HTTP to arbitrary LAN addresses, so
+  the app's network security config permits cleartext globally (domain
+  configs cannot express IP ranges; Discogs is HTTPS regardless). Android 17
+  (API 37) additionally puts LAN sockets behind the runtime permission
+  ACCESS_LOCAL_NETWORK: the Network screen and the output picker's network
+  section request it and stay greyed until granted, and `SsdpDiscovery`
+  exposes a `blocked` flow (EPERM on send) so the UI can say the OS is
+  refusing, including the grant-mid-process case that only a restart clears.
 - **Playing TO a renderer**: `DefaultRemotePlayController` owns one session at
   a time: AVTransport control (`RendererClient`), volume via RenderingControl,
   a 1s poll for position/transport state, and `StreamServer`, a minimal HTTP

@@ -26,6 +26,7 @@ data class AppPermissions(
     val readAudio: Boolean = false,
     val postNotifications: Boolean = false,
     val bluetoothConnect: Boolean = false,
+    val localNetwork: Boolean = false,
 ) {
     /** True when the scanner can read the library folders at all. */
     val canReadLibrary: Boolean get() = readAudio || allFilesAccess
@@ -37,6 +38,15 @@ object PermissionGates {
     fun bluetoothConnectRequired(sdkInt: Int): Boolean = sdkInt >= Build.VERSION_CODES.S
 
     fun postNotificationsRequired(sdkInt: Int): Boolean = sdkInt >= Build.VERSION_CODES.TIRAMISU
+
+    /**
+     * Android 17 (API 37) gates LAN sockets behind this runtime permission;
+     * without it, SSDP discovery sends fail with EPERM. Not in
+     * Manifest.permission under our compileSdk, hence the literal.
+     */
+    const val ACCESS_LOCAL_NETWORK = "android.permission.ACCESS_LOCAL_NETWORK"
+
+    fun localNetworkRequired(sdkInt: Int): Boolean = sdkInt >= 37
 
     /** The permission that lets the scanner read audio files on this API level. */
     fun readAudioPermission(sdkInt: Int): String =
@@ -59,6 +69,8 @@ fun checkAppPermissions(context: Context): AppPermissions {
             granted(Manifest.permission.POST_NOTIFICATIONS),
         bluetoothConnect = !PermissionGates.bluetoothConnectRequired(sdk) ||
             granted(Manifest.permission.BLUETOOTH_CONNECT),
+        localNetwork = !PermissionGates.localNetworkRequired(sdk) ||
+            granted(PermissionGates.ACCESS_LOCAL_NETWORK),
     )
 }
 

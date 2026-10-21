@@ -1,5 +1,7 @@
 package com.tempobox.ui.nowplaying
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -74,6 +76,8 @@ import com.tempobox.ui.components.ActionDialogHost
 import com.tempobox.ui.components.TrackArt
 import com.tempobox.ui.library.LibraryActionsViewModel
 import com.tempobox.ui.library.LibraryItem
+import com.tempobox.ui.permissions.PermissionGates
+import com.tempobox.ui.permissions.rememberAppPermissions
 
 /**
  * Full Now Playing view (product spec): scrolling "artist – track" header,
@@ -133,17 +137,27 @@ fun NowPlayingContent(
         )
 
         if (showOutputPicker) {
+            // Android 17 gates LAN sockets behind a runtime permission;
+            // without it discovery only produces EPERM, so wait for the grant.
+            val permissions by rememberAppPermissions()
+            val permissionLauncher =
+                rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
             // DLNA renderers only show up while SSDP discovery runs; scope it
             // to the picker's lifetime (it holds a multicast lock).
-            DisposableEffect(Unit) {
-                viewModel.player.startNetworkDiscovery()
-                onDispose { viewModel.player.stopNetworkDiscovery() }
+            DisposableEffect(permissions.localNetwork) {
+                if (permissions.localNetwork) viewModel.player.startNetworkDiscovery()
+                onDispose { if (permissions.localNetwork) viewModel.player.stopNetworkDiscovery() }
             }
             val remote = viewModel.player.remotePlayback.collectAsState().value
             AudioOutputDialog(
                 outputs = viewModel.player.audioOutputs.collectAsState().value,
                 selectedId = viewModel.player.selectedOutputId.collectAsState().value,
                 networkOutputs = viewModel.player.networkOutputs.collectAsState().value,
+                localNetworkAllowed = permissions.localNetwork,
+                onRequestLocalNetwork = {
+                    permissionLauncher.launch(PermissionGates.ACCESS_LOCAL_NETWORK)
+                },
+                discoveryBlocked = viewModel.player.networkDiscoveryBlocked.collectAsState().value,
                 selectedRendererId = remote.rendererId,
                 rendererVolume = if (remote.active) remote.volumePercent else null,
                 onSelect = { id ->
@@ -283,6 +297,9 @@ private fun AudioOutputDialog(
     outputs: List<AudioOutputDevice>,
     selectedId: Int?,
     networkOutputs: List<NetworkDevice>,
+    localNetworkAllowed: Boolean,
+    onRequestLocalNetwork: () -> Unit,
+    discoveryBlocked: Boolean,
     selectedRendererId: String?,
     rendererVolume: Int?,
     onSelect: (Int?) -> Unit,
@@ -310,9 +327,21 @@ private fun AudioOutputDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
                 )
-                if (networkOutputs.isEmpty()) {
+                if (!localNetworkAllowed) {
                     Text(
-                        "Looking for devices…",
+                        "Finding network devices needs the \"Local network\" permission.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(onClick = onRequestLocalNetwork) { Text("Allow") }
+                } else if (networkOutputs.isEmpty()) {
+                    Text(
+                        if (discoveryBlocked) {
+                            "Android is blocking the search. If you just allowed local " +
+                                "network access, fully close and reopen TempoBox."
+                        } else {
+                            "Looking for devices…"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

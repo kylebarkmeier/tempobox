@@ -504,6 +504,9 @@ class PlayerConnection internal constructor(
     fun startNetworkDiscovery() = remotePlay.startDiscovery()
     fun stopNetworkDiscovery() = remotePlay.stopDiscovery()
 
+    /** True while the OS refuses discovery sends (Android 17 local network permission). */
+    val networkDiscoveryBlocked: StateFlow<Boolean> = remotePlay.discoveryBlocked
+
     /**
      * Routes playback to the renderer [rendererId], or back to this device
      * when null. The local player pauses (it already holds the queue) and the

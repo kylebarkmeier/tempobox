@@ -41,6 +41,9 @@ interface RemotePlayController {
     /** Devices we can browse and play from (DLNA servers), while discovering. */
     val servers: StateFlow<List<NetworkDevice>>
 
+    /** True while the OS refuses discovery sends; see [SsdpDiscovery.blocked]. */
+    val discoveryBlocked: StateFlow<Boolean>
+
     val state: StateFlow<RemotePlaybackState>
 
     val events: SharedFlow<RemotePlayEvent>
