@@ -129,6 +129,13 @@ class LibraryBrowseTree @Inject constructor(
         else -> emptyList()
     }
 
+    /**
+     * Search results as playable leaves. Each one's parent is its album, so
+     * tapping a result queues that album starting at the result.
+     */
+    fun searchResultItems(tracks: List<Track>): List<MediaItem> =
+        tracks.map { playable(it, BrowseIds.Node.Album(it.albumArtist, it.album)) }
+
     // ---------------------------------------------------------------- builders
 
     private fun browsable(
