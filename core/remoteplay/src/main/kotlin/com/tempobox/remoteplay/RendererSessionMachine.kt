@@ -33,7 +33,11 @@ class RendererSessionMachine(private val failureThreshold: Int = DEFAULT_FAILURE
     var consecutiveFailures: Int = 0
         private set
 
-    /** Applies [event]; returns the resulting state. */
+    /**
+     * Applies [event]; returns the resulting state. Synchronized because
+     * commands and the poll loop report from different coroutines.
+     */
+    @Synchronized
     fun on(event: Event): State {
         state = when (event) {
             Event.ConnectRequested -> {
