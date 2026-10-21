@@ -86,6 +86,15 @@ data class Track(
     val effectiveGenre: String
         get() = genre.ifBlank { UNKNOWN_GENRE }
 
+    /**
+     * True when [filePath] is an HTTP(S) URL instead of a local file: a track
+     * streamed from a network media server (DLNA). Network tracks are not
+     * library rows ([id] is 0): no rating, play counting, or scrobbling, and
+     * they are skipped by queue persistence.
+     */
+    val isNetworkStream: Boolean
+        get() = filePath.startsWith("http://") || filePath.startsWith("https://")
+
     companion object {
         const val UNKNOWN_ARTIST = "Unknown Artist"
         const val UNKNOWN_ALBUM = "Unknown Album"

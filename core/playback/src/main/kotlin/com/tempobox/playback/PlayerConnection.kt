@@ -20,11 +20,15 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.tempobox.common.resultOf
 import com.tempobox.model.AudioOutputDevice
+import com.tempobox.model.NetworkDevice
 import com.tempobox.model.NowPlayingState
 import com.tempobox.model.QueueItem
 import com.tempobox.model.RepeatMode
 import com.tempobox.model.ShuffleMode
 import com.tempobox.model.Track
+import com.tempobox.remoteplay.RemotePlayController
+import com.tempobox.remoteplay.RemotePlayEvent
+import com.tempobox.remoteplay.RemotePlaybackState
 import com.tempobox.settings.SettingsRepository
 import com.tempobox.settings.ShuffleSettings
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -35,9 +39,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
@@ -67,13 +71,15 @@ class PlayerConnection internal constructor(
     private val context: Context,
     private val shuffleEngine: ShuffleEngine,
     private val settingsRepository: SettingsRepository,
+    private val remotePlay: RemotePlayController,
     controllerOverride: ListenableFuture<MediaController>?,
 ) {
     @Inject constructor(
         @ApplicationContext context: Context,
         shuffleEngine: ShuffleEngine,
         settingsRepository: SettingsRepository,
-    ) : this(context, shuffleEngine, settingsRepository, controllerOverride = null)
+        remotePlay: RemotePlayController,
+    ) : this(context, shuffleEngine, settingsRepository, remotePlay, controllerOverride = null)
 
     /** Controller calls must happen on the thread it connected on (main). */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -104,10 +110,24 @@ class PlayerConnection internal constructor(
      * [refresh]: the UI and the home-screen widget see a mode change the
      * instant it is set (e.g. playTracks forcing OFF), never a stale value
      * from before the controller's next event round-trip.
+     *
+     * While a network renderer session is active, play state and position are
+     * overlaid from [RemotePlayController.state] the same way: the local
+     * player is paused then, and its clock stands still.
      */
     val state: StateFlow<NowPlayingState> =
-        combine(_state, _shuffleMode) { s, mode -> s.copy(shuffleMode = mode) }
-            .stateIn(scope, SharingStarted.Eagerly, NowPlayingState())
+        combine(_state, _shuffleMode, remotePlay.state) { s, mode, remote ->
+            val base = s.copy(shuffleMode = mode)
+            if (remote.active) {
+                base.copy(
+                    isPlaying = remote.isPlaying,
+                    positionMs = remote.positionMs,
+                    durationMs = if (remote.durationMs > 0) remote.durationMs else base.durationMs,
+                )
+            } else {
+                base
+            }
+        }.stateIn(scope, SharingStarted.Eagerly, NowPlayingState())
 
     /** Queue order before shuffle was applied (uids); restored on shuffle-off. */
     private var originalOrderUids: List<Long> = emptyList()
@@ -129,6 +149,15 @@ class PlayerConnection internal constructor(
         }
 
         scope.launch {
+            remotePlay.events.collect { event ->
+                when (event) {
+                    RemotePlayEvent.TrackEnded -> onRemoteTrackEnded()
+                    is RemotePlayEvent.SessionLost -> onRemoteSessionLost(event.rendererName)
+                }
+            }
+        }
+
+        scope.launch {
             val controller = controller()
             controller.addListener(object : Player.Listener {
                 override fun onEvents(player: Player, events: Player.Events) {
@@ -142,6 +171,24 @@ class PlayerConnection internal constructor(
                         )
                     ) {
                         refresh(controller)
+                    }
+                    if (remotePlay.state.value.active) {
+                        // The local timeline stays the queue while casting:
+                        // whatever changes the current item (next/previous,
+                        // queue taps, new queues) is mirrored to the renderer.
+                        if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
+                            val play = remotePlay.state.value.isPlaying || pendingRemoteAdvance
+                            pendingRemoteAdvance = false
+                            scope.launch { loadCurrentOnRenderer(positionMs = 0, play = play) }
+                        }
+                        // Play reaching the local player while casting (the
+                        // notification, Bluetooth, playTracks): keep the phone
+                        // silent and route it to the renderer. Pausing the
+                        // paused-anyway player never fights audio focus.
+                        if (events.contains(Player.EVENT_IS_PLAYING_CHANGED) && controller.isPlaying) {
+                            controller.pause()
+                            scope.launch { remotePlay.play() }
+                        }
                     }
                 }
 
@@ -247,18 +294,37 @@ class PlayerConnection internal constructor(
         }
     }
 
-    fun togglePlayPause() = withController { c ->
-        when {
-            c.mediaItemCount == 0 -> Unit
-            c.playbackState == Player.STATE_IDLE -> { c.prepare(); c.play() }
-            c.isPlaying -> c.pause()
-            else -> c.play()
+    fun togglePlayPause() {
+        if (remotePlay.state.value.active) {
+            scope.launch {
+                if (remotePlay.state.value.isPlaying) remotePlay.pause() else remotePlay.play()
+            }
+            return
+        }
+        withController { c ->
+            when {
+                c.mediaItemCount == 0 -> Unit
+                c.playbackState == Player.STATE_IDLE -> { c.prepare(); c.play() }
+                c.isPlaying -> c.pause()
+                else -> c.play()
+            }
         }
     }
 
+    // next/previous move the local timeline even while casting: the paused
+    // player is still the queue, and the item-transition listener mirrors the
+    // new current track onto the renderer.
     fun next() = withController { it.seekToNextMediaItem() }
     fun previous() = withController { it.seekToPreviousMediaItem() }
-    fun seekTo(positionMs: Long) = withController { it.seekTo(positionMs) }
+
+    fun seekTo(positionMs: Long) {
+        if (remotePlay.state.value.active) {
+            scope.launch { remotePlay.seekTo(positionMs) }
+            return
+        }
+        withController { it.seekTo(positionMs) }
+    }
+
     fun stop() = withController { it.stop() }
 
     /** Jump to a specific queue entry and play it. */
@@ -385,9 +451,13 @@ class PlayerConnection internal constructor(
             audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList(),
         )
 
-    /** Routes playback to output [id], or back to automatic when null. */
+    /**
+     * Routes playback to output [id], or back to automatic when null. Picking
+     * a local output always ends an active network renderer session.
+     */
     fun selectAudioOutput(id: Int?) {
         scope.launch {
+            if (remotePlay.state.value.active) leaveRemotePlayback()
             val c = controller()
             val args = Bundle().apply {
                 putInt(
@@ -416,6 +486,115 @@ class PlayerConnection internal constructor(
                 _errors.tryEmit("Could not switch the audio output")
             }
             refresh(c)
+        }
+    }
+
+    // ------------------------------------------------------------------ network output (DLNA)
+
+    /** Renderers found on the WLAN while discovery runs (output picker). */
+    val networkOutputs: StateFlow<List<NetworkDevice>> = remotePlay.renderers
+
+    /** Live renderer-session state (active renderer id, volume) for the picker. */
+    val remotePlayback: StateFlow<RemotePlaybackState> = remotePlay.state
+
+    /** Set while a remote track-end advance waits for its item transition. */
+    private var pendingRemoteAdvance = false
+
+    /** SSDP discovery runs only while a picker/browse screen is visible. */
+    fun startNetworkDiscovery() = remotePlay.startDiscovery()
+    fun stopNetworkDiscovery() = remotePlay.stopDiscovery()
+
+    /**
+     * Routes playback to the renderer [rendererId], or back to this device
+     * when null. The local player pauses (it already holds the queue) and the
+     * current track continues on the renderer from the same position.
+     */
+    fun selectNetworkOutput(rendererId: String?) {
+        scope.launch {
+            if (rendererId == null) {
+                leaveRemotePlayback()
+                return@launch
+            }
+            val c = controller()
+            val positionMs = c.currentPosition.coerceAtLeast(0)
+            val wasPlaying = c.isPlaying || remotePlay.state.value.isPlaying
+            c.pause()
+            if (!remotePlay.connect(rendererId)) {
+                _errors.tryEmit("Couldn't connect to the network device")
+                return@launch
+            }
+            loadCurrentOnRenderer(positionMs = positionMs, play = wasPlaying)
+        }
+    }
+
+    /** Renderer volume (RenderingControl), 0..100; no-op without a session. */
+    fun setNetworkVolume(percent: Int) {
+        scope.launch { remotePlay.setVolume(percent) }
+    }
+
+    /** Ends the renderer session; playback stays paused locally at the handoff spot. */
+    private suspend fun leaveRemotePlayback() {
+        val remote = remotePlay.state.value
+        remotePlay.disconnect()
+        if (remote.active) {
+            val c = controller()
+            // Carry the renderer's position back to the local player.
+            if (remote.positionMs > 0) c.seekTo(remote.positionMs)
+            refresh(c)
+        }
+    }
+
+    /** Pushes the local current item to the renderer (handoff and transitions). */
+    private suspend fun loadCurrentOnRenderer(positionMs: Long, play: Boolean) {
+        val c = controller()
+        val track = c.currentMediaItem?.let { MediaItems.toTrack(it) } ?: return
+        if (!remotePlay.load(track, positionMs, play)) {
+            // Failure counting and the SessionLost fallback live in the
+            // controller; this is just the immediate-feedback path.
+            Log.w(TAG, "Failed to load '${track.title}' on the renderer")
+        }
+    }
+
+    /** The renderer finished its track: advance the queue like ExoPlayer would. */
+    private suspend fun onRemoteTrackEnded() {
+        val c = controller()
+        if (c.mediaItemCount == 0) return
+        val repeatOne = c.repeatMode == Player.REPEAT_MODE_ONE
+        val wrapsToItself = c.mediaItemCount == 1 && c.repeatMode == Player.REPEAT_MODE_ALL
+        if (repeatOne || wrapsToItself) {
+            loadCurrentOnRenderer(positionMs = 0, play = true)
+            return
+        }
+        if (!c.hasNextMediaItem()) return // end of queue, repeat off: stay stopped
+        pendingRemoteAdvance = true
+        c.seekToNextMediaItem() // the transition listener does the renderer load
+    }
+
+    /** Renderer died or vanished: fall back to this device and keep playing. */
+    private suspend fun onRemoteSessionLost(rendererName: String) {
+        _errors.tryEmit("Lost connection to $rendererName; playing on this device")
+        val c = controller()
+        if (lastRemotePositionMs > 0) c.seekTo(lastRemotePositionMs)
+        if (c.mediaItemCount > 0) {
+            if (c.playbackState == Player.STATE_IDLE) c.prepare()
+            c.play()
+        }
+        refresh(c)
+    }
+
+    /**
+     * Last position reported by the renderer; [RemotePlaybackState] resets on
+     * teardown, so the fallback path needs its own copy to resume from.
+     */
+    private var lastRemotePositionMs = 0L
+
+    init {
+        scope.launch {
+            remotePlay.state.collect { remote ->
+                if (remote.active && remote.positionMs > 0) {
+                    lastRemotePositionMs = remote.positionMs
+                }
+            }
         }
     }
 

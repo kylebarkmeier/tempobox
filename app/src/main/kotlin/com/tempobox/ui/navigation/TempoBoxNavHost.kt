@@ -13,6 +13,7 @@ import com.tempobox.ui.library.ArtistDetailScreen
 import com.tempobox.ui.library.GenreDetailScreen
 import com.tempobox.ui.library.LibraryScreen
 import com.tempobox.ui.library.PlaylistDetailScreen
+import com.tempobox.ui.network.NetworkBrowseScreen
 import com.tempobox.ui.queue.QueueScreen
 import com.tempobox.ui.settings.SettingsScreen
 import com.tempobox.ui.settings.SettingsSectionScreen
@@ -58,6 +59,10 @@ fun TempoBoxNavHost(
 
         composable(Routes.QUEUE) {
             QueueScreen(openDrawer = openDrawer, onBack = { navController.popBackStack() })
+        }
+
+        composable(Routes.NETWORK) {
+            NetworkBrowseScreen(openDrawer = openDrawer)
         }
 
         composable(Routes.SETTINGS) {

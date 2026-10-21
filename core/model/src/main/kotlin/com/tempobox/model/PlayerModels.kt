@@ -48,6 +48,16 @@ data class AudioOutputDevice(
     val name: String,
 )
 
+/**
+ * One playback target or media source discovered on the local network (a DLNA/
+ * UPnP MediaRenderer or MediaServer). [id] is the device's UDN, stable across
+ * rediscoveries; the entry is valid only while the device answers SSDP.
+ */
+data class NetworkDevice(
+    val id: String,
+    val name: String,
+)
+
 /** Fields that can be shown under the track title in Now Playing (configurable). */
 @Serializable
 enum class TrackInfoField {

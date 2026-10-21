@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -62,6 +63,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.tempobox.common.TimeFormat
 import com.tempobox.model.AudioOutputDevice
 import com.tempobox.model.Corner
+import com.tempobox.model.NetworkDevice
 import com.tempobox.model.CornerAction
 import com.tempobox.model.RepeatMode
 import com.tempobox.model.ShuffleMode
@@ -131,13 +133,28 @@ fun NowPlayingContent(
         )
 
         if (showOutputPicker) {
+            // DLNA renderers only show up while SSDP discovery runs; scope it
+            // to the picker's lifetime (it holds a multicast lock).
+            DisposableEffect(Unit) {
+                viewModel.player.startNetworkDiscovery()
+                onDispose { viewModel.player.stopNetworkDiscovery() }
+            }
+            val remote = viewModel.player.remotePlayback.collectAsState().value
             AudioOutputDialog(
                 outputs = viewModel.player.audioOutputs.collectAsState().value,
                 selectedId = viewModel.player.selectedOutputId.collectAsState().value,
+                networkOutputs = viewModel.player.networkOutputs.collectAsState().value,
+                selectedRendererId = remote.rendererId,
+                rendererVolume = if (remote.active) remote.volumePercent else null,
                 onSelect = { id ->
                     viewModel.player.selectAudioOutput(id)
                     showOutputPicker = false
                 },
+                onSelectNetwork = { id ->
+                    viewModel.player.selectNetworkOutput(id)
+                    showOutputPicker = false
+                },
+                onSetRendererVolume = viewModel.player::setNetworkVolume,
                 onDismiss = { showOutputPicker = false },
             )
         }
@@ -256,15 +273,21 @@ fun NowPlayingContent(
 // --------------------------------------------------------------------- pieces
 
 /**
- * Output routing picker: "Automatic" (the system decides, the default) plus
- * every connected output the player can target. The choice lasts for the
- * session; a device that disconnects falls back to Automatic.
+ * Output routing picker: "Automatic" (the system decides, the default), every
+ * connected local output, and DLNA renderers found on the Wi-Fi network. The
+ * choice lasts for the session; a device that disconnects falls back to
+ * Automatic (renderers fall back with a snackbar).
  */
 @Composable
 private fun AudioOutputDialog(
     outputs: List<AudioOutputDevice>,
     selectedId: Int?,
+    networkOutputs: List<NetworkDevice>,
+    selectedRendererId: String?,
+    rendererVolume: Int?,
     onSelect: (Int?) -> Unit,
+    onSelectNetwork: (String) -> Unit,
+    onSetRendererVolume: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     AlertDialog(
@@ -272,11 +295,51 @@ private fun AudioOutputDialog(
         title = { Text("Audio output") },
         text = {
             Column {
-                OutputRow("Automatic", selected = selectedId == null) { onSelect(null) }
+                val localSelection = selectedRendererId == null
+                OutputRow("Automatic", selected = localSelection && selectedId == null) {
+                    onSelect(null)
+                }
                 outputs.forEach { device ->
-                    OutputRow(device.name, selected = selectedId == device.id) {
+                    OutputRow(device.name, selected = localSelection && selectedId == device.id) {
                         onSelect(device.id)
                     }
+                }
+                Text(
+                    "On the network",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+                )
+                if (networkOutputs.isEmpty()) {
+                    Text(
+                        "Looking for devices…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                networkOutputs.forEach { renderer ->
+                    OutputRow(renderer.name, selected = selectedRendererId == renderer.id) {
+                        onSelectNetwork(renderer.id)
+                    }
+                }
+                if (rendererVolume != null) {
+                    // Renderer volume (RenderingControl); the phone's own
+                    // volume keys keep controlling local playback only.
+                    var dragVolume by remember { mutableStateOf<Float?>(null) }
+                    Text(
+                        "Device volume",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                    Slider(
+                        value = dragVolume ?: (rendererVolume / 100f),
+                        onValueChange = { dragVolume = it },
+                        onValueChangeFinished = {
+                            dragVolume?.let { onSetRendererVolume((it * 100).toInt()) }
+                            dragVolume = null
+                        },
+                    )
                 }
             }
         },

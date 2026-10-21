@@ -61,6 +61,7 @@ dependencies {
     implementation(projects.core.playlist)
     implementation(projects.core.library)
     implementation(projects.core.playback)
+    implementation(projects.core.remoteplay)
     implementation(projects.core.scrobble)
     implementation(projects.core.artwork)
 

@@ -16,6 +16,7 @@ dependencies {
     implementation(projects.core.library)
     implementation(projects.core.tags)
     implementation(projects.core.scrobble)
+    implementation(projects.core.remoteplay)
 
     api(libs.androidx.media3.exoplayer)
     api(libs.androidx.media3.session)
