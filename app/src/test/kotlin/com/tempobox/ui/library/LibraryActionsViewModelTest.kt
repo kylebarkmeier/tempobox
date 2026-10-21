@@ -68,6 +68,15 @@ class LibraryActionsViewModelTest {
         return events
     }
 
+    /** Records every snackbar message the view model emits from now on. */
+    private fun collectMessages(): List<String> {
+        val events = mutableListOf<String>()
+        collectors += CoroutineScope(UnconfinedTestDispatcher()).launch {
+            viewModel.messages.collect { events += it }
+        }
+        return events
+    }
+
     @Test
     fun `play on a track overwrites the queue with that track`() {
         viewModel.play(LibraryItem.TrackItem(track))
@@ -94,7 +103,7 @@ class LibraryActionsViewModelTest {
         val item = LibraryItem.TrackItem(track)
 
         viewModel.performSwipe(SwipeAction.ADD_TO_QUEUE, item)
-        verify { player.addToQueue(listOf(track)) }
+        coVerify { player.addToQueue(listOf(track)) }
 
         viewModel.performSwipe(SwipeAction.EDIT_TAGS, item)
         assertThat(viewModel.dialog.value)
@@ -225,6 +234,46 @@ class LibraryActionsViewModelTest {
         dateAddedMs = 0,
         dateModifiedMs = 0,
     )
+
+    @Test
+    fun `addToQueue says Already in queue when dedupe filtered everything`() {
+        coEvery { player.addToQueue(listOf(track)) } returns 0
+        val messages = collectMessages()
+
+        viewModel.addToQueue(LibraryItem.TrackItem(track))
+
+        assertThat(messages).containsExactly("Already in queue")
+    }
+
+    @Test
+    fun `addToQueue reports the count that was really added`() {
+        coEvery { player.addToQueue(listOf(track)) } returns 1
+        val messages = collectMessages()
+
+        viewModel.addToQueue(LibraryItem.TrackItem(track))
+
+        assertThat(messages).containsExactly("Added 1 track to queue")
+    }
+
+    @Test
+    fun `a refused playlist add is reported, not claimed as success`() {
+        coEvery { playlistRepository.addToPlaylist(5L, listOf(1L)) } returns false
+        val messages = collectMessages()
+
+        viewModel.addToExistingPlaylist(LibraryItem.TrackItem(track), 5L, "Favs")
+
+        assertThat(messages.single()).contains("auto rule")
+    }
+
+    @Test
+    fun `a playlist file that survives deletion is reported`() {
+        coEvery { playlistRepository.deletePlaylist(7L) } returns false
+        val messages = collectMessages()
+
+        viewModel.confirmDelete(LibraryItem.PlaylistItem(Playlist(id = 7, name = "Mix")))
+
+        assertThat(messages.single()).contains("could not be deleted")
+    }
 
     @Test
     fun `createAutoPlaylist delegates to the repository`() {

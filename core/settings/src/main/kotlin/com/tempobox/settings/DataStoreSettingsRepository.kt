@@ -1,14 +1,18 @@
 package com.tempobox.settings
 
+import android.util.Log
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.tempobox.model.ThemeConfig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
+import java.util.Collections
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -17,7 +21,10 @@ import javax.inject.Singleton
  *
  * Each settings *group* is stored as one JSON value under one key. Decoding is
  * defensive: a missing or unreadable group falls back to its defaults, so a
- * malformed value (or a schema change) can never crash the app.
+ * malformed value (or a schema change) can never crash the app — but a decode
+ * failure is never silent: it is logged, and before an update would overwrite
+ * an undecodable group, the raw value is preserved under `<key>.corrupt` so
+ * nothing the user stored is lost without a trace.
  */
 @Singleton
 class DataStoreSettingsRepository @Inject constructor(
@@ -84,8 +91,19 @@ class DataStoreSettingsRepository @Inject constructor(
 
     // ------------------------------------------------------------------ helpers
 
+    /** Groups whose decode failure was already logged (once per process, not per emission). */
+    private val loggedCorruptGroups = Collections.synchronizedSet(mutableSetOf<String>())
+
     private fun <T> Preferences.decode(key: Preferences.Key<String>, serializer: KSerializer<T>): T? =
-        this[key]?.let { raw -> runCatching { json.decodeFromString(serializer, raw) }.getOrNull() }
+        this[key]?.let { raw ->
+            runCatching { json.decodeFromString(serializer, raw) }
+                .onFailure {
+                    if (loggedCorruptGroups.add(key.name)) {
+                        Log.e(TAG, "Settings group \"${key.name}\" failed to decode; using defaults", it)
+                    }
+                }
+                .getOrNull()
+        }
 
     private suspend fun <T> updateGroup(
         key: Preferences.Key<String>,
@@ -94,8 +112,31 @@ class DataStoreSettingsRepository @Inject constructor(
         transform: (T) -> T,
     ) {
         dataStore.edit { prefs ->
-            val current = prefs.decode(key, serializer) ?: defaults()
-            prefs[key] = json.encodeToString(serializer, transform(current))
+            val raw = prefs[key]
+            val current = prefs.decode(key, serializer)
+            if (raw != null && current == null) {
+                // The stored value is undecodable and this write would replace
+                // it permanently. Keep the raw value aside instead of silently
+                // destroying whatever the user had configured.
+                prefs[stringPreferencesKey("${key.name}.corrupt")] = raw
+                Log.e(TAG, "Preserved undecodable settings group \"${key.name}\" as \"${key.name}.corrupt\"")
+            }
+            prefs[key] = json.encodeToString(serializer, transform(current ?: defaults()))
         }
+    }
+
+    companion object {
+        private const val TAG = "SettingsRepository"
+
+        /**
+         * Handler for a corrupt DataStore *file* (not a corrupt group value):
+         * without one, every collector of [settings] crashes forever. Wired in
+         * SettingsModule; exposed here so tests exercise the production handler.
+         */
+        fun corruptionHandler(): ReplaceFileCorruptionHandler<Preferences> =
+            ReplaceFileCorruptionHandler { e ->
+                Log.e(TAG, "Settings DataStore file is corrupt; resetting to defaults", e)
+                emptyPreferences()
+            }
     }
 }

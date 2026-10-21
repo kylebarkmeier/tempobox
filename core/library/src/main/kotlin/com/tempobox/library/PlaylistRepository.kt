@@ -3,6 +3,7 @@ package com.tempobox.library
 import android.content.Context
 import android.util.Log
 import com.tempobox.common.IoDispatcher
+import com.tempobox.common.resultOf
 import com.tempobox.database.dao.PlaylistDao
 import com.tempobox.database.dao.TrackDao
 import com.tempobox.database.entity.PlaylistEntity
@@ -45,6 +46,13 @@ class PlaylistRepository @Inject constructor(
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
 
+    /**
+     * Playlist ids whose broken smart rule was already logged: observePlaylists
+     * re-evaluates on every library change, and one log line per playlist is
+     * signal where one per emission is spam.
+     */
+    private val loggedBrokenRules = java.util.Collections.synchronizedSet(mutableSetOf<Long>())
+
     // ------------------------------------------------------------------ observers
 
     /**
@@ -57,9 +65,14 @@ class PlaylistRepository @Inject constructor(
             rows.map { row ->
                 val rule = row.smartRuleJson?.let { SmartRule.fromJson(it) }
                 if (rule == null) {
+                    val broken = row.smartRuleJson != null
+                    if (broken && loggedBrokenRules.add(row.id)) {
+                        Log.e(TAG, "Smart rule for playlist \"${row.name}\" failed to decode")
+                    }
                     Playlist(
                         id = row.id, name = row.name, filePath = row.filePath,
-                        smartRule = null, trackCount = row.trackCount, durationMs = row.durationMs,
+                        smartRule = null, ruleBroken = broken,
+                        trackCount = row.trackCount, durationMs = row.durationMs,
                         dateAddedMs = row.dateAddedMs, dateModifiedMs = row.dateModifiedMs,
                     )
                 } else {
@@ -135,14 +148,24 @@ class PlaylistRepository @Inject constructor(
 
     // ------------------------------------------------------------------ mutation
 
-    /** Appends tracks to a static playlist and rewrites its file. */
-    suspend fun addToPlaylist(playlistId: Long, trackIds: List<Long>) = withContext(ioDispatcher) {
-        val playlist = playlistDao.getById(playlistId) ?: return@withContext
-        require(playlist.smartRuleJson == null) { "Cannot add tracks to a smart playlist" }
-        playlistDao.appendEntries(playlistId, trackIds)
-        playlistDao.touch(playlistId, System.currentTimeMillis())
-        exportStatic(playlistId)
-    }
+    /**
+     * Appends tracks to a static playlist and rewrites its file. Returns false
+     * without changing anything for a smart playlist (membership is
+     * rule-driven) — reachable from the UI when a broken rule makes a smart
+     * playlist look static, so this must refuse, not crash.
+     */
+    suspend fun addToPlaylist(playlistId: Long, trackIds: List<Long>): Boolean =
+        withContext(ioDispatcher) {
+            val playlist = playlistDao.getById(playlistId) ?: return@withContext false
+            if (playlist.smartRuleJson != null) {
+                Log.e(TAG, "Refusing to add tracks to smart playlist \"${playlist.name}\"")
+                return@withContext false
+            }
+            playlistDao.appendEntries(playlistId, trackIds)
+            playlistDao.touch(playlistId, System.currentTimeMillis())
+            exportStatic(playlistId)
+            true
+        }
 
     /** Replaces a static playlist's contents (reorder / remove entries). */
     suspend fun replacePlaylistTracks(playlistId: Long, trackIds: List<Long>) =
@@ -155,14 +178,26 @@ class PlaylistRepository @Inject constructor(
     /**
      * Deletes the playlist row. "Remove from library" keeps the `.m3u8` file
      * on disk ([deleteFile] = false); "Delete permanently" removes it too.
+     *
+     * Returns false when the file should have been deleted but was not (the
+     * row is still removed — that part succeeded); the UI reports the
+     * leftover file instead of claiming a clean delete.
      */
-    suspend fun deletePlaylist(playlistId: Long, deleteFile: Boolean = true) =
+    suspend fun deletePlaylist(playlistId: Long, deleteFile: Boolean = true): Boolean =
         withContext(ioDispatcher) {
-            val playlist = playlistDao.getById(playlistId) ?: return@withContext
+            val playlist = playlistDao.getById(playlistId) ?: return@withContext true
+            var fileDeleted = true
             if (deleteFile) {
-                playlist.filePath?.let { path -> File(path).takeIf { it.exists() }?.delete() }
+                playlist.filePath?.let { path ->
+                    val file = File(path)
+                    if (file.exists() && !file.delete()) {
+                        fileDeleted = false
+                        Log.w(TAG, "Could not delete playlist file $path")
+                    }
+                }
             }
             playlistDao.delete(playlistId)
+            fileDeleted
         }
 
     // ------------------------------------------------------------------ file sync
@@ -173,11 +208,20 @@ class PlaylistRepository @Inject constructor(
      * a library track are skipped. Called after every full scan.
      */
     suspend fun importPlaylistFiles(locations: List<String>) = withContext(ioDispatcher) {
-        val files = locations.map(::File).filter { it.isDirectory }.flatMap { root ->
-            root.walkTopDown()
-                .filter { it.isFile && it.extension.lowercase() in setOf("m3u", "m3u8") }
-                .toList()
-        }
+        val files = locations.map(::File)
+            .filter { root ->
+                val readable = root.isDirectory && root.canRead()
+                if (!readable) {
+                    Log.w(TAG, "Library location not readable, skipping playlist import: ${root.absolutePath}")
+                }
+                readable
+            }
+            .flatMap { root ->
+                root.walkTopDown()
+                    .onFail { dir, e -> Log.w(TAG, "Could not list $dir during playlist import", e) }
+                    .filter { it.isFile && it.extension.lowercase() in setOf("m3u", "m3u8") }
+                    .toList()
+            }
         for (file in files) {
             if (playlistDao.getByFilePath(file.absolutePath) != null) continue
             // Also skip the upgraded twin of an imported .m3u we already track.
@@ -214,7 +258,13 @@ class PlaylistRepository @Inject constructor(
     }
 
     private suspend fun exportSmart(playlist: PlaylistEntity) {
-        val rule = playlist.smartRuleJson?.let { SmartRule.fromJson(it) } ?: return
+        val rule = playlist.smartRuleJson?.let { SmartRule.fromJson(it) }
+        if (rule == null) {
+            if (playlist.smartRuleJson != null && loggedBrokenRules.add(playlist.id)) {
+                Log.e(TAG, "Smart rule for playlist \"${playlist.name}\" failed to decode; not exporting")
+            }
+            return
+        }
         val library = trackDao.observeAll().first().map { it.toModel() }
         writeUpgraded(playlist, engine.evaluate(rule, library))
     }
@@ -227,10 +277,15 @@ class PlaylistRepository @Inject constructor(
     private suspend fun writeUpgraded(playlist: PlaylistEntity, tracks: List<Track>) {
         val currentPath = playlist.filePath ?: File(playlistsDir(), "${playlist.name}.m3u8").absolutePath
         val m3u8Path = codec.ensureM3u8Path(currentPath)
-        runCatching {
+        // resultOf, not runCatching: the block suspends (dao.update), and a
+        // cancelled coroutine must not be logged as a write failure.
+        resultOf {
             codec.write(File(m3u8Path), tracks)
             if (m3u8Path != currentPath) {
-                File(currentPath).takeIf { it.exists() }?.delete()
+                val legacy = File(currentPath)
+                if (legacy.exists() && !legacy.delete()) {
+                    Log.w(TAG, "Could not delete legacy playlist file $currentPath after upgrade")
+                }
                 playlistDao.update(playlist.copy(filePath = m3u8Path))
             }
         }.onFailure { Log.w(TAG, "Failed to write playlist file $m3u8Path", it) }
@@ -244,7 +299,11 @@ class PlaylistRepository @Inject constructor(
         val locations = settingsRepository.settings.first().library.locations
         val base = locations.firstOrNull()?.let(::File)
             ?: context.getExternalFilesDir(null) ?: context.filesDir
-        return File(base, "Playlists").apply { mkdirs() }
+        return File(base, "Playlists").apply {
+            if (!mkdirs() && !isDirectory) {
+                Log.w(TAG, "Could not create playlists folder $absolutePath")
+            }
+        }
     }
 
     private suspend fun uniqueName(base: String): String {

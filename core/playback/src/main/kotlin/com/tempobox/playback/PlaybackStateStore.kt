@@ -1,9 +1,12 @@
 package com.tempobox.playback
 
 import android.content.Context
+import android.util.Log
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.tempobox.model.RepeatMode
@@ -49,15 +52,29 @@ class PlaybackStateStore @Inject constructor(
 
     suspend fun load(): Snapshot? =
         context.playbackDataStore.data.first()[KEY]?.let { raw ->
-            runCatching { json.decodeFromString(Snapshot.serializer(), raw) }.getOrNull()
+            runCatching { json.decodeFromString(Snapshot.serializer(), raw) }
+                .onFailure { Log.w(TAG, "Corrupt queue snapshot; restoring nothing", it) }
+                .getOrNull()
         }
 
     suspend fun clear() {
         context.playbackDataStore.edit { it.remove(KEY) }
     }
 
-    private companion object {
-        val KEY = stringPreferencesKey("queue_snapshot")
-        val Context.playbackDataStore: DataStore<Preferences> by preferencesDataStore("tempobox_playback")
+    companion object {
+        private const val TAG = "PlaybackStateStore"
+        private val KEY = stringPreferencesKey("queue_snapshot")
+
+        /** See DataStoreSettingsRepository.corruptionHandler: same rationale. */
+        fun corruptionHandler(): ReplaceFileCorruptionHandler<Preferences> =
+            ReplaceFileCorruptionHandler { e ->
+                Log.e(TAG, "Playback DataStore file is corrupt; dropping the saved queue", e)
+                emptyPreferences()
+            }
+
+        private val Context.playbackDataStore: DataStore<Preferences> by preferencesDataStore(
+            "tempobox_playback",
+            corruptionHandler = corruptionHandler(),
+        )
     }
 }

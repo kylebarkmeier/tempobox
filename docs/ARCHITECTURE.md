@@ -37,7 +37,12 @@ edit or deletion is instantly reflected everywhere, including smart playlists.
 **Rescans never lose user data.** `TrackDao.upsertKeepingUserData` refreshes
 tag metadata while preserving id, rating, play count, and date-added for any
 path it has seen before. The scanner diffs on (mtime, size), so unchanged
-files cost zero tag reads.
+files cost zero tag reads. A library location that cannot be read (revoked
+permission, unmounted SD card) is skipped and counted, never treated as empty:
+when any location is unreadable or a folder listing fails, the scan skips its
+removal phase entirely, so a bad mount cannot wipe rows and their ratings.
+`ScanState.Done` carries the skip counts and the Settings scan line shows
+them.
 
 **Smart playlists are evaluated live.** A smart playlist stores only its rule
 tree (JSON). Reads evaluate against the current library, so new matching
@@ -65,8 +70,31 @@ diverge between views.
 
 **Settings are one typed snapshot.** Preferences DataStore stores each
 settings *group* as JSON under one key; decoding is defensive (corrupt value →
-defaults). `AppSettings` defaults are the product defaults, asserted by tests
-(e.g. auto-rescan ON, anti-repeat ON).
+defaults) but never silent: a decode failure logs E once, and before an update
+would overwrite an undecodable group, the raw value is preserved under
+`<key>.corrupt`. Both the settings store and the playback-state store register
+a `ReplaceFileCorruptionHandler` (log + reset), because a corrupt DataStore
+file otherwise crashes every collector forever. `AppSettings` defaults are the
+product defaults, asserted by tests (e.g. auto-rescan ON, anti-repeat ON).
+
+**Errors are reported, not swallowed.** Every `runCatching` either logs its
+failure or carries a comment saying why not; blocks that suspend use
+`resultOf` (core:common), which rethrows `CancellationException` instead of
+logging a routine cancellation as a failure. File operations check their
+results (a failed playlist-file delete reaches the snackbar, not a fake
+"Deleted"), failures are never cached as data (a Discogs 401 is retried, only
+genuine misses get the 30-day cache), and Media3 session-callback futures go
+through `loggedFuture`, which logs before the framework swallows the
+exception. Player errors log in the service and surface through
+`PlayerConnection.errors` into the app-shell snackbar.
+
+**Features that cannot work are greyed, not booby-trapped.** A small
+permission snapshot (`rememberAppPermissions`, re-checked on every resume)
+drives the UI: settings rows gate on the permission their feature needs
+(start-on-connect on BLUETOOTH_CONNECT, rescan on the media-read grant) and
+show the reason plus a tap-to-grant action; the tag-edit and
+delete-permanently menu entries disable with the reason while All files access
+is missing. The after-the-fact failure snackbars stay as backstop.
 
 **Tag IO has exactly one door.** Only `core:tags` (jaudiotagger) touches audio
 file metadata. `LibraryRepository.editTags` writes files first, then re-syncs

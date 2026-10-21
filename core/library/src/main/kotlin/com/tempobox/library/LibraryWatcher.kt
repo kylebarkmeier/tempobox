@@ -39,12 +39,24 @@ class LibraryWatcher @Inject constructor(
     fun start(locations: List<String>, scope: CoroutineScope) {
         stop()
 
-        val directories = locations.map(::File).filter { it.isDirectory }
-            .flatMap { root -> root.walkTopDown().filter { it.isDirectory }.toList() }
+        val directories = locations.map(::File)
+            .filter { root ->
+                val readable = root.isDirectory && root.canRead()
+                if (!readable) {
+                    Log.w(TAG, "Cannot watch unreadable library location: ${root.absolutePath}")
+                }
+                readable
+            }
+            .flatMap { root ->
+                root.walkTopDown()
+                    .onFail { dir, e -> Log.w(TAG, "Could not list $dir while setting up watchers", e) }
+                    .filter { it.isDirectory }
+                    .toList()
+            }
 
         observers = directories.map { dir -> newObserver(dir) }
         observers.forEach { it.startWatching() }
-        Log.i(TAG, "Watching ${observers.size} directories")
+        Log.i(TAG, "Watching ${observers.size} directories across ${locations.size} location(s)")
 
         synchronized(pending) { pending.clear() }
 
@@ -77,10 +89,14 @@ class LibraryWatcher @Inject constructor(
                 if (changed.isDirectory) {
                     // New folder (e.g. an album copied in): watch its whole
                     // tree and queue every audio file inside it for scanning.
-                    val subDirs = changed.walkTopDown().filter { it.isDirectory }.toList()
+                    val subDirs = changed.walkTopDown()
+                        .onFail { d, e -> Log.w(TAG, "Could not list new folder $d for watching", e) }
+                        .filter { it.isDirectory }
+                        .toList()
                     val newObservers = subDirs.map { newObserver(it) }
                     newObservers.forEach { it.startWatching() }
                     synchronized(this) { observers = observers + newObservers }
+                    Log.i(TAG, "Watching ${newObservers.size} new directories under ${changed.path}")
                     changed.walkTopDown().filter { it.isFile }
                         .forEach { dirty.tryEmit(it.absolutePath) }
                 } else {

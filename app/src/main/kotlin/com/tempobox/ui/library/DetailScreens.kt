@@ -338,7 +338,15 @@ fun PlaylistDetailScreen(
             SubviewSortMenu(LibrarySubview.PLAYLIST_TRACKS, tracksSort, viewModel::setTracksSort)
         },
     ) {
-        if (playlist?.isSmart == true) {
+        if (playlist?.ruleBroken == true) {
+            Text(
+                "This auto playlist's rule could not be loaded, so its tracks can't be " +
+                    "shown. The stored rule is kept; recreating the playlist replaces it.",
+                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                color = androidx.compose.material3.MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(12.dp),
+            )
+        } else if (playlist?.isSmart == true) {
             Text(
                 "Auto playlist — updates automatically as your library changes.",
                 style = androidx.compose.material3.MaterialTheme.typography.bodySmall,

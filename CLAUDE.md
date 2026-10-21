@@ -29,6 +29,17 @@ Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.8
 7. Tests accompany every behavioral change. JVM tests preferred; Robolectric when a Context is needed.
 8. Commit style: imperative subject, no co-author trailers.
 
+## Logging and error reporting
+- Every `runCatching` either logs its failure (W/E with the throwable) or carries a comment saying why not.
+- `CancellationException` is always rethrown, never logged as a failure. Around suspending code use `resultOf` from `core:common` instead of `runCatching`.
+- A failure the user triggered reaches the snackbar with the real reason, not a guessed one ("not allowed to set the wallpaper" is not "no album art").
+- Check the result of every file operation (`delete()`, `mkdirs()`, writes) and report or log honestly; never show "Deleted" for a file that is still there.
+- Never cache an error as data. Only genuine answers (found / genuinely absent) go in caches; auth, rate-limit, server and transport failures are retried.
+- Media3 session-callback futures go through `loggedFuture` (core:playback): the framework swallows a future's exception, so log before rethrowing.
+- The scanner never deletes rows it could not verify: an unreadable location or failed walk skips the removal phase and is counted in `ScanState.Done`.
+- Log once per cause where a site runs per item or per emission (seen-sets like `JAudioTaggerIO.loggedArtworkFailures`); spam hides signal.
+- Grey out UI whose feature cannot work without an ungranted permission (disabled, one-line reason, tap action to grant) via `rememberAppPermissions`; keep the failure snackbar as backstop.
+
 ## Workflow
 - Never commit to main. Branch, open a PR with a descriptive title and body (the squash title becomes the commit on main and feeds auto-generated release notes), then `gh pr merge --auto --squash`. A ruleset on main enforces squash merges and required status checks.
 - Before pushing, run the unit test tasks for every module you touched. Lint and the full build are CI's job.

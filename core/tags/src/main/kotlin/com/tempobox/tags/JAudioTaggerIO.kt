@@ -31,6 +31,10 @@ class JAudioTaggerIO @Inject constructor() : TagReader, TagWriter {
         Logger.getLogger("org.jaudiotagger").level = Level.OFF
     }
 
+    /** Paths whose artwork-read failure was already logged (anti-spam). */
+    private val loggedArtworkFailures =
+        java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
     // ------------------------------------------------------------------ reading
 
     override fun readTrack(file: File): Track? = runCatching {
@@ -63,11 +67,17 @@ class JAudioTaggerIO @Inject constructor() : TagReader, TagWriter {
             hasEmbeddedArt = tag?.firstArtwork != null,
         )
     }.onFailure {
-        Log.w(TAG, "Unreadable audio file, skipping: ${file.path} (${it.message})")
+        Log.w(TAG, "Unreadable audio file, skipping: ${file.path} (${it::class.java.simpleName}: ${it.message})")
     }.getOrNull()
 
     override fun readEmbeddedArtwork(file: File): ByteArray? = runCatching {
         AudioFileIO.read(file).tag?.firstArtwork?.binaryData
+    }.onFailure {
+        // Once per path: this runs on every list-row bind, and a corrupt file
+        // would otherwise spam a line per scroll frame.
+        if (loggedArtworkFailures.add(file.absolutePath)) {
+            Log.w(TAG, "Could not read embedded artwork from ${file.path}", it)
+        }
     }.getOrNull()
 
     // ------------------------------------------------------------------ writing

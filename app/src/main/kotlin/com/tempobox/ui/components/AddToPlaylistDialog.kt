@@ -47,7 +47,9 @@ fun AddToPlaylistDialog(
         return
     }
 
-    val staticPlaylists = playlists.filter { !it.isSmart }
+    // Broken-rule playlists are excluded too: they are smart playlists whose
+    // rule failed to decode, not static ones that can take tracks.
+    val staticPlaylists = playlists.filter { !it.isSmart && !it.ruleBroken }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add to playlist") },

@@ -17,11 +17,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.tempobox.library.ScanState
+import com.tempobox.ui.LocalSnackbar
+import com.tempobox.ui.permissions.PermissionGates
+import com.tempobox.ui.permissions.rememberAppPermissions
+import kotlinx.coroutines.launch
 import com.tempobox.model.DrawerItem
 import com.tempobox.model.LibraryTab
 import com.tempobox.model.SwipeAction
@@ -40,16 +45,35 @@ fun LibrarySection(viewModel: SettingsViewModel) {
     val settings by viewModel.settings.collectAsState()
     val scanState by viewModel.scanState.collectAsState()
     val context = LocalContext.current
+    val permissions by rememberAppPermissions()
+    val snackbar = LocalSnackbar.current
+    val scope = rememberCoroutineScope()
 
     var addingManually by rememberSaveable { mutableStateOf(false) }
     var resetStep by rememberSaveable { mutableStateOf(0) } // 0 = idle, 1 & 2 = confirmations
 
     // System folder picker; the tree URI is converted to a filesystem path.
+    // An unconvertible URI (exotic provider) used to fail into thin air.
     val folderPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri: Uri? ->
-        uri?.let { treeUriToPath(it) }?.let { viewModel.addLibraryLocation(it) }
+        if (uri == null) return@rememberLauncherForActivityResult // user cancelled
+        val path = treeUriToPath(uri)
+        if (path == null) {
+            scope.launch {
+                snackbar.showSnackbar(
+                    "Couldn't turn that folder into a file path — use \"Add path manually\" instead",
+                )
+            }
+        } else {
+            viewModel.addLibraryLocation(path)
+        }
     }
+
+    // Read permission for the scanner, requested in place from the gated row.
+    val readPermissionRequest = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { /* rememberAppPermissions re-checks on resume */ }
 
     SettingsSection("Locations") {
         settings.library.locations.forEach { path ->
@@ -76,8 +100,18 @@ fun LibrarySection(viewModel: SettingsViewModel) {
             "Rescan library",
             subtitle = when (val s = scanState) {
                 is ScanState.Scanning -> "Scanning… ${s.scanned}/${if (s.total > 0) s.total else "?"}"
-                is ScanState.Done -> "Last scan: +${s.added} added, ${s.updated} updated, −${s.removed} removed"
+                is ScanState.Done -> scanDoneSummary(s)
                 ScanState.Idle -> "Scan all locations now"
+            },
+            gateReason = if (permissions.canReadLibrary) {
+                null
+            } else {
+                "Needs permission to read your music — tap to grant"
+            },
+            onGateClick = {
+                readPermissionRequest.launch(
+                    arrayOf(PermissionGates.readAudioPermission(android.os.Build.VERSION.SDK_INT)),
+                )
             },
         ) { viewModel.rescanLibrary() }
         SwitchRow(
@@ -90,7 +124,9 @@ fun LibrarySection(viewModel: SettingsViewModel) {
 
     SettingsDivider()
     SettingsSection("File access") {
-        val granted = viewModel.hasAllFilesAccess()
+        // Live permission state: granting in the system screen un-greys the
+        // dependent entries as soon as the user returns.
+        val granted = permissions.allFilesAccess
         ActionRow(
             if (granted) "All files access: granted" else "Grant All files access",
             subtitle = "Required for editing ID3 tags and deleting files in your library folders",
@@ -145,6 +181,19 @@ fun LibrarySection(viewModel: SettingsViewModel) {
             },
             onDismiss = { resetStep = 0 },
         )
+    }
+}
+
+/**
+ * One-line "Last scan" summary. Skips and unreadable locations are part of
+ * the result, not hidden: a scan that could not read a folder must not read
+ * as a clean scan. Exposed for unit tests.
+ */
+fun scanDoneSummary(s: ScanState.Done): String = buildString {
+    append("Last scan: +${s.added} added, ${s.updated} updated, −${s.removed} removed")
+    if (s.skippedFiles > 0) append(", ${s.skippedFiles} unreadable file(s) skipped")
+    if (s.unreadableLocations > 0) {
+        append("; ${s.unreadableLocations} location(s) unreadable — nothing was removed")
     }
 }
 
