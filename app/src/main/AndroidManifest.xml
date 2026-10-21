@@ -32,6 +32,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Network play (DLNA): SSDP discovery needs a multicast lock, held only
+         while the output picker / network browser is open or a renderer
+         session is active. Maintainer signed off (CLAUDE.md Safety). -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
     <!-- "Set album art as wallpaper" corner action -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
 

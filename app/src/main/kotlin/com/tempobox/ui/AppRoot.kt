@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayCircle
@@ -28,6 +29,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.CompositionLocalProvider
@@ -87,7 +89,7 @@ fun AppRoot(navController: NavHostController = rememberNavController()) {
     // Playback problems (player errors, failed output switches) surface here,
     // in the app shell, so they are visible whatever screen is open — Now
     // Playing is only composed while the sheet is expanded.
-    androidx.compose.runtime.LaunchedEffect(viewModel.player) {
+    LaunchedEffect(viewModel.player) {
         viewModel.player.errors.collect { snackbarHostState.showSnackbar(it) }
     }
 
@@ -161,6 +163,15 @@ fun AppRoot(navController: NavHostController = rememberNavController()) {
                                     modifier = Modifier.padding(horizontal = 12.dp),
                                 )
                             }
+                            // Fixed entry (not part of the user-configurable
+                            // drawer items): DLNA media servers on the Wi-Fi.
+                            NavigationDrawerItem(
+                                label = { Text("Network") },
+                                icon = { Icon(Icons.Filled.Dns, contentDescription = null) },
+                                selected = currentRoute == Routes.NETWORK,
+                                onClick = { navigate(Routes.NETWORK) },
+                                modifier = Modifier.padding(horizontal = 12.dp),
+                            )
                         }
                     }
                 },

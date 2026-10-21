@@ -4,9 +4,10 @@
 //   :app ──────────────┬────────────────────────────────────────────┐
 //                      │                                            │
 //   :core:playback ────┤          :core:library ────┐               │
-//   :core:scrobble ────┤          :core:playlist ───┤               │
-//   :core:artwork ─────┤          :core:tags ───────┼── :core:database
-//   :core:settings ────┘                            └── :core:model / :core:common
+//   :core:remoteplay ──┤          :core:playlist ───┤               │
+//   :core:scrobble ────┤          :core:tags ───────┼── :core:database
+//   :core:artwork ─────┤                            └── :core:model / :core:common
+//   :core:settings ────┘
 //
 pluginManagement {
     // build-logic hosts our convention plugins (see build-logic/README.md)
@@ -46,5 +47,6 @@ include(":core:tags")
 include(":core:playlist")
 include(":core:library")
 include(":core:playback")
+include(":core:remoteplay")
 include(":core:scrobble")
 include(":core:artwork")

@@ -64,10 +64,21 @@ object MediaItems {
             .build()
         return MediaItem.Builder()
             .setMediaId(uid.toString())
-            .setUri(Uri.fromFile(File(track.filePath)))
+            .setUri(playbackUri(track.filePath))
             .setMediaMetadata(metadata)
             .build()
     }
+
+    /**
+     * Local library files play from disk; tracks browsed off a network media
+     * server carry their HTTP resource URL in [Track.filePath] and stream.
+     */
+    fun playbackUri(path: String): Uri =
+        if (path.startsWith("http://") || path.startsWith("https://")) {
+            path.toUri()
+        } else {
+            Uri.fromFile(File(path))
+        }
 
     /** Rebuilds the queue-facing [Track] from an item's metadata (lossy but complete for UI). */
     fun toTrack(item: MediaItem): Track {

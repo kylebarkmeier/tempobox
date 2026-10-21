@@ -14,16 +14,24 @@ import com.tempobox.model.AudioFormat
 import com.tempobox.model.QueueItem
 import com.tempobox.model.ShuffleMode
 import com.tempobox.model.Track
+import com.tempobox.remoteplay.RemotePlayController
+import com.tempobox.remoteplay.RemotePlayEvent
+import com.tempobox.remoteplay.RemotePlaybackState
 import com.tempobox.settings.AppSettings
 import com.tempobox.settings.QueueSettings
 import com.tempobox.settings.SettingsRepository
+import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -45,6 +53,14 @@ class PlayerConnectionTest {
 
     private val controller = mockk<MediaController>(relaxed = true)
     private val settingsRepository = mockk<SettingsRepository>()
+    private val remoteState = MutableStateFlow(RemotePlaybackState())
+    private val remoteEvents = MutableSharedFlow<RemotePlayEvent>(extraBufferCapacity = 4)
+    private val remotePlay = mockk<RemotePlayController>(relaxed = true) {
+        every { state } returns remoteState
+        every { events } returns remoteEvents
+        every { renderers } returns MutableStateFlow(emptyList())
+        every { servers } returns MutableStateFlow(emptyList())
+    }
     private lateinit var connection: PlayerConnection
 
     private fun track(id: Long) = Track(
@@ -74,6 +90,7 @@ class PlayerConnectionTest {
             context = ApplicationProvider.getApplicationContext(),
             shuffleEngine = ShuffleEngine(),
             settingsRepository = settingsRepository,
+            remotePlay = remotePlay,
             controllerOverride = Futures.immediateFuture(controller),
         )
         idleMain()
@@ -193,6 +210,128 @@ class PlayerConnectionTest {
 
         assertThat(connection.addToQueue(listOf(track(1)))).isEqualTo(0) // duplicate
         assertThat(connection.addToQueue(listOf(track(1), track(2)))).isEqualTo(1)
+    }
+
+    // ------------------------------------------------------------------ network renderer routing
+
+    private fun activateRemote(isPlaying: Boolean = true) {
+        remoteState.value = RemotePlaybackState(
+            active = true,
+            rendererId = "uuid:r1",
+            rendererName = "Speaker",
+            isPlaying = isPlaying,
+            positionMs = 30_000,
+            durationMs = 200_000,
+        )
+    }
+
+    @Test
+    fun `selecting a renderer pauses local playback and hands off the track`() {
+        val item = MediaItems.toMediaItem(track(1), uid = 1)
+        every { controller.mediaItemCount } returns 1
+        every { controller.currentMediaItem } returns item
+        every { controller.getMediaItemAt(0) } returns item
+        every { controller.currentPosition } returns 42_000
+        every { controller.isPlaying } returns true
+        coEvery { remotePlay.connect("uuid:r1") } returns true
+
+        connection.selectNetworkOutput("uuid:r1")
+        idleMain()
+
+        verify { controller.pause() }
+        coVerify { remotePlay.connect("uuid:r1") }
+        coVerify {
+            remotePlay.load(
+                match { it.id == 1L },
+                positionMs = 42_000,
+                play = true,
+            )
+        }
+    }
+
+    @Test
+    fun `a failed connect surfaces a message and keeps local playback`() {
+        coEvery { remotePlay.connect(any()) } returns false
+        val events = collectErrors()
+        connection.selectNetworkOutput("uuid:gone")
+        idleMain()
+        assertThat(events.single()).contains("connect")
+        coVerify(exactly = 0) { remotePlay.load(any(), any(), any()) }
+    }
+
+    @Test
+    fun `transport controls route to the renderer while a session is active`() {
+        activateRemote(isPlaying = true)
+        connection.togglePlayPause()
+        idleMain()
+        coVerify { remotePlay.pause() }
+
+        activateRemote(isPlaying = false)
+        connection.togglePlayPause()
+        idleMain()
+        coVerify { remotePlay.play() }
+
+        connection.seekTo(5_000)
+        idleMain()
+        coVerify { remotePlay.seekTo(5_000) }
+    }
+
+    @Test
+    fun `now playing state overlays the renderer position while active`() {
+        activateRemote(isPlaying = true)
+        idleMain()
+        assertThat(connection.state.value.isPlaying).isTrue()
+        assertThat(connection.state.value.positionMs).isEqualTo(30_000)
+        assertThat(connection.state.value.durationMs).isEqualTo(200_000)
+    }
+
+    @Test
+    fun `a lost session falls back to local playback with a message`() {
+        val item = MediaItems.toMediaItem(track(1), uid = 1)
+        every { controller.mediaItemCount } returns 1
+        every { controller.getMediaItemAt(0) } returns item
+        activateRemote(isPlaying = true)
+        idleMain() // let the position recorder see 30s
+
+        val events = collectErrors()
+        remoteState.value = RemotePlaybackState() // controller tears down first
+        remoteEvents.tryEmit(RemotePlayEvent.SessionLost("Speaker"))
+        idleMain()
+
+        assertThat(events.single()).contains("Speaker")
+        verify { controller.seekTo(30_000) }
+        verify { controller.play() }
+    }
+
+    @Test
+    fun `renderer track end advances the local queue`() {
+        every { controller.mediaItemCount } returns 3
+        every { controller.hasNextMediaItem() } returns true
+        every { controller.repeatMode } returns Player.REPEAT_MODE_OFF
+        activateRemote(isPlaying = true)
+        remoteEvents.tryEmit(RemotePlayEvent.TrackEnded)
+        idleMain()
+        verify { controller.seekToNextMediaItem() }
+    }
+
+    @Test
+    fun `renderer track end at the end of the queue stays stopped`() {
+        every { controller.mediaItemCount } returns 3
+        every { controller.hasNextMediaItem() } returns false
+        every { controller.repeatMode } returns Player.REPEAT_MODE_OFF
+        activateRemote(isPlaying = true)
+        remoteEvents.tryEmit(RemotePlayEvent.TrackEnded)
+        idleMain()
+        verify(exactly = 0) { controller.seekToNextMediaItem() }
+        coVerify(exactly = 0) { remotePlay.load(any(), any(), any()) }
+    }
+
+    @Test
+    fun `selecting a local output disconnects the renderer session`() {
+        activateRemote(isPlaying = true)
+        connection.selectAudioOutput(null)
+        idleMain()
+        coVerify { remotePlay.disconnect() }
     }
 
     @Test
