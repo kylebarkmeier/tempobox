@@ -1,23 +1,35 @@
 package com.tempobox
 
+import android.app.SearchManager
+import android.content.Intent
 import android.os.Bundle
+import android.provider.MediaStore
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import com.tempobox.library.LibraryPermissions
+import com.tempobox.playback.PlayerConnection
 import com.tempobox.ui.AppRoot
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 /**
  * Single-activity app. Requests the runtime permissions the library needs on
  * first launch (media read, notifications, Bluetooth); the deeper
  * "All files access" grant for tag editing/deletion is requested contextually
  * from Settings ▸ Library when the user first needs it.
+ *
+ * Also the entry point for assistant voice playback: "play X on TempoBox"
+ * arrives as a MEDIA_PLAY_FROM_SEARCH intent (the filter is what lets the
+ * assistant target the app by name at all) and is handed to the service's
+ * voice resolver.
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject lateinit var playerConnection: PlayerConnection
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
@@ -37,9 +49,25 @@ class MainActivity : ComponentActivity() {
             permissionLauncher.launch(LibraryPermissions.runtimePermissions().toTypedArray())
         }
 
+        handleVoicePlayIntent(intent)
+
         setContent {
             AppRoot()
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleVoicePlayIntent(intent)
+    }
+
+    private fun handleVoicePlayIntent(intent: Intent?) {
+        if (intent?.action != MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) return
+        val query = intent.getStringExtra(SearchManager.QUERY).orEmpty()
+        // One line per spoken request, so `adb logcat -s MainActivity
+        // PlaybackService` shows whether the assistant dispatched at all.
+        Log.i(TAG, "Play-from-search intent: '$query'")
+        playerConnection.playFromSearch(query)
     }
 
     private companion object {

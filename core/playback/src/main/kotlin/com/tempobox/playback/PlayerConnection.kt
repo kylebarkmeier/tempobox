@@ -237,6 +237,28 @@ class PlayerConnection internal constructor(
     }
 
     /**
+     * Hands a spoken query to the service's voice resolver: the same
+     * play-from-search path Assistant drives through the session
+     * (`PlaybackService.onSetMediaItems` sees `requestMetadata.searchQuery`),
+     * here reached from the MEDIA_PLAY_FROM_SEARCH activity intent. The
+     * service always plays something; an empty or unmatched query falls back
+     * to the persisted queue, else a library shuffle.
+     */
+    fun playFromSearch(query: String) {
+        scope.launch {
+            val controller = controller()
+            val item = MediaItem.Builder()
+                .setRequestMetadata(
+                    MediaItem.RequestMetadata.Builder().setSearchQuery(query).build(),
+                )
+                .build()
+            controller.setMediaItems(listOf(item))
+            controller.prepare()
+            controller.play()
+        }
+    }
+
+    /**
      * Replaces the queue with [tracks] in shuffled order using the user's
      * configured shuffle flavor (the "Shuffle" menu actions).
      */

@@ -64,6 +64,13 @@
                 <data android:mimeType="audio/x-mpegurl" />
                 <data android:mimeType="application/vnd.apple.mpegurl" />
             </intent-filter>
+            <!-- Assistant voice playback ("play X on TempoBox"): without this
+                 filter the assistant cannot target the app by name and falls
+                 back to a web search. -->
+            <intent-filter>
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <!-- Android Auto: declares this as a media app for the car screen -->

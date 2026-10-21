@@ -126,6 +126,10 @@ and bumps each row's mtime so the path+mtime artwork cache key misses.
   setting the user's configured shuffle flavor. An unmatched query falls back
   to the persisted queue, else a whole-library shuffle, so voice always plays
   something. Every query logs one line under the `PlaybackService` tag.
+  The assistant can only target the app by name because `MainActivity`
+  declares the `MEDIA_PLAY_FROM_SEARCH` intent filter (without it, "play X on
+  TempoBox" falls back to a web search); the activity logs the dispatch and
+  forwards the query to the session via `PlayerConnection.playFromSearch`.
 - `CallGuard` (pure logic, audio-mode based, no phone permission) stops car
   stereos restarting music mid-call: start-on-connect is refused during any
   call mode, and playback that starts mid-call is paused after a recheck
