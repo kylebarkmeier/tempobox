@@ -13,7 +13,7 @@ import javax.inject.Singleton
 
 /**
  * HTTP side of UPnP: fetching device descriptions and POSTing SOAP control
- * actions. Owns its own OkHttp client with short timeouts — a renderer that
+ * actions. Owns its own OkHttp client with short timeouts: a renderer that
  * takes 15 seconds to answer is a dead renderer for playback purposes, and
  * the session fallback should trigger quickly.
  *

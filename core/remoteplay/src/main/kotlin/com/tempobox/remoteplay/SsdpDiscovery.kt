@@ -24,7 +24,7 @@ import java.net.SocketTimeoutException
  * Runs only while something is looking: the output picker or the network
  * browse screen call [start]/[stop] around their visibility, and the
  * [WifiManager.MulticastLock] (CHANGE_WIFI_MULTICAST_STATE, maintainer
- * signed off) is held exactly that long — multicast filtering is a battery
+ * signed off) is held exactly that long: multicast filtering is a battery
  * drain, so the lock never outlives its screen.
  *
  * M-SEARCH replies arrive unicast; the lock is still required on devices

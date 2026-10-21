@@ -38,7 +38,7 @@ object Ssdp {
 
     /**
      * Parses one received datagram. Returns null for anything that is not a
-     * usable announcement (NOTIFY byebye, M-SEARCHes from others, garbage) —
+     * usable announcement (NOTIFY byebye, M-SEARCHes from others, garbage):
      * SSDP traffic is untrusted input, so unparseable messages are dropped,
      * never thrown on.
      */

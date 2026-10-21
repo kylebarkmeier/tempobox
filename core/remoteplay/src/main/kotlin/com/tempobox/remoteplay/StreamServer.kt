@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * Minimal HTTP/1.1 file server streaming queue tracks to a DLNA renderer.
  *
  * Deliberately not a general web server: it answers GET/HEAD for the token
- * paths registered in [StreamTokens] and nothing else — no listings, no
+ * paths registered in [StreamTokens] and nothing else: no listings, no
  * directories, no other methods. Hand-rolled over [ServerSocket] instead of
  * pulling in an embedded-server dependency; the whole protocol surface it
  * needs (request line, Range, 200/206/404/405/416) fits here and is unit
@@ -35,7 +35,7 @@ class StreamServer(private val tokens: StreamTokens) {
     val port: Int get() = serverSocket?.localPort ?: -1
 
     /**
-     * Starts listening on [address] (the WLAN interface — never all
+     * Starts listening on [address] (the WLAN interface, never all
      * interfaces) on an ephemeral port. Returns the port, or null on failure.
      */
     @Synchronized

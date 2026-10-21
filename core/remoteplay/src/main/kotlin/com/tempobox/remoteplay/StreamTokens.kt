@@ -9,7 +9,7 @@ import java.security.SecureRandom
  * This is the stream server's entire authorization model: only files
  * explicitly registered from the current queue are reachable, each under a
  * random 128-bit token, so there is nothing to browse and no path from the
- * request to the filesystem. Request paths never touch file paths — a lookup
+ * request to the filesystem. Request paths never touch file paths: a lookup
  * either hits a registered token exactly or serves nothing (audio paths are
  * untrusted input per the repo safety rules).
  */
@@ -39,7 +39,7 @@ class StreamTokens(private val random: SecureRandom = SecureRandom()) {
 
     /**
      * The file for a raw HTTP request path, or null. Accepts exactly
-     * "/{32 hex chars}" — anything else (traversal attempts, queries, listing
+     * "/{32 hex chars}"; anything else (traversal attempts, queries, listing
      * probes) resolves to nothing.
      */
     @Synchronized
