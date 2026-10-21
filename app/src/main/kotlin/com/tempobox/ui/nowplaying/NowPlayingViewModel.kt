@@ -3,6 +3,7 @@ package com.tempobox.ui.nowplaying
 import android.app.WallpaperManager
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tempobox.common.IoDispatcher
@@ -52,17 +53,34 @@ class NowPlayingViewModel @Inject constructor(
     fun setCurrentArtAsWallpaper() {
         val track = state.value.track ?: return
         viewModelScope.launch {
-            val ok = withContext(ioDispatcher) {
-                runCatching {
-                    val bytes = tagReader.readEmbeddedArtwork(File(track.filePath))
-                        ?: return@runCatching false
-                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                        ?: return@runCatching false
-                    WallpaperManager.getInstance(context).setBitmap(bitmap)
-                    true
-                }.getOrDefault(false)
+            // Missing/undecodable art and a failed wallpaper call are
+            // different problems; blaming the track for a denied permission
+            // sends the user hunting a bug that isn't there.
+            val message = withContext(ioDispatcher) {
+                val bytes = tagReader.readEmbeddedArtwork(File(track.filePath))
+                val bitmap = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+                if (bitmap == null) {
+                    "No usable album art on this track"
+                } else {
+                    try {
+                        WallpaperManager.getInstance(context).setBitmap(bitmap)
+                        "Wallpaper updated"
+                    } catch (e: SecurityException) {
+                        Log.w(TAG, "Not allowed to set the wallpaper", e)
+                        "TempoBox is not allowed to change the wallpaper on this device"
+                    } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Setting the wallpaper failed", e)
+                        "Could not set the wallpaper"
+                    }
+                }
             }
-            _messages.tryEmit(if (ok) "Wallpaper updated" else "No usable album art on this track")
+            _messages.tryEmit(message)
         }
+    }
+
+    private companion object {
+        const val TAG = "NowPlayingViewModel"
     }
 }

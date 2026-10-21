@@ -9,12 +9,16 @@ import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
+import com.tempobox.common.resultOf
 import com.tempobox.model.AudioOutputDevice
 import com.tempobox.model.NowPlayingState
 import com.tempobox.model.QueueItem
@@ -28,7 +32,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,6 +46,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -79,6 +87,15 @@ class PlayerConnection internal constructor(
 
     private val _queue = MutableStateFlow<List<QueueItem>>(emptyList())
     val queue: StateFlow<List<QueueItem>> = _queue.asStateFlow()
+
+    private val _errors = MutableSharedFlow<String>(extraBufferCapacity = 4)
+
+    /**
+     * One-shot, user-readable playback problems (player errors, failed output
+     * switches). Collected into the app-wide snackbar; no auto-skip or other
+     * recovery is attempted here.
+     */
+    val errors: SharedFlow<String> = _errors.asSharedFlow()
 
     private val _shuffleMode = MutableStateFlow(ShuffleMode.OFF)
 
@@ -126,6 +143,19 @@ class PlayerConnection internal constructor(
                     ) {
                         refresh(controller)
                     }
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    // The service logs the full stack; here we make it visible.
+                    val title = controller.currentMediaItem
+                        ?.mediaMetadata?.title?.toString()
+                    _errors.tryEmit(
+                        if (title.isNullOrBlank()) {
+                            "Playback failed (${error.errorCodeName})"
+                        } else {
+                            "Can't play \"$title\" (${error.errorCodeName})"
+                        },
+                    )
                 }
             })
             refresh(controller)
@@ -182,19 +212,25 @@ class PlayerConnection internal constructor(
         }
     }
 
-    /** Appends [tracks] to the end of the queue (starts the service if needed). */
-    fun addToQueue(tracks: List<Track>) {
-        if (tracks.isEmpty()) return
-        scope.launch {
+    /**
+     * Appends [tracks] to the end of the queue (starts the service if needed).
+     * Returns how many were actually added — 0 when duplicate filtering
+     * dropped everything, so the caller can say "already in queue" instead of
+     * claiming an addition that never happened.
+     */
+    suspend fun addToQueue(tracks: List<Track>): Int {
+        if (tracks.isEmpty()) return 0
+        return withContext(Dispatchers.Main.immediate) {
             val controller = controller()
             val allowDuplicates = settingsRepository.settings.first().queue.allowDuplicates
             val existingIds = _queue.value.map { it.track.id }.toSet()
             val toAdd = if (allowDuplicates) tracks else tracks.filter { it.id !in existingIds }
-            if (toAdd.isEmpty()) return@launch
+            if (toAdd.isEmpty()) return@withContext 0
             val items = toAdd.map { newItem(it) }
             originalOrderUids = originalOrderUids + items.map { it.mediaId.toLong() }
             controller.addMediaItems(items)
             if (controller.playbackState == Player.STATE_IDLE) controller.prepare()
+            toAdd.size
         }
     }
 
@@ -350,18 +386,37 @@ class PlayerConnection internal constructor(
         )
 
     /** Routes playback to output [id], or back to automatic when null. */
-    fun selectAudioOutput(id: Int?) = withController { c ->
-        val args = Bundle().apply {
-            putInt(
-                PlaybackService.EXTRA_AUDIO_DEVICE_ID,
-                id ?: PlaybackService.AUDIO_DEVICE_AUTO,
-            )
+    fun selectAudioOutput(id: Int?) {
+        scope.launch {
+            val c = controller()
+            val args = Bundle().apply {
+                putInt(
+                    PlaybackService.EXTRA_AUDIO_DEVICE_ID,
+                    id ?: PlaybackService.AUDIO_DEVICE_AUTO,
+                )
+            }
+            val previous = _selectedOutputId.value
+            // Optimistic so the picker reflects the tap immediately…
+            _selectedOutputId.value = id
+            val result = resultOf {
+                c.sendCustomCommand(
+                    SessionCommand(PlaybackService.ACTION_SET_AUDIO_OUTPUT, Bundle.EMPTY),
+                    args,
+                ).await()
+            }.onFailure {
+                Log.w(TAG, "Audio output switch to $id failed", it)
+            }.getOrNull()
+            // …but reverted when the service refuses (stale device id, no
+            // session command): the UI must not claim a route it never got.
+            if (result == null || result.resultCode != SessionResult.RESULT_SUCCESS) {
+                if (result != null) {
+                    Log.w(TAG, "Audio output switch to $id rejected (code ${result.resultCode})")
+                }
+                _selectedOutputId.value = previous
+                _errors.tryEmit("Could not switch the audio output")
+            }
+            refresh(c)
         }
-        c.sendCustomCommand(
-            SessionCommand(PlaybackService.ACTION_SET_AUDIO_OUTPUT, Bundle.EMPTY),
-            args,
-        )
-        _selectedOutputId.value = id
     }
 
     fun setRepeatMode(mode: RepeatMode) = withController { c ->
@@ -460,6 +515,7 @@ class PlayerConnection internal constructor(
     }
 
     companion object {
+        private const val TAG = "PlayerConnection"
         private const val POSITION_TICK_MS = 500L
 
         /** The shuffle flavor "shuffle on" means, given the user's settings. */

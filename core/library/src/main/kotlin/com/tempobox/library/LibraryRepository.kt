@@ -242,7 +242,11 @@ class LibraryRepository @Inject constructor(
         }
         deleted.map { it.id }.chunked(SQL_CHUNK).forEach { trackDao.deleteByIds(it) }
         if (failed.isNotEmpty()) {
-            Log.w(TAG, "Could not delete ${failed.size} files (missing write permission?)")
+            Log.w(
+                TAG,
+                "Could not delete ${failed.size} file(s) (missing write permission?): " +
+                    failed.joinToString { it.filePath },
+            )
         }
         failed
     }

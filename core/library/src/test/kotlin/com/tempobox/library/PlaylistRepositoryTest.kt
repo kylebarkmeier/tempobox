@@ -111,9 +111,25 @@ class PlaylistRepositoryTest {
         val playlist = repository.createPlaylist("Bye")
         val file = File(playlist.filePath!!)
         assertThat(file.exists()).isTrue()
-        repository.deletePlaylist(playlist.id)
+        assertThat(repository.deletePlaylist(playlist.id)).isTrue()
         assertThat(file.exists()).isFalse()
         assertThat(repository.getPlaylist(playlist.id)).isNull()
+    }
+
+    @Test
+    fun `deletePlaylist reports a file it could not delete`() = runTest {
+        val playlist = repository.createPlaylist("Stuck")
+        val path = File(playlist.filePath!!)
+        // Make the path undeletable: replace the file with a non-empty folder
+        // (File.delete refuses those on every platform).
+        path.delete()
+        path.mkdirs()
+        File(path, "child.txt").writeText("x")
+
+        val fileDeleted = repository.deletePlaylist(playlist.id)
+
+        assertThat(fileDeleted).isFalse() // the UI must not claim "Deleted"
+        assertThat(repository.getPlaylist(playlist.id)).isNull() // row removal still worked
     }
 
     // ------------------------------------------------------------------ import
@@ -195,18 +211,46 @@ class PlaylistRepositoryTest {
     }
 
     @Test
-    fun `addToPlaylist refuses smart playlists`() = runTest {
+    fun `addToPlaylist refuses smart playlists without crashing`() = runTest {
         val t = seedTrack("song")
         val smart = repository.createSmartPlaylist(
             "Auto",
             SmartRule.Condition(RuleField.GENRE, RuleOp.IS, "Rock"),
         )
-        try {
-            repository.addToPlaylist(smart.id, listOf(t.id))
-            throw AssertionError("expected IllegalArgumentException")
-        } catch (expected: IllegalArgumentException) {
-            // membership is rule-driven; manual adds are a programming error
-        }
+        // Membership is rule-driven; a manual add is refused (reachable from
+        // the UI when a broken rule makes the playlist look static).
+        assertThat(repository.addToPlaylist(smart.id, listOf(t.id))).isFalse()
+        assertThat(db.playlistDao().getPlaylistTracks(smart.id)).isEmpty()
+    }
+
+    // ------------------------------------------------------------------ broken rules
+
+    @Test
+    fun `a broken smart rule is flagged instead of posing as an empty static playlist`() = runTest {
+        val t = seedTrack("song")
+        val id = db.playlistDao().insert(
+            com.tempobox.database.entity.PlaylistEntity(
+                name = "Broken", filePath = null,
+                smartRuleJson = "{definitely not a rule",
+                dateAddedMs = 1, dateModifiedMs = 1,
+            ),
+        )
+
+        val playlist = repository.observePlaylists().first().single { it.id == id }
+        assertThat(playlist.ruleBroken).isTrue()
+        assertThat(playlist.isSmart).isFalse()
+
+        // Refused, not crashed, and refreshSmartExports leaves it alone.
+        assertThat(repository.addToPlaylist(id, listOf(t.id))).isFalse()
+        repository.refreshSmartExports()
+        assertThat(repository.getPlaylist(id)!!.ruleBroken).isTrue()
+    }
+
+    @Test
+    fun `importPlaylistFiles survives an unreadable location`() = runTest {
+        // Must log and continue, never throw.
+        repository.importPlaylistFiles(listOf(File(tmp.root, "not-mounted").absolutePath))
+        assertThat(repository.observePlaylists().first()).isEmpty()
     }
 
     @Test

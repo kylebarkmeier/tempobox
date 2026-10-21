@@ -165,6 +165,36 @@ class DataStoreSettingsRepositoryTest {
     }
 
     @Test
+    fun `updating a corrupt group preserves the raw value instead of destroying it`() = scope.runTest {
+        plantRaw("shuffle", "{corrupt")
+        repository.updateShuffle { it.copy(ratingBias = true) }
+
+        val key = androidx.datastore.preferences.core.stringPreferencesKey("shuffle.corrupt")
+        assertThat(dataStore.data.first()[key]).isEqualTo("{corrupt")
+    }
+
+    @Test
+    fun `updating a healthy group writes no corrupt copy`() = scope.runTest {
+        repository.updateShuffle { it.copy(ratingBias = true) }
+        val key = androidx.datastore.preferences.core.stringPreferencesKey("shuffle.corrupt")
+        assertThat(dataStore.data.first()[key]).isNull()
+    }
+
+    @Test
+    fun `a corrupt DataStore file resets to defaults instead of crashing every collector`() = scope.runTest {
+        val corruptFile = File(tmp.root, "corrupt.preferences_pb").apply {
+            writeText("this is not a preferences protobuf")
+        }
+        val store = PreferenceDataStoreFactory.create(
+            corruptionHandler = DataStoreSettingsRepository.corruptionHandler(),
+            scope = storeScope,
+        ) { corruptFile }
+
+        val settings = DataStoreSettingsRepository(store).settings.first()
+        assertThat(settings.shuffle.antiRepeat).isTrue() // product defaults, no crash
+    }
+
+    @Test
     fun `unknown fields from a future schema are tolerated`() = scope.runTest {
         // A newer app version may add fields; an older one must still decode.
         plantRaw("shuffle", """{"antiRepeat":false,"ratingBias":true,"futureFlag":42}""")

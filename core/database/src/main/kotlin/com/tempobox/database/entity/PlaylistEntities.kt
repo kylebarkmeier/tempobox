@@ -55,13 +55,19 @@ data class PlaylistEntryEntity(
     val position: Int,
 )
 
-fun PlaylistEntity.toModel(trackCount: Int = 0, durationMs: Long = 0): Playlist = Playlist(
-    id = id,
-    name = name,
-    filePath = filePath,
-    smartRule = smartRuleJson?.let { SmartRule.fromJson(it) },
-    trackCount = trackCount,
-    durationMs = durationMs,
-    dateAddedMs = dateAddedMs,
-    dateModifiedMs = dateModifiedMs,
-)
+fun PlaylistEntity.toModel(trackCount: Int = 0, durationMs: Long = 0): Playlist {
+    val rule = smartRuleJson?.let { SmartRule.fromJson(it) }
+    return Playlist(
+        id = id,
+        name = name,
+        filePath = filePath,
+        smartRule = rule,
+        // A stored rule that fails to decode must not masquerade as a static
+        // playlist (callers refuse edits and the UI names the failure).
+        ruleBroken = smartRuleJson != null && rule == null,
+        trackCount = trackCount,
+        durationMs = durationMs,
+        dateAddedMs = dateAddedMs,
+        dateModifiedMs = dateModifiedMs,
+    )
+}

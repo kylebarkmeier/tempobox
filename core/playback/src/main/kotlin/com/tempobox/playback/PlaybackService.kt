@@ -54,7 +54,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -156,6 +155,8 @@ class PlaybackService : MediaLibraryService() {
                 val window = androidx.media3.common.Timeline.Window()
                 val item = runCatching {
                     eventTime.timeline.getWindow(eventTime.windowIndex, window).mediaItem
+                }.onFailure {
+                    Log.w(TAG, "Could not resolve the finished item from the timeline; play not counted", it)
                 }.getOrNull() ?: return@PlaybackStatsListener
                 onPlaybackSessionEnded(item, stats.totalPlayTimeMs)
             },
@@ -277,21 +278,23 @@ class PlaybackService : MediaLibraryService() {
             page: Int,
             pageSize: Int,
             params: LibraryParams?,
-        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
-            val children = browseTree.children(parentId)
-                ?: return@future LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
-            LibraryResult.ofItemList(ImmutableList.copyOf(children.page(page, pageSize)), params)
-        }
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> =
+            scope.loggedFuture(TAG, "onGetChildren($parentId)") {
+                val children = browseTree.children(parentId)
+                    ?: return@loggedFuture LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+                LibraryResult.ofItemList(ImmutableList.copyOf(children.page(page, pageSize)), params)
+            }
 
         override fun onGetItem(
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
             mediaId: String,
-        ): ListenableFuture<LibraryResult<MediaItem>> = scope.future {
-            browseTree.item(mediaId)
-                ?.let { LibraryResult.ofItem(it, null) }
-                ?: LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
-        }
+        ): ListenableFuture<LibraryResult<MediaItem>> =
+            scope.loggedFuture(TAG, "onGetItem($mediaId)") {
+                browseTree.item(mediaId)
+                    ?.let { LibraryResult.ofItem(it, null) }
+                    ?: LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+            }
 
         /**
          * A track tapped in a browse list arrives as one item whose id names
@@ -311,7 +314,7 @@ class PlaybackService : MediaLibraryService() {
             // the legacy playFromSearch).
             val searchQuery = mediaItems.singleOrNull()?.requestMetadata?.searchQuery
             if (searchQuery != null) {
-                return scope.future { voiceQueue(searchQuery) }
+                return scope.loggedFuture(TAG, "voiceQueue($searchQuery)") { voiceQueue(searchQuery) }
             }
 
             val node = mediaItems.singleOrNull()?.let { BrowseIds.decode(it.mediaId) }
@@ -320,7 +323,7 @@ class PlaybackService : MediaLibraryService() {
                     mediaSession, controller, mediaItems, startIndex, startPositionMs,
                 )
             }
-            return scope.future {
+            return scope.loggedFuture(TAG, "onSetMediaItems(${node.parent})") {
                 val tracks = browseTree.tracksFor(node)
                 // A stale cached id (deleted playlist, retagged album): fail the
                 // request so the user's current queue is left alone.
@@ -345,9 +348,10 @@ class PlaybackService : MediaLibraryService() {
         override fun onPlaybackResumption(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
-        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
-            resumptionQueue() ?: throw UnsupportedOperationException("nothing to resume")
-        }
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> =
+            scope.loggedFuture(TAG, "onPlaybackResumption") {
+                resumptionQueue() ?: throw UnsupportedOperationException("nothing to resume")
+            }
 
         // ------------------------------------------------------ voice search
 
@@ -357,7 +361,7 @@ class PlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             query: String,
             params: LibraryParams?,
-        ): ListenableFuture<LibraryResult<Void>> = scope.future {
+        ): ListenableFuture<LibraryResult<Void>> = scope.loggedFuture(TAG, "onSearch($query)") {
             val resolution = voiceSearch.resolve(query)
             Log.i(TAG, "onSearch '$query' -> ${resolution?.description ?: "no match"}")
             session.notifySearchResultChanged(
@@ -373,11 +377,12 @@ class PlaybackService : MediaLibraryService() {
             page: Int,
             pageSize: Int,
             params: LibraryParams?,
-        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
-            val tracks = voiceSearch.resolve(query)?.tracks.orEmpty()
-            val items = browseTree.searchResultItems(tracks).page(page, pageSize)
-            LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
-        }
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> =
+            scope.loggedFuture(TAG, "onGetSearchResult($query)") {
+                val tracks = voiceSearch.resolve(query)?.tracks.orEmpty()
+                val items = browseTree.searchResultItems(tracks).page(page, pageSize)
+                LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
+            }
 
         /**
          * MediaItems arrive from controllers without their file URI (Media3
@@ -391,7 +396,7 @@ class PlaybackService : MediaLibraryService() {
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>,
-        ): ListenableFuture<MutableList<MediaItem>> = scope.future {
+        ): ListenableFuture<MutableList<MediaItem>> = scope.loggedFuture(TAG, "onAddMediaItems") {
             val leafIds = mediaItems.mapNotNull {
                 (BrowseIds.decode(it.mediaId) as? BrowseIds.Node.Track)?.trackId
             }
@@ -484,6 +489,17 @@ class PlaybackService : MediaLibraryService() {
             scheduleSnapshot()
             refreshWidget()
         }
+
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            // Visibility only, no auto-skip: the same callback reaches every
+            // controller, and PlayerConnection surfaces it to the UI snackbar.
+            Log.e(
+                TAG,
+                "Player error ${error.errorCodeName} on " +
+                    "${player.currentMediaItem?.let { MediaItems.toTrack(it).filePath } ?: "<no item>"}",
+                error,
+            )
+        }
     }
 
     /**
@@ -567,11 +583,29 @@ class PlaybackService : MediaLibraryService() {
 
     private fun restoreQueue() {
         scope.launch {
-            val snapshot = stateStore.load() ?: return@launch
+            val snapshot = stateStore.load()
+            if (snapshot == null) {
+                Log.i(TAG, "No queue snapshot to restore")
+                return@launch
+            }
             val persist = settingsState.value?.queue?.persistQueue ?: true
-            if (!persist || snapshot.trackIds.isEmpty() || player.mediaItemCount > 0) return@launch
+            if (!persist) {
+                Log.i(TAG, "Queue persistence is off; not restoring")
+                return@launch
+            }
+            if (snapshot.trackIds.isEmpty()) {
+                Log.i(TAG, "Queue snapshot is empty; nothing to restore")
+                return@launch
+            }
+            if (player.mediaItemCount > 0) {
+                Log.i(TAG, "Player already has a queue; skipping restore")
+                return@launch
+            }
             val tracks = libraryRepository.getTracksByIds(snapshot.trackIds)
-            if (tracks.isEmpty()) return@launch
+            if (tracks.isEmpty()) {
+                Log.i(TAG, "No snapshot track still exists in the library; nothing to restore")
+                return@launch
+            }
             val items = tracks.mapIndexed { i, t -> MediaItems.toMediaItem(t, uid = i.toLong()) }
             player.setMediaItems(
                 items,

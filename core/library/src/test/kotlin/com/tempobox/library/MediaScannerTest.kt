@@ -125,13 +125,14 @@ class MediaScannerTest {
     }
 
     @Test
-    fun `unreadable files are skipped without failing the scan`() = runTest {
+    fun `unreadable files are skipped, counted, and do not fail the scan`() = runTest {
         val bad = newAudioFile("A__X__Corrupt.mp3")
         tagIO.failingPaths += bad.absolutePath
         newAudioFile("A__X__Good.mp3")
 
         val result = scanner.scan(listOf(musicDir.absolutePath))
         assertThat(result.added).isEqualTo(1)
+        assertThat(result.skippedFiles).isEqualTo(1)
     }
 
     @Test
@@ -156,7 +157,7 @@ class MediaScannerTest {
     }
 
     @Test
-    fun `scan merges multiple locations and ignores missing ones`() = runTest {
+    fun `scan merges multiple locations and counts an unreadable one`() = runTest {
         val second = tmp.newFolder("Podcasts")
         newAudioFile("A__X__One.mp3")
         newAudioFile("B__Y__Two.mp3", dir = second)
@@ -169,6 +170,41 @@ class MediaScannerTest {
             ),
         )
         assertThat(result.added).isEqualTo(2)
+        assertThat(result.unreadableLocations).isEqualTo(1)
+    }
+
+    @Test
+    fun `an unreadable location disables the removal phase (no data loss)`() = runTest {
+        val keep = newAudioFile("A__X__Keep.mp3")
+        val gone = newAudioFile("A__X__Gone.mp3")
+        scanner.scan(listOf(musicDir.absolutePath))
+
+        // One file really vanished AND a configured root became unreadable:
+        // removing anything now would act on an incomplete view of the disk.
+        gone.delete()
+        val result = scanner.scan(
+            listOf(musicDir.absolutePath, File(tmp.root, "unmounted-sd").absolutePath),
+        )
+
+        assertThat(result.unreadableLocations).isEqualTo(1)
+        assertThat(result.removed).isEqualTo(0)
+        assertThat(db.trackDao().getAllPaths())
+            .containsExactly(keep.absolutePath, gone.absolutePath)
+    }
+
+    @Test
+    fun `rows under a now-unreadable root keep their user data`() = runTest {
+        val file = newAudioFile("A__X__One.mp3")
+        scanner.scan(listOf(musicDir.absolutePath))
+        val id = db.trackDao().getByPath(file.absolutePath)!!.id
+        db.trackDao().setRating(id, 5)
+
+        // The only configured root is suddenly unreadable: the scan must not
+        // interpret "saw nothing" as "everything was deleted".
+        val result = scanner.scan(listOf(File(tmp.root, "revoked").absolutePath))
+
+        assertThat(result.removed).isEqualTo(0)
+        assertThat(db.trackDao().getByPath(file.absolutePath)!!.rating).isEqualTo(5)
     }
 
     @Test

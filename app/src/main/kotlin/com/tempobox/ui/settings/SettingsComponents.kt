@@ -32,20 +32,37 @@ fun SettingsGroupTitle(title: String) {
     )
 }
 
+/**
+ * Toggle row. When [gateReason] is set, the feature cannot work (missing
+ * permission): the row renders greyed with the reason as its subtitle, the
+ * switch is disabled, and tapping the row runs [onGateClick] (which should
+ * request the permission or open the right system screen).
+ */
 @Composable
 fun SwitchRow(
     title: String,
     subtitle: String? = null,
     checked: Boolean,
+    gateReason: String? = null,
+    onGateClick: (() -> Unit)? = null,
     onToggle: (Boolean) -> Unit,
 ) {
+    val gated = gateReason != null
+    val titleColor =
+        if (gated) MaterialTheme.colorScheme.onSurface.copy(alpha = DISABLED_ALPHA)
+        else MaterialTheme.colorScheme.onSurface
+    val supporting = if (gated) gateReason else subtitle
     ListItem(
-        headlineContent = { Text(title) },
-        supportingContent = subtitle?.let { { Text(it) } },
-        trailingContent = { Switch(checked = checked, onCheckedChange = onToggle) },
+        headlineContent = { Text(title, color = titleColor) },
+        supportingContent = supporting?.let { { Text(it) } },
+        trailingContent = {
+            Switch(checked = !gated && checked, onCheckedChange = onToggle, enabled = !gated)
+        },
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onToggle(!checked) },
+            .clickable {
+                if (gated) onGateClick?.invoke() else onToggle(!checked)
+            },
     )
 }
 
@@ -82,27 +99,39 @@ fun DropdownRow(
     }
 }
 
-/** Plain tappable row (buttons like "Rescan library"). */
+/**
+ * Plain tappable row (buttons like "Rescan library"). When [gateReason] is
+ * set, the action cannot work (missing permission): the row renders greyed
+ * with the reason as its subtitle, and tapping it runs [onGateClick] instead
+ * of [onClick].
+ */
 @Composable
 fun ActionRow(
     title: String,
     subtitle: String? = null,
     destructive: Boolean = false,
+    gateReason: String? = null,
+    onGateClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
+    val gated = gateReason != null
+    val titleColor = when {
+        gated -> MaterialTheme.colorScheme.onSurface.copy(alpha = DISABLED_ALPHA)
+        destructive -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val supporting = if (gated) gateReason else subtitle
     ListItem(
-        headlineContent = {
-            Text(
-                title,
-                color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-            )
-        },
-        supportingContent = subtitle?.let { { Text(it) } },
+        headlineContent = { Text(title, color = titleColor) },
+        supportingContent = supporting?.let { { Text(it) } },
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .clickable { if (gated) onGateClick?.invoke() else onClick() },
     )
 }
+
+/** Material's standard disabled-content alpha. */
+internal const val DISABLED_ALPHA = 0.38f
 
 @Composable
 fun SettingsDivider() {

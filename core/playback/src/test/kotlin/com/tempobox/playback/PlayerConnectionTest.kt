@@ -2,19 +2,32 @@ package com.tempobox.playback
 
 import android.app.Application
 import android.os.Looper
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionResult
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
 import com.google.common.util.concurrent.Futures
 import com.tempobox.model.AudioFormat
+import com.tempobox.model.QueueItem
 import com.tempobox.model.ShuffleMode
 import com.tempobox.model.Track
 import com.tempobox.settings.AppSettings
+import com.tempobox.settings.QueueSettings
 import com.tempobox.settings.SettingsRepository
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.flow.flowOf
+import io.mockk.slot
+import io.mockk.verify
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -101,6 +114,80 @@ class PlayerConnectionTest {
         idleMain()
 
         assertThat(connection.state.value.shuffleMode).isEqualTo(ShuffleMode.OFF)
+    }
+
+    private val collectors = mutableListOf<Job>()
+
+    @After
+    fun tearDown() {
+        collectors.forEach(Job::cancel)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun collectErrors(): List<String> {
+        val events = mutableListOf<String>()
+        collectors += CoroutineScope(UnconfinedTestDispatcher()).launch {
+            connection.errors.collect { events += it }
+        }
+        return events
+    }
+
+    @Test
+    fun `a player error surfaces on the errors flow`() {
+        val listener = slot<Player.Listener>()
+        verify { controller.addListener(capture(listener)) }
+        val events = collectErrors()
+
+        listener.captured.onPlayerError(
+            PlaybackException("decoder died", null, PlaybackException.ERROR_CODE_DECODING_FAILED),
+        )
+        idleMain()
+
+        assertThat(events).hasSize(1)
+        assertThat(events.single()).contains("ERROR_CODE_DECODING_FAILED")
+    }
+
+    @Test
+    fun `a rejected output switch reverts the selection and reports it`() {
+        every { controller.sendCustomCommand(any(), any()) } returns
+            Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_BAD_VALUE))
+        val events = collectErrors()
+
+        connection.selectAudioOutput(42)
+        idleMain()
+
+        assertThat(connection.selectedOutputId.value).isNull() // reverted
+        assertThat(events).hasSize(1)
+    }
+
+    @Test
+    fun `a successful output switch keeps the selection`() {
+        every { controller.sendCustomCommand(any(), any()) } returns
+            Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        val events = collectErrors()
+
+        connection.selectAudioOutput(42)
+        idleMain()
+
+        assertThat(connection.selectedOutputId.value).isEqualTo(42)
+        assertThat(events).isEmpty()
+    }
+
+    @Test
+    fun `addToQueue reports how many tracks were really added`() = runTest {
+        every { settingsRepository.settings } returns flowOf(
+            AppSettings(queue = QueueSettings(allowDuplicates = false)),
+        )
+        // The queue already holds track 1.
+        val item = MediaItems.toMediaItem(track(1), uid = 1L)
+        every { controller.mediaItemCount } returns 1
+        every { controller.getMediaItemAt(0) } returns item
+        connection.seekTo(0) // any command path runs refresh()
+        idleMain()
+        assertThat(connection.queue.value.map(QueueItem::uid)).containsExactly(1L)
+
+        assertThat(connection.addToQueue(listOf(track(1)))).isEqualTo(0) // duplicate
+        assertThat(connection.addToQueue(listOf(track(1), track(2)))).isEqualTo(1)
     }
 
     @Test
