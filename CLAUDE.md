@@ -28,7 +28,7 @@ Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.8
 5. New settings: add key + typed accessor in `core:settings`, expose via `SettingsRepository`, never read DataStore elsewhere.
 6. Tag writes go through the `core:tags` `TagWriter` interface only (single writer; `LibraryRepository.editTags` re-syncs the DB after the file write).
 7. Tests accompany every behavioral change. JVM tests preferred; Robolectric when a Context is needed.
-8. Commit style: imperative subject, no co-author trailers.
+8. Commit style: imperative subject, no co-author or attribution trailers on ANY commit, branch commits included: a squash merge copies branch-commit trailers into main's history, where a co-author counts as a repo contributor. Before merging a PR, check its branch commits for trailers.
 
 ## Logging and error reporting
 - Every `runCatching` either logs its failure (W/E with the throwable) or carries a comment saying why not.
