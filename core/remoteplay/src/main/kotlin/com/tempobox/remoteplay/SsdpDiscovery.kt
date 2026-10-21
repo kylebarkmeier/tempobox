@@ -54,6 +54,16 @@ class SsdpDiscovery(
     /** Devices currently answering discovery, deduplicated by UDN. */
     val devices: StateFlow<List<UpnpDevice>> = _devices.asStateFlow()
 
+    private val _blocked = MutableStateFlow(false)
+
+    /**
+     * True while the OS refuses the search send itself (EPERM): Android 17's
+     * local network protection does this when ACCESS_LOCAL_NETWORK is not
+     * granted, and keeps doing it in a process that started before the grant.
+     * The UI uses this to say so instead of searching forever.
+     */
+    val blocked: StateFlow<Boolean> = _blocked.asStateFlow()
+
     private var job: Job? = null
     private var starts = 0
 
@@ -66,6 +76,10 @@ class SsdpDiscovery(
     fun start() {
         starts++
         if (job?.isActive == true) return
+        // A fresh look retries locations whose description fetch failed:
+        // transient failures (device booting, permission just granted) must
+        // not hide a device until the process dies.
+        failedLocations.clear()
         try {
             multicastLock.acquire()
         } catch (e: Exception) {
@@ -117,6 +131,7 @@ class SsdpDiscovery(
                     val message = Ssdp.searchMessage(st, mxSeconds = MX_SECONDS).toByteArray()
                     socket.send(DatagramPacket(message, message.size, group, Ssdp.PORT))
                 }
+                _blocked.value = false
                 val buffer = ByteArray(RECEIVE_BUFFER_BYTES)
                 val deadline = System.currentTimeMillis() + ROUND_MS
                 while (System.currentTimeMillis() < deadline) {
@@ -133,6 +148,7 @@ class SsdpDiscovery(
                 }
             }
         } catch (e: Exception) {
+            if (isPermissionDenial(e)) _blocked.value = true
             Log.w(TAG, "SSDP search round failed (no Wi-Fi?)", e)
             kotlinx.coroutines.delay(ROUND_MS.toLong())
         }
@@ -169,6 +185,14 @@ class SsdpDiscovery(
     fun device(udn: String): UpnpDevice? = synchronized(this) { known[udn] }
 
     companion object {
+        /** Whether [e] is the OS denying the send, not an ordinary network error. */
+        internal fun isPermissionDenial(e: Throwable): Boolean =
+            generateSequence(e) { it.cause }.any { cause ->
+                cause is SecurityException ||
+                    (cause is android.system.ErrnoException &&
+                        cause.errno == android.system.OsConstants.EPERM)
+            }
+
         private const val TAG = "SsdpDiscovery"
         private const val MX_SECONDS = 2
         private const val RECEIVE_TIMEOUT_MS = 1_000

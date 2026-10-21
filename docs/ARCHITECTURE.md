@@ -98,7 +98,10 @@ drives the UI: settings rows gate on the permission their feature needs
 (start-on-connect on BLUETOOTH_CONNECT, rescan on the media-read grant) and
 show the reason plus a tap-to-grant action; the tag-edit and
 delete-permanently menu entries disable with the reason while All files access
-is missing. The after-the-fact failure snackbars stay as backstop.
+is missing. A denied runtime request adds an "Open settings" action next to
+the request button (after repeated denials Android reports denial without
+showing a dialog, so requesting again would strand the user). The
+after-the-fact failure snackbars stay as backstop.
 
 **Tag IO has exactly one door.** Only `core:tags` (jaudiotagger) touches audio
 file metadata. `LibraryRepository.editTags` writes files first, then re-syncs
@@ -168,8 +171,18 @@ saves. No new dependencies.
   It needs a `MulticastLock` (CHANGE_WIFI_MULTICAST_STATE), which drains
   battery, so discovery runs only while the output picker or the Network
   screen is visible. All of SSDP, descriptions, SOAP responses and DIDL-Lite
-  are untrusted network input: parsing is DTD-disabled (`SecureXml`) and
+  are untrusted network input: `SecureXml` rejects any DOCTYPE outright
+  (Android's parser ignores the disallow-doctype-decl feature, so the guard
+  cannot rely on the parser), disables external entities where supported, and
   returns null/empty instead of throwing.
+- **Platform gates**: DLNA is cleartext HTTP to arbitrary LAN addresses, so
+  the app's network security config permits cleartext globally (domain
+  configs cannot express IP ranges; Discogs is HTTPS regardless). Android 17
+  (API 37) additionally puts LAN sockets behind the runtime permission
+  ACCESS_LOCAL_NETWORK: the Network screen and the output picker's network
+  section request it and stay greyed until granted, and `SsdpDiscovery`
+  exposes a `blocked` flow (EPERM on send) so the UI can say the OS is
+  refusing, including the grant-mid-process case that only a restart clears.
 - **Playing TO a renderer**: `DefaultRemotePlayController` owns one session at
   a time: AVTransport control (`RendererClient`), volume via RenderingControl,
   a 1s poll for position/transport state, and `StreamServer`, a minimal HTTP

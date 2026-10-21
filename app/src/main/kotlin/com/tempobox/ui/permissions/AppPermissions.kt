@@ -2,8 +2,11 @@ package com.tempobox.ui.permissions
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
@@ -26,6 +29,7 @@ data class AppPermissions(
     val readAudio: Boolean = false,
     val postNotifications: Boolean = false,
     val bluetoothConnect: Boolean = false,
+    val localNetwork: Boolean = false,
 ) {
     /** True when the scanner can read the library folders at all. */
     val canReadLibrary: Boolean get() = readAudio || allFilesAccess
@@ -38,6 +42,15 @@ object PermissionGates {
 
     fun postNotificationsRequired(sdkInt: Int): Boolean = sdkInt >= Build.VERSION_CODES.TIRAMISU
 
+    /**
+     * Android 17 (API 37) gates LAN sockets behind this runtime permission;
+     * without it, SSDP discovery sends fail with EPERM. Not in
+     * Manifest.permission under our compileSdk, hence the literal.
+     */
+    const val ACCESS_LOCAL_NETWORK = "android.permission.ACCESS_LOCAL_NETWORK"
+
+    fun localNetworkRequired(sdkInt: Int): Boolean = sdkInt >= 37
+
     /** The permission that lets the scanner read audio files on this API level. */
     fun readAudioPermission(sdkInt: Int): String =
         if (sdkInt >= Build.VERSION_CODES.TIRAMISU) {
@@ -45,6 +58,21 @@ object PermissionGates {
         } else {
             Manifest.permission.READ_EXTERNAL_STORAGE
         }
+}
+
+/**
+ * Opens the system App info page for this app: the recovery path once Android
+ * stops showing a permission dialog after repeated denials (the launcher then
+ * reports denial without any UI). [rememberAppPermissions] picks up a grant
+ * made there on the next resume.
+ */
+fun openAppSettings(context: Context) {
+    context.startActivity(
+        Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", context.packageName, null),
+        ),
+    )
 }
 
 /** Current grants, checked fresh every call. */
@@ -59,6 +87,8 @@ fun checkAppPermissions(context: Context): AppPermissions {
             granted(Manifest.permission.POST_NOTIFICATIONS),
         bluetoothConnect = !PermissionGates.bluetoothConnectRequired(sdk) ||
             granted(Manifest.permission.BLUETOOTH_CONNECT),
+        localNetwork = !PermissionGates.localNetworkRequired(sdk) ||
+            granted(PermissionGates.ACCESS_LOCAL_NETWORK),
     )
 }
 

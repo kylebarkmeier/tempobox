@@ -272,6 +272,9 @@ controls.
   gapless between tracks is not attempted), tracks played from a media server
   aren't library rows (no ratings, play counts, scrobbles, or queue
   persistence), and phone and devices must be on the same Wi-Fi network.
+  On Android 17+ the Network screen and output picker ask for the "Local
+  network" permission the first time; if you granted it from system settings
+  while TempoBox was running, fully close and reopen the app.
 
 ## License
 

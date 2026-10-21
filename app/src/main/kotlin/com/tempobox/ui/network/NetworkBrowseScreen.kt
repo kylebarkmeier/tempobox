@@ -1,6 +1,8 @@
 package com.tempobox.ui.network
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +19,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -25,19 +28,27 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.tempobox.common.TimeFormat
 import com.tempobox.model.NetworkDevice
 import com.tempobox.remoteplay.DidlLite
+import com.tempobox.ui.permissions.PermissionGates
+import com.tempobox.ui.permissions.openAppSettings
+import com.tempobox.ui.permissions.rememberAppPermissions
 
 /**
  * "Network" drawer destination: DLNA media servers on the Wi-Fi (a NAS,
@@ -51,11 +62,25 @@ fun NetworkBrowseScreen(openDrawer: () -> Unit) {
     val viewModel: NetworkBrowseViewModel = hiltViewModel()
     val servers by viewModel.servers.collectAsState()
     val state by viewModel.state.collectAsState()
+    val discoveryBlocked by viewModel.discoveryBlocked.collectAsState()
+
+    // Android 17 gates LAN sockets behind a runtime permission; searching
+    // without it only produces EPERM, so discovery waits for the grant
+    // (rememberAppPermissions re-checks on resume, after the dialog closes).
+    val permissions by rememberAppPermissions()
+    // After repeated denials Android reports denial without showing a dialog,
+    // so a denied result switches the note to the system-settings path.
+    var permissionDenied by remember { mutableStateOf(false) }
+    val permissionLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            permissionDenied = !granted
+        }
+    val context = LocalContext.current
 
     // Discovery (and its multicast lock) only while this screen shows.
-    DisposableEffect(viewModel) {
-        viewModel.startDiscovery()
-        onDispose { viewModel.stopDiscovery() }
+    DisposableEffect(viewModel, permissions.localNetwork) {
+        if (permissions.localNetwork) viewModel.startDiscovery()
+        onDispose { if (permissions.localNetwork) viewModel.stopDiscovery() }
     }
 
     // System back walks up the folder tree before leaving the screen.
@@ -96,7 +121,16 @@ fun NetworkBrowseScreen(openDrawer: () -> Unit) {
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when {
-                state.server == null -> ServerList(servers, onOpen = viewModel::openServer)
+                !permissions.localNetwork -> LocalNetworkPermissionNote(
+                    requestDenied = permissionDenied,
+                    onAllow = { permissionLauncher.launch(PermissionGates.ACCESS_LOCAL_NETWORK) },
+                    onOpenSettings = { openAppSettings(context) },
+                )
+                state.server == null -> ServerList(
+                    servers,
+                    discoveryBlocked = discoveryBlocked,
+                    onOpen = viewModel::openServer,
+                )
                 state.loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 state.error != null -> CenteredNote(state.error.orEmpty())
                 state.entries.isEmpty() -> CenteredNote("Nothing here")
@@ -112,9 +146,48 @@ fun NetworkBrowseScreen(openDrawer: () -> Unit) {
 }
 
 @Composable
-private fun ServerList(servers: List<NetworkDevice>, onOpen: (NetworkDevice) -> Unit) {
+private fun LocalNetworkPermissionNote(
+    requestDenied: Boolean,
+    onAllow: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                if (requestDenied) {
+                    "Local network access was denied. Allow it under Permissions " +
+                        "in the app's system settings."
+                } else {
+                    "Finding media servers on your Wi-Fi needs the \"Local network\" permission."
+                },
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(24.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            Button(onClick = onAllow) { Text("Allow") }
+            if (requestDenied) {
+                TextButton(onClick = onOpenSettings) { Text("Open system settings") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ServerList(
+    servers: List<NetworkDevice>,
+    discoveryBlocked: Boolean,
+    onOpen: (NetworkDevice) -> Unit,
+) {
     if (servers.isEmpty()) {
-        CenteredNote("Looking for media servers on your Wi-Fi…")
+        CenteredNote(
+            if (discoveryBlocked) {
+                "Android is blocking the network search. If you just allowed " +
+                    "local network access, fully close and reopen TempoBox."
+            } else {
+                "Looking for media servers on your Wi-Fi…"
+            },
+        )
         return
     }
     LazyColumn(Modifier.fillMaxSize()) {

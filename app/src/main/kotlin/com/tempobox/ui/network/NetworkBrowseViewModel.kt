@@ -41,6 +41,9 @@ class NetworkBrowseViewModel @Inject constructor(
 
     val servers: StateFlow<List<NetworkDevice>> = remotePlay.servers
 
+    /** True while the OS refuses discovery sends (Android 17 local network permission). */
+    val discoveryBlocked: StateFlow<Boolean> = remotePlay.discoveryBlocked
+
     private val _state = MutableStateFlow(BrowseState())
     val state: StateFlow<BrowseState> = _state.asStateFlow()
 

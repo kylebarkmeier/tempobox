@@ -71,4 +71,5 @@ Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.8
 - Never loop per-item timeline ops (`moveMediaItem`/`removeMediaItem`) over a queue: each timeline change re-broadcasts the whole queue to Bluetooth AVRCP, which can OOM the BT stack and ANR the app. Batch through `QueueReorder`.
 - CodeQL cannot parse Kotlin 2.4 yet, so the CodeQL workflow scans only the `actions` language. Re-enable `java-kotlin` when the extractor catches up.
 - ALAC plays via device MediaCodec; see README "Codecs".
+- DLNA network play is cleartext HTTP: the app's network security config permits cleartext globally (Discogs stays HTTPS). Android 17+ also gates LAN sockets behind the runtime permission ACCESS_LOCAL_NETWORK; discovery sends fail with EPERM without it, and a grant made while the process runs takes effect only after an app restart.
 - The queue is persisted across restarts in DataStore by `PlaybackStateStore` in `core:playback`.

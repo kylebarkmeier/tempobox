@@ -1,5 +1,6 @@
 package com.tempobox.remoteplay
 
+import android.util.Log
 import org.w3c.dom.Document
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
@@ -14,28 +15,50 @@ import javax.xml.parsers.DocumentBuilderFactory
  */
 internal object SecureXml {
 
-    fun parse(xml: String): Document? = try {
-        val factory = DocumentBuilderFactory.newInstance().apply {
-            isNamespaceAware = false
-            isXIncludeAware = false
-            isExpandEntityReferences = false
-            // Not every parser (JDK Xerces vs Android's) knows every feature;
-            // apply the ones it does rather than failing setup.
-            trySetFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-            trySetFeature("http://xml.org/sax/features/external-general-entities", false)
-            trySetFeature("http://xml.org/sax/features/external-parameter-entities", false)
-            trySetFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
+    private const val TAG = "SecureXml"
+
+    // Catches the declaration anywhere so a DTD can't hide behind leading
+    // comments or processing instructions.
+    private val DOCTYPE = Regex("<!DOCTYPE", RegexOption.IGNORE_CASE)
+
+    fun parse(xml: String): Document? {
+        // Android's platform parser ignores the disallow-doctype-decl feature
+        // (the trySet below has to swallow that refusal) and would process an
+        // internal DTD, expanding attacker-chosen entities. No UPnP device
+        // description, SOAP response, or DIDL-Lite document legitimately
+        // carries a DTD, so DOCTYPE input is rejected outright on every
+        // parser instead of trusting the feature to be enforced.
+        if (DOCTYPE.containsMatchIn(xml)) {
+            Log.w(TAG, "Rejected XML carrying a DOCTYPE declaration")
+            return null
         }
-        factory.newDocumentBuilder().parse(InputSource(StringReader(xml)))
-    } catch (_: Exception) {
-        null
+        // Each hardening setter is applied individually: Android's platform
+        // parser factory throws UnsupportedOperationException for setters the
+        // JDK's accepts (setXIncludeAware), and one refused option must not
+        // take the whole parser down with it.
+        val factory = DocumentBuilderFactory.newInstance()
+        trySet { factory.isNamespaceAware = false }
+        trySet { factory.isXIncludeAware = false }
+        trySet { factory.isExpandEntityReferences = false }
+        trySet { factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
+        trySet { factory.setFeature("http://xml.org/sax/features/external-general-entities", false) }
+        trySet { factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
+        trySet { factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false) }
+        return try {
+            factory.newDocumentBuilder().parse(InputSource(StringReader(xml)))
+        } catch (e: Exception) {
+            // Untrusted input, so a failure is expected and non-fatal, but it
+            // is the first thing to know when a device "does not appear".
+            Log.w(TAG, "XML parse failed: $e")
+            null
+        }
     }
 
-    private fun DocumentBuilderFactory.trySetFeature(feature: String, value: Boolean) {
+    private inline fun trySet(block: () -> Unit) {
         try {
-            setFeature(feature, value)
+            block()
         } catch (_: Exception) {
-            // Parser doesn't know this feature; the remaining hardening applies.
+            // Parser doesn't support this option; the remaining hardening applies.
         }
     }
 
