@@ -15,6 +15,7 @@ Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.8
 - `core:playlist`: M3U/M3U8 parse and write (writes are always M3U8), smart-playlist rule engine.
 - `core:library`: scanner, file watcher, `LibraryRepository`, file delete/remove ops.
 - `core:playback`: `PlaybackService` (a `MediaLibraryService`: session + Android Auto browse tree), `PlayerConnection`, queue reordering, shuffle engines, Bluetooth glue.
+- `core:remoteplay`: network play (DLNA/UPnP). SSDP discovery, AVTransport/RenderingControl SOAP control of renderers, ContentDirectory browsing of media servers, token-scoped HTTP stream server.
 - `core:scrobble`: SLS broadcasts handing played tracks to the user's scrobbler app.
 - `core:artwork`: Discogs artist images and album-art collage fallback.
 - `app`: all Compose UI, navigation drawer/tabs, widget (Glance), DI wiring.

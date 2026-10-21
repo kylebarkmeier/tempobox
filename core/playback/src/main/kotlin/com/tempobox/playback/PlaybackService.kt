@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
-import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
 import android.util.Log
@@ -37,6 +36,7 @@ import com.tempobox.model.MediaButtonAction
 import com.tempobox.model.RepeatMode
 import com.tempobox.model.Track
 import com.tempobox.model.VolumeTapAction
+import com.tempobox.remoteplay.RemotePlayController
 import com.tempobox.scrobble.Scrobbler
 import com.tempobox.settings.AppSettings
 import com.tempobox.settings.SettingsRepository
@@ -57,7 +57,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import java.io.File
 import javax.inject.Inject
 
 /**
@@ -95,6 +94,7 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var browseTree: LibraryBrowseTree
     @Inject lateinit var voiceSearch: VoiceSearch
     @Inject lateinit var shuffleEngine: ShuffleEngine
+    @Inject lateinit var remotePlay: RemotePlayController
     @Inject @IoDispatcher lateinit var ioDispatcher: CoroutineDispatcher
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -203,6 +203,9 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onDestroy() {
         runBlocking { saveSnapshot() } // final flush — cheap (one DataStore write)
+        // Renderer session, stream server, discovery, multicast lock: all gone
+        // with the service (non-blocking; see RemotePlayController.shutdown).
+        remotePlay.shutdown()
         bluetoothReceiver?.let(::unregisterReceiver)
         volumeReceiver?.let(::unregisterReceiver)
         session?.release()
@@ -408,7 +411,7 @@ class PlaybackService : MediaLibraryService() {
                 val leaf = BrowseIds.decode(item.mediaId) as? BrowseIds.Node.Track
                 when {
                     !path.isNullOrBlank() ->
-                        item.buildUpon().setUri(Uri.fromFile(File(path))).build()
+                        item.buildUpon().setUri(MediaItems.playbackUri(path)).build()
                     leaf != null ->
                         // Drop leaves the library no longer has instead of
                         // handing ExoPlayer an unplayable URI-less item.
@@ -459,7 +462,11 @@ class PlaybackService : MediaLibraryService() {
     private val playerListener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             mediaItem ?: return
-            scope.launch { scrobbler.updateNowPlaying(MediaItems.toTrack(mediaItem)) }
+            val track = MediaItems.toTrack(mediaItem)
+            // Network-server tracks are not library rows: no scrobbling.
+            if (!track.isNetworkStream) {
+                scope.launch { scrobbler.updateNowPlaying(track) }
+            }
             scheduleSnapshot()
             refreshWidget()
         }
@@ -569,6 +576,7 @@ class PlaybackService : MediaLibraryService() {
 
     private fun onPlaybackSessionEnded(item: MediaItem, playedMs: Long) {
         val track = MediaItems.toTrack(item)
+        if (track.isNetworkStream) return // not a library row: no count, no scrobble
         if (!PlayedThreshold.shouldCount(track.durationMs, playedMs)) return
         // Wall-clock start estimate (PlaybackStats times are elapsed-realtime,
         // which Last.fm would reject as a ~1970 timestamp).
@@ -641,14 +649,21 @@ class PlaybackService : MediaLibraryService() {
 
     private suspend fun saveSnapshot() {
         if (settingsState.value?.queue?.persistQueue == false) return
-        val ids = (0 until player.mediaItemCount).map { i ->
-            MediaItems.toTrack(player.getMediaItemAt(i)).id
+        // Network-server tracks are skipped: the snapshot stores library track
+        // ids, and a NAS URL may not resolve after a restart anyway. The index
+        // shifts to the count of local tracks before the current one, which is
+        // the current track itself when it is local.
+        val tracks = (0 until player.mediaItemCount).map { i ->
+            MediaItems.toTrack(player.getMediaItemAt(i))
         }
+        val current = player.currentMediaItemIndex
+        val currentIsLocal = tracks.getOrNull(current)?.isNetworkStream == false
         stateStore.save(
             PlaybackStateStore.Snapshot(
-                trackIds = ids,
-                currentIndex = player.currentMediaItemIndex,
-                positionMs = player.currentPosition.coerceAtLeast(0),
+                trackIds = tracks.filterNot { it.isNetworkStream }.map { it.id },
+                currentIndex = tracks.take(current.coerceAtLeast(0))
+                    .count { !it.isNetworkStream },
+                positionMs = if (currentIsLocal) player.currentPosition.coerceAtLeast(0) else 0,
                 repeatMode = when (player.repeatMode) {
                     Player.REPEAT_MODE_ALL -> RepeatMode.ALL
                     Player.REPEAT_MODE_ONE -> RepeatMode.ONE

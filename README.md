@@ -86,6 +86,11 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
   to let car stereos restart it mid-call; it resumes when the call ends
 - Pick the output: an audio-output button in Now Playing routes playback to
   any connected device (Bluetooth, wired, USB) or back to automatic
+- Network play (DLNA/UPnP): send your music to renderers on the Wi-Fi (smart
+  speakers, AVRs, TVs) from the same output picker, with seek, queue
+  advancement, and device volume; and browse DLNA media servers (a NAS,
+  miniDLNA, Plex, Jellyfin) from the Network drawer entry to play their
+  audio on the phone
 - Scrobbling through your scrobbler app: TempoBox broadcasts played tracks in
   the standard SLS format, which the Last.fm app, Pano Scrobbler, Simple
   Scrobbler, etc. pick up. No account or API keys in TempoBox
@@ -261,6 +266,12 @@ controls.
   (free) Discogs token, since TempoBox ships with no credentials.
 - Volume triple-tap gestures can't begin when the volume is already at its
   minimum/maximum (Android emits no volume-change event to observe).
+- Network play is DLNA/UPnP only: Google Cast needs Play services and AirPlay
+  has no open Android sender, so neither fits a sideloaded app. Renderer
+  support varies by device (format support follows the renderer's decoders;
+  gapless between tracks is not attempted), tracks played from a media server
+  aren't library rows (no ratings, play counts, scrobbles, or queue
+  persistence), and phone and devices must be on the same Wi-Fi network.
 
 ## License
 

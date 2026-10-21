@@ -10,6 +10,7 @@ import com.tempobox.model.LibraryTab
 object Routes {
     const val LIBRARY = "library?tab={tab}"
     const val QUEUE = "queue"
+    const val NETWORK = "network"
     const val SETTINGS = "settings"
     const val SETTINGS_SECTION = "settings/{section}"
     const val ARTIST = "artist/{name}?by={by}"

@@ -14,19 +14,23 @@ explains the *why* behind the bigger decisions.
   Media3 service · queue      scanner ·    │ SLS broadcasts to    Coil fetcher ·
   shuffle · BT glue           repos · ops  │ the scrobbler app    Discogs images
         │      │                   │       │        │                  │
-        │      └────────┬──────────┤       │        │                  │
-        │         :core:playlist   │  :core:settings┴──────────────────┤
-        │         M3U/M3U8 codec   │  DataStore repository             │
-        │         smart engine     │       │                           │
-        │                          │  :core:tags (jaudiotagger IO) ────┘
-        │                    :core:database (Room)
-        └──────────────┬───────────┘
+        │      ├────────┬──────────┤       │        │                  │
+        │      │  :core:playlist   │  :core:settings┴──────────────────┤
+        │      │  M3U/M3U8 codec   │  DataStore repository             │
+        │      │  smart engine     │       │                           │
+        │ :core:remoteplay         │  :core:tags (jaudiotagger IO) ────┘
+        │ SSDP · UPnP AV ·   :core:database (Room)
+        │ stream server            │
+        └──────┴───────┬───────────┘
                  :core:model · :core:common   (pure Kotlin, no Android)
 ```
 
 Dependencies only point downward. `:core:model` and `:core:playlist` are pure
 JVM modules so the most intricate logic (rule matching, sorting, playlist
-formats) tests in milliseconds without an emulator.
+formats) tests in milliseconds without an emulator. `:core:remoteplay` (used
+by `:core:playback` and the `:app` network browse screen) keeps its protocol
+layer pure for the same reason: SSDP messages, SOAP envelopes, DIDL-Lite and
+the HTTP range logic all test on the JVM.
 
 ## Key decisions
 
@@ -144,6 +148,44 @@ and bumps each row's mtime so the path+mtime artwork cache key misses.
   remap in `onMediaButtonEvent`, and a `VOLUME_CHANGED_ACTION` receiver feeding
   the pure `VolumeTripleTapDetector` (screen-off only; restores the volume the
   sequence consumed).
+
+## Network play (core:remoteplay)
+
+Both directions of DLNA/UPnP, chosen over Google Cast (needs Play services on
+the device, wrong fit for a sideloaded app) and AirPlay (no viable open sender
+stack for Android). Everything is hand-rolled on OkHttp plus plain sockets:
+the protocol surface we need (one M-SEARCH, a handful of SOAP actions, HTTP
+GET with ranges) is small enough that a UPnP library (jUPnP: CDDL, OSGi-heavy)
+or an embedded server (NanoHTTPD: dormant upstream) would cost more than it
+saves. No new dependencies.
+
+- **Discovery** (`SsdpDiscovery`): multicast M-SEARCH for MediaRenderer and
+  MediaServer devices, descriptions fetched and parsed by `DeviceDescription`.
+  It needs a `MulticastLock` (CHANGE_WIFI_MULTICAST_STATE), which drains
+  battery, so discovery runs only while the output picker or the Network
+  screen is visible. All of SSDP, descriptions, SOAP responses and DIDL-Lite
+  are untrusted network input: parsing is DTD-disabled (`SecureXml`) and
+  returns null/empty instead of throwing.
+- **Playing TO a renderer**: `DefaultRemotePlayController` owns one session at
+  a time: AVTransport control (`RendererClient`), volume via RenderingControl,
+  a 1s poll for position/transport state, and `StreamServer`, a minimal HTTP
+  server bound to the WLAN address that serves only the files registered in
+  `StreamTokens` under random 128-bit token paths. Request paths never touch
+  file paths, so there is nothing to traverse or list. `PlayerConnection`
+  stays the single playback API: the paused local ExoPlayer timeline remains
+  the queue, item transitions mirror onto the renderer, the renderer's
+  end-of-track advances the queue, and `RendererSessionMachine` turns
+  consecutive command/poll failures into exactly one fallback to local
+  playback (snackbar via `PlayerConnection.messages`). Pausing the local
+  player before handoff means remote sessions never hold or fight audio
+  focus. If the phone's LAN address changes, the server rebinds on the next
+  load and a stale in-flight stream surfaces as the normal session fallback.
+- **Playing FROM a server**: the Network drawer screen browses ContentDirectory
+  (`ContentDirectoryClient`, paged Browse) and queues audio items on the local
+  player by their HTTP resource URL. Network tracks are not library rows:
+  `Track.isNetworkStream` (an http(s) `filePath`) opts them out of rating,
+  play counting, scrobbling, and queue persistence (the snapshot stores
+  library ids, so they are skipped and the saved index shifts accordingly).
 
 ## Testing strategy
 
