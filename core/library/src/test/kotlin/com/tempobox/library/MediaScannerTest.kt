@@ -134,7 +134,8 @@ class MediaScannerTest {
 
         // Disk follows the DB, same as an in-app permanent delete.
         assertThat(codec.read(File(playlist.filePath!!))).containsExactly(keep.absolutePath)
-        assertThat(vanished).containsExactly(listOf(goneId))
+        assertThat(vanished).hasSize(1)
+        assertThat(vanished.single()).containsExactly(goneId)
     }
 
     @Test
@@ -151,7 +152,8 @@ class MediaScannerTest {
         scanner.scanPaths(listOf(gone.absolutePath))
 
         assertThat(codec.read(File(playlist.filePath!!))).containsExactly(keep.absolutePath)
-        assertThat(vanished).containsExactly(listOf(goneId))
+        assertThat(vanished).hasSize(1)
+        assertThat(vanished.single()).containsExactly(goneId)
     }
 
     @Test

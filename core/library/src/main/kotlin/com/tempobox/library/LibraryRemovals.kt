@@ -26,7 +26,12 @@ class LibraryRemovals @Inject constructor() {
     /** Ids removed because their file disappeared, in batches per scan pass. */
     val vanished: SharedFlow<List<Long>> = _vanished.asSharedFlow()
 
-    fun onVanished(trackIds: List<Long>) {
-        if (trackIds.isNotEmpty()) _vanished.tryEmit(trackIds)
+    /**
+     * Suspending emit, so a full buffer backpressures the scanner instead of
+     * discarding a batch. With no subscriber (service not running) the value
+     * is dropped without suspending, which is right: no service, no queue.
+     */
+    suspend fun onVanished(trackIds: List<Long>) {
+        if (trackIds.isNotEmpty()) _vanished.emit(trackIds)
     }
 }
