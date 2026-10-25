@@ -32,6 +32,8 @@ import javax.inject.Singleton
 class MediaScanner @Inject constructor(
     private val trackDao: TrackDao,
     private val tagReader: TagReader,
+    private val playlistRepository: PlaylistRepository,
+    private val removals: LibraryRemovals,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
     private val mutex = Mutex()
@@ -115,7 +117,7 @@ class MediaScanner @Inject constructor(
             if (unreadableLocations == 0 && !walkFailed) {
                 val diskPaths = filesOnDisk.mapTo(HashSet()) { it.absolutePath }
                 val missing = known.keys.filterNot { it in diskPaths }
-                missing.chunked(DELETE_CHUNK).forEach { trackDao.deleteByPaths(it) }
+                removeRowsForVanishedFiles(missing)
                 removed = missing.size
             } else {
                 removed = 0
@@ -161,8 +163,26 @@ class MediaScanner @Inject constructor(
                 }
             }
             trackDao.upsertKeepingUserData(entities)
-            gone.chunked(DELETE_CHUNK).forEach { trackDao.deleteByPaths(it) }
+            removeRowsForVanishedFiles(gone)
         }
+    }
+
+    /**
+     * Drops the rows at [paths] and keeps everything that referenced them in
+     * sync: the ids are captured first (deleting the rows cascades their
+     * playlist entries away), the affected static playlists' `.m3u8` files are
+     * rewritten so disk follows the DB, and the ids go out on
+     * [LibraryRemovals] so the playback service prunes the queue entries whose
+     * files are gone. In-app deletion does the same via `deleteFromDevice`;
+     * this is the path for files that vanished outside the app.
+     */
+    private suspend fun removeRowsForVanishedFiles(paths: List<String>) {
+        if (paths.isEmpty()) return
+        val ids = paths.chunked(DELETE_CHUNK).flatMap { trackDao.getIdsByPaths(it) }
+        val affectedPlaylists = playlistRepository.playlistIdsContaining(ids)
+        paths.chunked(DELETE_CHUNK).forEach { trackDao.deleteByPaths(it) }
+        playlistRepository.exportStaticPlaylists(affectedPlaylists)
+        removals.onVanished(ids)
     }
 
     companion object {

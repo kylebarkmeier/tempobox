@@ -5,7 +5,10 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
 import com.tempobox.database.TempoBoxDatabase
+import com.tempobox.playlist.M3uCodec
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -25,8 +28,11 @@ class MediaScannerTest {
 
     private lateinit var db: TempoBoxDatabase
     private lateinit var tagIO: FakeTagIO
+    private lateinit var playlistRepository: PlaylistRepository
+    private lateinit var removals: LibraryRemovals
     private lateinit var scanner: MediaScanner
     private lateinit var musicDir: File
+    private val codec = M3uCodec()
 
     @Before
     fun setUp() {
@@ -35,8 +41,12 @@ class MediaScannerTest {
             TempoBoxDatabase::class.java,
         ).allowMainThreadQueries().build()
         tagIO = FakeTagIO()
-        scanner = MediaScanner(db.trackDao(), tagIO, UnconfinedTestDispatcher())
         musicDir = tmp.newFolder("Music")
+        playlistRepository = testPlaylistRepository(db, musicDir, codec, UnconfinedTestDispatcher())
+        removals = LibraryRemovals()
+        scanner = MediaScanner(
+            db.trackDao(), tagIO, playlistRepository, removals, UnconfinedTestDispatcher(),
+        )
     }
 
     @After
@@ -94,6 +104,68 @@ class MediaScannerTest {
         val result = scanner.scan(listOf(musicDir.absolutePath))
         assertThat(result.removed).isEqualTo(1)
         assertThat(db.trackDao().getAllPaths()).containsExactly(keep.absolutePath)
+    }
+
+    /**
+     * Collects every [LibraryRemovals.vanished] batch emitted from now on.
+     * Shares the test scheduler so delivery is synchronous with the emit; a
+     * collector on its own scheduler can silently miss emissions.
+     */
+    private fun TestScope.collectVanished(): MutableList<List<Long>> {
+        val batches = mutableListOf<List<Long>>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            removals.vanished.collect { batches += it }
+        }
+        return batches
+    }
+
+    @Test
+    fun `a vanished file is pruned from playlist files and announced for queue pruning`() = runTest {
+        val keep = newAudioFile("A__X__Keep.mp3")
+        val gone = newAudioFile("A__X__Gone.mp3")
+        scanner.scan(listOf(musicDir.absolutePath))
+        val keepId = db.trackDao().getByPath(keep.absolutePath)!!.id
+        val goneId = db.trackDao().getByPath(gone.absolutePath)!!.id
+        val playlist = playlistRepository.createPlaylist("Mix", listOf(keepId, goneId))
+        val vanished = collectVanished()
+
+        gone.delete()
+        scanner.scan(listOf(musicDir.absolutePath))
+
+        // Disk follows the DB, same as an in-app permanent delete.
+        assertThat(codec.read(File(playlist.filePath!!))).containsExactly(keep.absolutePath)
+        assertThat(vanished).hasSize(1)
+        assertThat(vanished.single()).containsExactly(goneId)
+    }
+
+    @Test
+    fun `the watcher's incremental scan prunes playlists and announces too`() = runTest {
+        val keep = newAudioFile("A__X__Keep.mp3")
+        val gone = newAudioFile("A__X__Gone.mp3")
+        scanner.scan(listOf(musicDir.absolutePath))
+        val keepId = db.trackDao().getByPath(keep.absolutePath)!!.id
+        val goneId = db.trackDao().getByPath(gone.absolutePath)!!.id
+        val playlist = playlistRepository.createPlaylist("Mix", listOf(keepId, goneId))
+        val vanished = collectVanished()
+
+        gone.delete()
+        scanner.scanPaths(listOf(gone.absolutePath))
+
+        assertThat(codec.read(File(playlist.filePath!!))).containsExactly(keep.absolutePath)
+        assertThat(vanished).hasSize(1)
+        assertThat(vanished.single()).containsExactly(goneId)
+    }
+
+    @Test
+    fun `a scan that removes nothing announces nothing`() = runTest {
+        newAudioFile("A__X__Keep.mp3")
+        scanner.scan(listOf(musicDir.absolutePath))
+        val vanished = collectVanished()
+
+        scanner.scan(listOf(musicDir.absolutePath))
+        scanner.scanPaths(emptyList())
+
+        assertThat(vanished).isEmpty()
     }
 
     @Test

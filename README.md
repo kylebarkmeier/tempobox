@@ -59,7 +59,9 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
   the embedded album art from an image on your device
 - Remove-from-library and delete-from-device (both behind confirmations);
   a deleted track disappears from the play queue and from your playlists too,
-  with the `.m3u8` files rewritten to match
+  with the `.m3u8` files rewritten to match. Files deleted outside the app
+  (file manager, PC over MTP) get the same cleanup when the folder watcher or
+  the next scan notices they are gone
 - Artist images from Discogs (optional, bring your own token) with an
   album-art collage fallback
 - Genre and artist collages show the group's most played albums, one cover

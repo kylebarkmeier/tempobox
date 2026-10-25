@@ -256,6 +256,10 @@ interface TrackDao {
     @Query("DELETE FROM tracks WHERE id IN (:ids)")
     suspend fun deleteByIds(ids: List<Long>)
 
+    /** Ids of the rows at [paths] (scanner removals need them before deleting). */
+    @Query("SELECT id FROM tracks WHERE filePath IN (:paths)")
+    suspend fun getIdsByPaths(paths: List<String>): List<Long>
+
     @Query("DELETE FROM tracks WHERE filePath IN (:paths)")
     suspend fun deleteByPaths(paths: List<String>)
 

@@ -75,10 +75,18 @@ shared id 0 of network streams, never match, and the whole sequence runs
 non-cancellable so leaving the screen mid-delete cannot strand half the
 cleanup). Remove-from-library stays database-only: files, playlist files, and
 queue entries are untouched, exactly as its confirmation dialog promises.
-Known gap: a file that vanishes outside the app (scanner or watcher removal)
-still leaves its playlist-file lines and queue entry behind. Track lists,
-aggregates, and smart playlists follow automatically because they are DB
-flows.
+Files that vanish outside the app get the same treatment: the scanner's
+removal phase and the watcher's incremental scan capture the affected
+playlists before dropping the rows, rewrite their `.m3u8` files, and announce
+the removed ids on `LibraryRemovals`; the playback service listens and drops
+the matching queue entries through the same op-budgeted removal
+(`QueueRemoval`), so a file deleted in a file manager cannot sit in the queue
+until playback hits FILE_NOT_FOUND. `resetLibrary` stays exempt (files exist;
+rewriting every playlist file on a reset would destroy them). Queue restore
+remaps the stored index past vanished rows (`QueueRestore.remapIndex`), so a
+snapshot whose earlier entries disappeared resumes the right track. Track
+lists, aggregates, and smart playlists follow automatically because they are
+DB flows.
 
 **The ExoPlayer timeline IS the queue.** No parallel queue store to drift out
 of sync. `PlayerConnection` mutates the timeline (uid-tagged MediaItems) and
