@@ -266,6 +266,74 @@ class LibraryActionsViewModelTest {
     }
 
     @Test
+    fun `confirmDelete prunes only the actually deleted tracks from the queue`() {
+        val locked = track.copy(id = 2, filePath = "/locked.mp3")
+        coEvery { libraryRepository.deleteFromDevice(listOf(1L, 2L)) } returns
+            LibraryRepository.DeleteResult(deletedIds = listOf(1L), failed = listOf(locked))
+
+        viewModel.confirmDelete(LibraryItem.TracksItem("2 tracks", listOf(track, locked)))
+
+        verify { player.removeTracksFromQueue(listOf(1L)) }
+        assertThat(viewModel.dialog.value).isNull()
+    }
+
+    @Test
+    fun `confirmDelete on a rowless track reports it instead of claiming success`() {
+        // A track whose row is already gone (or a network stream): nothing is
+        // deleted and nothing failed, and the toast must not say "Deleted".
+        coEvery { libraryRepository.deleteFromDevice(listOf(1L)) } returns
+            LibraryRepository.DeleteResult(deletedIds = emptyList(), failed = emptyList())
+        val messages = collectMessages()
+
+        viewModel.confirmDelete(LibraryItem.TrackItem(track))
+
+        verify { player.removeTracksFromQueue(emptyList()) }
+        assertThat(messages.single()).contains("Nothing deleted")
+    }
+
+    @Test
+    fun `requestRate shows the live rating, not the enqueue-time snapshot`() {
+        coEvery { libraryRepository.getTracksByIds(listOf(1L)) } returns
+            listOf(track.copy(rating = 5))
+
+        viewModel.requestRate(track.copy(rating = 1))
+
+        val dialog = viewModel.dialog.value as LibraryActionsViewModel.Dialog.Rate
+        assertThat(dialog.track.rating).isEqualTo(5)
+    }
+
+    @Test
+    fun `auto playlist seed from a queue snapshot uses the live artist tag`() {
+        // The queue snapshot substitutes the album artist for a blank artist
+        // tag; the seed must come from the real row or the rule misses the
+        // track it was made from.
+        coEvery { libraryRepository.getTracksByIds(listOf(1L)) } returns
+            listOf(track.copy(artist = ""))
+
+        viewModel.requestCreateAutoPlaylist(
+            LibraryItem.TrackItem(track.copy(artist = "Album Artist Fallback")),
+        )
+
+        val dialog = viewModel.dialog.value as LibraryActionsViewModel.Dialog.CreateAutoPlaylist
+        assertThat(dialog.initialRule)
+            .isEqualTo(SmartRule.Condition(RuleField.ARTIST, RuleOp.IS, ""))
+    }
+
+    @Test
+    fun `auto playlist seed for an album matches artist AND album`() {
+        viewModel.requestCreateAutoPlaylist(LibraryItem.AlbumItem(album("LP", "AA")))
+        val dialog = viewModel.dialog.value as LibraryActionsViewModel.Dialog.CreateAutoPlaylist
+        assertThat(dialog.initialRule).isEqualTo(
+            SmartRule.AllOf(
+                listOf(
+                    SmartRule.Condition(RuleField.ALBUM_ARTIST, RuleOp.IS, "AA"),
+                    SmartRule.Condition(RuleField.ALBUM, RuleOp.IS, "LP"),
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun `a playlist file that survives deletion is reported`() {
         coEvery { playlistRepository.deletePlaylist(7L) } returns false
         val messages = collectMessages()

@@ -52,7 +52,33 @@ them.
 tree (JSON). Reads evaluate against the current library, so new matching
 tracks appear automatically; the spec's "kept up to date" requirement falls
 out of the design instead of needing a sync job. Their `.m3u8` exports are
-refreshed (debounced) whenever the track table changes.
+refreshed (debounced) whenever the track table changes. Rules match the common
+tag fields (title, artist, album artist, album, genre, year, rating, track and
+disc number). The tree nests arbitrarily, but the builder edits a fixed
+two-level view of it (`SmartRuleGroups`): conditions combined with AND/OR
+inside a group, groups combined with AND/OR at the top, which covers shapes
+like "(Genre is Rock OR Genre is Metal) AND Year > 1990". Builder-shaped
+trees decompose and recompose exactly; a tree nested deeper than two levels
+keeps every condition but folds each deep branch to its top operator, which
+can change what that branch matches. Nothing in the app stores deeper trees
+today, so an edit flow for arbitrary trees would need a lossless check first.
+
+**Permanent deletion cleans up after itself.** Track rows own playlist
+membership (`playlist_entries` cascades on row delete), so deleting rows
+prunes static playlists in the DB for free. `deleteFromDevice` captures the
+affected playlist ids before touching anything (the file watcher reacts to
+the file deletions and can race the rows away mid-loop) and rewrites those
+`.m3u8` files afterwards, so disk follows the DB. It reports the rows it
+actually removed, and only those are pruned from the play queue
+(`PlayerConnection.removeTracksFromQueue`; ids without a row, such as the
+shared id 0 of network streams, never match, and the whole sequence runs
+non-cancellable so leaving the screen mid-delete cannot strand half the
+cleanup). Remove-from-library stays database-only: files, playlist files, and
+queue entries are untouched, exactly as its confirmation dialog promises.
+Known gap: a file that vanishes outside the app (scanner or watcher removal)
+still leaves its playlist-file lines and queue entry behind. Track lists,
+aggregates, and smart playlists follow automatically because they are DB
+flows.
 
 **The ExoPlayer timeline IS the queue.** No parallel queue store to drift out
 of sync. `PlayerConnection` mutates the timeline (uid-tagged MediaItems) and
@@ -68,9 +94,12 @@ inside `MediaSession.setQueue`.
 
 **One action layer for the whole UI.** `LibraryActionsViewModel` +
 `LibraryItem` implement play/shuffle/queue/playlist/tag-edit/rate/remove/
-delete once. Every list row, 3-dot menu, swipe gesture, corner button, and
-queue bulk operation dispatches through it, so behavior (and its tests) can't
-diverge between views.
+delete once. Every list row, 3-dot menu, swipe gesture, corner button, the
+Now Playing header's menu for the playing track, and queue bulk operation
+dispatches through it, so behavior (and its tests) can't diverge between
+views. The queue panel (screen and Now Playing drawer alike) opens scrolled to
+the playing row, found by uid so a search filter or a shuffle-off reorder
+cannot lose it.
 
 **Settings are one typed snapshot.** Preferences DataStore stores each
 settings *group* as JSON under one key; decoding is defensive (corrupt value →

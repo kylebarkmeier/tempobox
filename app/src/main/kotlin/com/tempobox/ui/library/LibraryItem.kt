@@ -19,6 +19,19 @@ sealed interface LibraryItem {
     /** True when the item can expand to more than one track. */
     val isCollection: Boolean
 
+    /**
+     * False when the item holds a track with no library row (network streams
+     * share id 0). Such items cannot be rated, tagged, put in playlists,
+     * removed, or deleted: "Add to playlist" would even break the
+     * playlist_entries foreign key. The menu hides those entries on it.
+     */
+    val isLibraryBacked: Boolean
+        get() = when (this) {
+            is TrackItem -> track.id != 0L
+            is TracksItem -> tracks.all { it.id != 0L }
+            else -> true
+        }
+
     data class TrackItem(val track: Track) : LibraryItem {
         override val title: String get() = track.title
         override val isCollection: Boolean get() = false

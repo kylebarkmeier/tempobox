@@ -248,6 +248,28 @@ class PlaylistRepository @Inject constructor(
         playlistDao.getSmartPlaylists().forEach { exportSmart(it) }
     }
 
+    /** Ids of the static playlists whose entries reference any of [trackIds]. */
+    suspend fun playlistIdsContaining(trackIds: List<Long>): List<Long> =
+        withContext(ioDispatcher) {
+            trackIds.chunked(SQL_CHUNK)
+                .flatMap { playlistDao.playlistIdsContaining(it) }
+                .distinct()
+        }
+
+    /**
+     * Rewrites the `.m3u8` of each playlist from its current entries and bumps
+     * its modified time. Called after tracks were permanently deleted (their
+     * entries cascade away in the DB, so the files must follow).
+     */
+    suspend fun exportStaticPlaylists(playlistIds: Collection<Long>) = withContext(ioDispatcher) {
+        if (playlistIds.isEmpty()) return@withContext
+        val now = System.currentTimeMillis()
+        // One UPDATE for all the mtimes: a touch per playlist is one write
+        // transaction each, and every one re-runs the playlists observers.
+        playlistIds.chunked(SQL_CHUNK).forEach { playlistDao.touchAll(it, now) }
+        playlistIds.forEach { exportStatic(it) }
+    }
+
     // ------------------------------------------------------------------ helpers
 
     /** Writes a static playlist's current entries to its `.m3u8` file. */

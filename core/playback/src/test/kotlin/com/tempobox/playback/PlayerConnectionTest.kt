@@ -27,6 +27,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
+import io.mockk.verifyOrder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -150,6 +151,112 @@ class PlayerConnectionTest {
         idleMain()
 
         assertThat(connection.state.value.shuffleMode).isEqualTo(ShuffleMode.OFF)
+    }
+
+    /** Mocks the controller's timeline and publishes it to the queue flow. */
+    private fun mockTimeline(items: List<MediaItem>) {
+        every { controller.mediaItemCount } returns items.size
+        items.forEachIndexed { i, item -> every { controller.getMediaItemAt(i) } returns item }
+        connection.seekTo(0) // any command path runs refresh(), publishing the queue
+        idleMain()
+    }
+
+    @Test
+    fun `removeTracksFromQueue removes every occurrence of the deleted tracks`() {
+        mockTimeline(
+            listOf(
+                MediaItems.toMediaItem(track(1), uid = 11L),
+                MediaItems.toMediaItem(track(2), uid = 12L),
+                MediaItems.toMediaItem(track(1), uid = 13L), // same track queued twice
+            ),
+        )
+
+        connection.removeTracksFromQueue(listOf(1L))
+        idleMain()
+
+        // Rows 0 and 2, removed back-to-front so earlier indices stay valid.
+        verifyOrder {
+            controller.removeMediaItems(2, 3)
+            controller.removeMediaItems(0, 1)
+        }
+        verify(exactly = 0) { controller.removeMediaItems(1, 2) }
+    }
+
+    @Test
+    fun `removeTracksFromQueue with no queued match touches nothing`() {
+        mockTimeline(listOf(MediaItems.toMediaItem(track(1), uid = 11L)))
+
+        connection.removeTracksFromQueue(listOf(99L))
+        idleMain()
+
+        verify(exactly = 0) { controller.removeMediaItems(any(), any()) }
+    }
+
+    @Test
+    fun `removeTracksFromQueue never matches the network streams' shared id 0`() {
+        mockTimeline(
+            listOf(
+                MediaItems.toMediaItem(track(0), uid = 11L), // network stream
+                MediaItems.toMediaItem(track(0), uid = 12L), // network stream
+            ),
+        )
+
+        connection.removeTracksFromQueue(listOf(0L))
+        idleMain()
+
+        verify(exactly = 0) { controller.removeMediaItems(any(), any()) }
+    }
+
+    @Test
+    fun `scattered bulk removal rebuilds the timeline instead of flooding it`() {
+        // 11 rows, every second one removed: 5 single-item runs, over the
+        // 4-op budget, so the rebuild path must run (one remove + one add).
+        val items = (0 until 11).map { i ->
+            MediaItems.toMediaItem(track(if (i % 2 == 1) 100L else (i + 1).toLong()), uid = 20L + i)
+        }
+        mockTimeline(items)
+        every { controller.currentMediaItemIndex } returns 0 // survivor
+
+        connection.removeTracksFromQueue(listOf(100L))
+        idleMain()
+
+        val added = slot<List<MediaItem>>()
+        verifyOrder {
+            controller.removeMediaItems(1, 11)
+            controller.addMediaItems(capture(added))
+        }
+        // The anchor (row 0) stays put; the other five survivors are re-added
+        // in order behind it.
+        assertThat(added.captured.map { it.mediaId })
+            .containsExactly("22", "24", "26", "28", "30").inOrder()
+        verify(exactly = 1) { controller.removeMediaItems(any(), any()) }
+        verify(exactly = 0) { controller.moveMediaItem(any(), any()) }
+    }
+
+    @Test
+    fun `removing a queued track keeps the un-shuffle order`() {
+        // playTracks remembers [u1, u2, u3] as the original order.
+        connection.playTracks(listOf(track(1), track(2), track(3)))
+        idleMain()
+        val set = slot<List<MediaItem>>()
+        verify { controller.setMediaItems(capture(set), any(), any()) }
+        val uids = set.captured.map { it.mediaId.toLong() }
+
+        // The timeline now shows a shuffled order; remove the middle track.
+        mockTimeline(listOf(set.captured[2], set.captured[0], set.captured[1]))
+        connection.removeTracksFromQueue(listOf(2L))
+        idleMain()
+
+        // Shuffle-off must restore the remembered order minus the removed
+        // uid, NOT adopt the current shuffled order (which would no-op).
+        mockTimeline(listOf(set.captured[2], set.captured[0]))
+        connection.setShuffleMode(ShuffleMode.OFF)
+        idleMain()
+
+        val reordered = slot<List<MediaItem>>()
+        verify { controller.addMediaItems(capture(reordered)) }
+        assertThat(reordered.captured.map { it.mediaId.toLong() })
+            .containsExactly(uids[0], uids[2]).inOrder()
     }
 
     private val collectors = mutableListOf<Job>()

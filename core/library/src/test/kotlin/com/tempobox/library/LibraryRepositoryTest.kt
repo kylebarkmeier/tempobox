@@ -10,6 +10,7 @@ import com.tempobox.model.SortKey
 import com.tempobox.model.SortSpec
 import com.tempobox.model.TagData
 import com.tempobox.model.Track
+import com.tempobox.playlist.M3uCodec
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -31,7 +32,10 @@ class LibraryRepositoryTest {
 
     private lateinit var db: TempoBoxDatabase
     private lateinit var tagIO: FakeTagIO
+    private lateinit var playlistRepository: PlaylistRepository
     private lateinit var repository: LibraryRepository
+    private lateinit var musicDir: File
+    private val codec = M3uCodec()
 
     @Before
     fun setUp() {
@@ -40,7 +44,11 @@ class LibraryRepositoryTest {
             TempoBoxDatabase::class.java,
         ).allowMainThreadQueries().build()
         tagIO = FakeTagIO()
-        repository = LibraryRepository(db.trackDao(), tagIO, UnconfinedTestDispatcher())
+        musicDir = tmp.newFolder("Music")
+        playlistRepository =
+            testPlaylistRepository(db, musicDir, codec, UnconfinedTestDispatcher())
+        repository =
+            LibraryRepository(db.trackDao(), tagIO, playlistRepository, UnconfinedTestDispatcher())
     }
 
     @After
@@ -138,13 +146,74 @@ class LibraryRepositoryTest {
     }
 
     @Test
-    fun `deleteFromDevice removes files and rows`() = runTest {
+    fun `deleteFromDevice removes files and rows and reports the deleted ids`() = runTest {
         val file = File(tmp.root, "gone.mp3").apply { writeText("x") }
         val id = seed(file.absolutePath)
-        val failed = repository.deleteFromDevice(listOf(id))
-        assertThat(failed).isEmpty()
+        val result = repository.deleteFromDevice(listOf(id))
+        assertThat(result.failed).isEmpty()
+        assertThat(result.deletedIds).containsExactly(id)
         assertThat(file.exists()).isFalse()
         assertThat(db.trackDao().count()).isEqualTo(0)
+    }
+
+    @Test
+    fun `deleteFromDevice reports nothing for ids that have no row`() = runTest {
+        val result = repository.deleteFromDevice(listOf(12345L))
+        assertThat(result.deletedIds).isEmpty()
+        assertThat(result.failed).isEmpty()
+    }
+
+    @Test
+    fun `deleteFromDevice prunes the track from playlists and rewrites their files`() = runTest {
+        val fileA = File(musicDir, "a.mp3").apply { writeText("x") }
+        val fileB = File(musicDir, "b.mp3").apply { writeText("x") }
+        val a = seed(fileA.absolutePath, title = "A")
+        val b = seed(fileB.absolutePath, title = "B")
+        val playlist = playlistRepository.createPlaylist("Mix", listOf(a, b))
+
+        val result = repository.deleteFromDevice(listOf(a))
+
+        assertThat(result.failed).isEmpty()
+        assertThat(db.playlistDao().getPlaylistTracks(playlist.id).map { it.id })
+            .containsExactly(b)
+        assertThat(codec.read(File(playlist.filePath!!))).containsExactly(fileB.absolutePath)
+    }
+
+    @Test
+    fun `removeFromLibrary leaves playlist files untouched`() = runTest {
+        // The Remove dialog promises "Files on the device are not touched":
+        // DB entries cascade away, but the .m3u8 on disk keeps its lines.
+        val fileA = File(musicDir, "a.mp3").apply { writeText("x") }
+        val fileB = File(musicDir, "b.mp3").apply { writeText("x") }
+        val a = seed(fileA.absolutePath, title = "A")
+        val b = seed(fileB.absolutePath, title = "B")
+        val playlist = playlistRepository.createPlaylist("Mix", listOf(a, b))
+
+        repository.removeFromLibrary(listOf(b))
+
+        assertThat(db.playlistDao().getPlaylistTracks(playlist.id).map { it.id })
+            .containsExactly(a)
+        assertThat(codec.read(File(playlist.filePath!!)))
+            .containsExactly(fileA.absolutePath, fileB.absolutePath)
+            .inOrder()
+        assertThat(fileB.exists()).isTrue()
+    }
+
+    @Test
+    fun `a track whose file could not be deleted stays in its playlists`() = runTest {
+        val undeletable = File(musicDir, "stubborn").apply {
+            mkdirs()
+            File(this, "child.txt").writeText("x")
+        }
+        val id = seed(undeletable.absolutePath, title = "Stubborn")
+        val playlist = playlistRepository.createPlaylist("Mix", listOf(id))
+
+        val result = repository.deleteFromDevice(listOf(id))
+
+        assertThat(result.failed.map { it.id }).containsExactly(id)
+        assertThat(result.deletedIds).isEmpty()
+        assertThat(codec.read(File(playlist.filePath!!)))
+            .containsExactly(undeletable.absolutePath)
     }
 
     @Test
@@ -184,9 +253,10 @@ class LibraryRepositoryTest {
         val stubbornId = seed(undeletable.absolutePath, title = "Stubborn")
         val goneId = seed(gone.absolutePath, title = "Gone")
 
-        val failed = repository.deleteFromDevice(listOf(stubbornId, goneId))
+        val result = repository.deleteFromDevice(listOf(stubbornId, goneId))
 
-        assertThat(failed.map { it.id }).containsExactly(stubbornId)
+        assertThat(result.failed.map { it.id }).containsExactly(stubbornId)
+        assertThat(result.deletedIds).containsExactly(goneId)
         assertThat(gone.exists()).isFalse()
         assertThat(db.trackDao().getById(goneId)).isNull()
         assertThat(db.trackDao().getById(stubbornId)).isNotNull() // kept so the UI can surface it
@@ -195,8 +265,9 @@ class LibraryRepositoryTest {
     @Test
     fun `missing files count as deleted rather than failing`() = runTest {
         val id = seed("${tmp.root}/already-gone.mp3")
-        val failed = repository.deleteFromDevice(listOf(id))
-        assertThat(failed).isEmpty()
+        val result = repository.deleteFromDevice(listOf(id))
+        assertThat(result.failed).isEmpty()
+        assertThat(result.deletedIds).containsExactly(id)
         assertThat(db.trackDao().count()).isEqualTo(0)
     }
 

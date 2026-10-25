@@ -85,11 +85,18 @@ private fun MenuContent(
                 onClick = { onDismiss(); actions.goToAlbum(item) },
             )
         }
-        DropdownMenuItem(
-            text = { Text("Add to playlist") },
-            onClick = { onDismiss(); actions.requestAddToPlaylist(item) },
-        )
-        if (item !is LibraryItem.PlaylistItem) {
+        // Library-row entries are hidden for tracks that have no row (network
+        // streams): rating, tags, playlists, remove, and delete all act on DB
+        // rows, and "Add to playlist" would break the playlist_entries
+        // foreign key with the streams' shared id 0.
+        val libraryBacked = item.isLibraryBacked
+        if (libraryBacked) {
+            DropdownMenuItem(
+                text = { Text("Add to playlist") },
+                onClick = { onDismiss(); actions.requestAddToPlaylist(item) },
+            )
+        }
+        if (libraryBacked && item !is LibraryItem.PlaylistItem) {
             DropdownMenuItem(
                 text = { Text("Create auto playlist") },
                 onClick = { onDismiss(); actions.requestCreateAutoPlaylist(item) },
@@ -100,7 +107,7 @@ private fun MenuContent(
                 onClick = { onDismiss(); actions.requestEditTags(item) },
             )
         }
-        if (item is LibraryItem.TrackItem) {
+        if (libraryBacked && item is LibraryItem.TrackItem) {
             DropdownMenuItem(
                 text = { Text("Rate") },
                 onClick = { onDismiss(); actions.requestRate(item.track) },
@@ -112,11 +119,13 @@ private fun MenuContent(
                 onClick = { onDismiss(); action() },
             )
         }
-        DropdownMenuItem(
-            text = { Text("Remove from library") },
-            onClick = { onDismiss(); actions.requestRemoveFromLibrary(item) },
-        )
-        if (item !is LibraryItem.PlaylistItem || item.playlist.filePath != null) {
+        if (libraryBacked) {
+            DropdownMenuItem(
+                text = { Text("Remove from library") },
+                onClick = { onDismiss(); actions.requestRemoveFromLibrary(item) },
+            )
+        }
+        if (libraryBacked && (item !is LibraryItem.PlaylistItem || item.playlist.filePath != null)) {
             DropdownMenuItem(
                 enabled = canWriteFiles,
                 text = { GatedMenuLabel("Delete permanently", enabled = canWriteFiles) },

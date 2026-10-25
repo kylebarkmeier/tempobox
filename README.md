@@ -24,10 +24,13 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
   track, album and artist as far as possible), and **rating-biased**
   (favors your 5★ tracks)
 - Play queue that survives restarts (configurable), with multi-select,
-  swipe-to-remove, and an animated now-playing indicator
+  swipe-to-remove, and an animated now-playing indicator; the queue opens
+  scrolled to the playing track, whatever the queue order (shuffle off
+  included)
 - Swipe-driven Now Playing: drag the mini player up into the full view and
   back down to the pill, and swipe up from Now Playing to reveal the queue
-  over it (swipe down to send it back)
+  over it (swipe down to send it back); the top bar has the same 3-dot menu
+  as everywhere else, acting on the playing track
 
 **Library**
 - Fast scanner over your chosen folders: only new/changed files get their tags
@@ -54,7 +57,9 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
 - Per-track 1-5★ ratings and play counts
 - In-app ID3/Vorbis/MP4 tag editing, single track or bulk, including setting
   the embedded album art from an image on your device
-- Remove-from-library and delete-from-device (both behind confirmations)
+- Remove-from-library and delete-from-device (both behind confirmations);
+  a deleted track disappears from the play queue and from your playlists too,
+  with the `.m3u8` files rewritten to match
 - Artist images from Discogs (optional, bring your own token) with an
   album-art collage fallback
 - Genre and artist collages show the group's most played albums, one cover
@@ -66,9 +71,12 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
 - Remove single entries from a playlist with the row menu (duplicates are
   removable one copy at a time)
 - Everything the app creates or modifies is written as UTF-8 **M3U8**
-- **Auto (smart) playlists** built from Album Artist / Artist / Genre / Year /
-  Rating conditions with AND/OR combinations and `<` / `>` for Year & Rating;
-  they update themselves as your library changes and are exported as `.m3u8`
+- **Auto (smart) playlists** built from Title / Artist / Album Artist / Album /
+  Genre / Year / Rating / Track number / Disc number conditions, with `<` / `>`
+  for the numeric fields. Conditions combine with AND/OR, and condition groups
+  combine with AND/OR again, so "(Genre is Rock OR Genre is Metal) AND
+  Year > 1990" is buildable; they update themselves as your library changes
+  and are exported as `.m3u8`
 
 **Integrations**
 - **Android Auto**: browse Playlists, Artists, Albums and Genres on the car

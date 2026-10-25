@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
@@ -37,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,6 +62,9 @@ import com.tempobox.ui.components.SearchTitleField
 import com.tempobox.ui.components.TrackArt
 import com.tempobox.ui.library.LibraryActionsViewModel
 import com.tempobox.ui.library.LibraryItem
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 
 /**
  * Play queue view (product spec): each row shows art, artist, title, time and
@@ -170,7 +175,26 @@ fun QueuePanel(onBack: (() -> Unit)? = null, hostActionDialogs: Boolean = true) 
         // With a search active the display index no longer matches the player
         // queue index, so the playing row is identified by uid instead.
         val currentUid = queue.getOrNull(state.queueIndex)?.uid
-        FastScrollLazyColumn(Modifier.fillMaxSize()) {
+        val listState = rememberLazyListState()
+        // Opening the panel starts the view at the playing track: one decision
+        // per open. It waits out the async queue restore, then scrolls (or
+        // not) exactly once. The flag is saveable, so a back-navigation or
+        // rotation restore keeps the position the user had instead of
+        // re-jumping; the Now Playing drawer discards it on close, so the
+        // next open scrolls again.
+        var openedAtCurrent by rememberSaveable { mutableStateOf(false) }
+        LaunchedEffect(viewModel, listState) {
+            if (openedAtCurrent) return@LaunchedEffect
+            val index = combine(
+                viewModel.visibleQueue, viewModel.queue, viewModel.state,
+            ) { visible, items, playback ->
+                if (items.isEmpty()) null
+                else QueueViewModel.scrollTargetIndex(visible, items, playback.queueIndex)
+            }.filterNotNull().first()
+            openedAtCurrent = true
+            if (index >= 0) listState.scrollToItem(index)
+        }
+        FastScrollLazyColumn(Modifier.fillMaxSize(), state = listState) {
             itemsIndexed(visibleQueue, key = { _, item -> item.uid }) { _, item ->
                 QueueRow(
                     item = item,

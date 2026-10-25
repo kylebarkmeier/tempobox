@@ -45,17 +45,7 @@ class PlaylistRepositoryTest {
             TempoBoxDatabase::class.java,
         ).allowMainThreadQueries().build()
         musicDir = tmp.newFolder("Music")
-        repository = PlaylistRepository(
-            context = ApplicationProvider.getApplicationContext(),
-            playlistDao = db.playlistDao(),
-            trackDao = db.trackDao(),
-            codec = codec,
-            engine = SmartPlaylistEngine(),
-            settingsRepository = FakeSettingsRepository(
-                AppSettings(library = LibrarySettings(locations = listOf(musicDir.absolutePath))),
-            ),
-            ioDispatcher = UnconfinedTestDispatcher(),
-        )
+        repository = testPlaylistRepository(db, musicDir, codec, UnconfinedTestDispatcher())
     }
 
     @After

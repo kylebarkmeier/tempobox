@@ -24,6 +24,9 @@ import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** Chunk size for id lists bound into SQL, under SQLite's variable limit. */
+internal const val SQL_CHUNK = 500
+
 /**
  * Facade over the track table: all library reads and mutations the UI needs.
  * (Playlists live in [PlaylistRepository]; scanning in [MediaScanner].)
@@ -37,6 +40,7 @@ import javax.inject.Singleton
 class LibraryRepository @Inject constructor(
     private val trackDao: TrackDao,
     private val tagWriter: TagWriter,
+    private val playlistRepository: PlaylistRepository,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
 ) {
 
@@ -224,23 +228,46 @@ class LibraryRepository @Inject constructor(
 
     // ------------------------------------------------------------------ removal
 
-    /** Removes tracks from the library DB only — files stay on disk. */
+    /**
+     * Removes tracks from the library DB only — files stay on disk, playlist
+     * files included: the Remove confirmation promises "Files on the device
+     * are not touched", and rewriting a playlist file here would even delete
+     * an imported legacy `.m3u` through the upgrade path. The DB-side playlist
+     * entries still cascade away with the rows.
+     */
     suspend fun removeFromLibrary(trackIds: List<Long>) = withContext(ioDispatcher) {
         trackIds.chunked(SQL_CHUNK).forEach { trackDao.deleteByIds(it) }
     }
 
+    /** Outcome of [deleteFromDevice]. */
+    data class DeleteResult(
+        /** Ids whose file is gone and whose row was removed. */
+        val deletedIds: List<Long>,
+        /** Tracks whose file could not be deleted (kept in the library). */
+        val failed: List<Track>,
+    )
+
     /**
-     * Permanently deletes the files from the device, then removes their rows.
-     * Returns tracks whose file could not be deleted (kept in the library so
-     * the UI can surface the failure).
+     * Permanently deletes the files from the device, then removes their rows
+     * and rewrites the `.m3u8` of every static playlist that referenced them
+     * (row deletion cascades the entries; the files must follow the DB).
+     * Ids with no library row are neither deleted nor reported, so callers
+     * must act on [DeleteResult.deletedIds], never on "requested minus failed".
      */
-    suspend fun deleteFromDevice(trackIds: List<Long>): List<Track> = withContext(ioDispatcher) {
+    suspend fun deleteFromDevice(trackIds: List<Long>): DeleteResult = withContext(ioDispatcher) {
+        // Captured before any file is deleted: the file watcher reacts to the
+        // deletions below and can remove rows mid-loop, cascading their
+        // playlist entries away before a later lookup would see them. A
+        // playlist whose tracks all survive is rewritten unchanged, harmless.
+        val affectedPlaylists = playlistRepository.playlistIdsContaining(trackIds)
         val tracks = getTracksByIds(trackIds)
         val (deleted, failed) = tracks.partition { track ->
             val file = File(track.filePath)
             !file.exists() || file.delete()
         }
-        deleted.map { it.id }.chunked(SQL_CHUNK).forEach { trackDao.deleteByIds(it) }
+        val deletedIds = deleted.map { it.id }
+        deletedIds.chunked(SQL_CHUNK).forEach { trackDao.deleteByIds(it) }
+        playlistRepository.exportStaticPlaylists(affectedPlaylists)
         if (failed.isNotEmpty()) {
             Log.w(
                 TAG,
@@ -248,7 +275,7 @@ class LibraryRepository @Inject constructor(
                     failed.joinToString { it.filePath },
             )
         }
-        failed
+        DeleteResult(deletedIds, failed)
     }
 
     /** Settings ▸ "Reset library": wipes all tracks (files untouched). */
@@ -285,6 +312,5 @@ class LibraryRepository @Inject constructor(
 
     companion object {
         private const val TAG = "LibraryRepository"
-        private const val SQL_CHUNK = 500
     }
 }

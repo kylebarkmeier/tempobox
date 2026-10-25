@@ -1,9 +1,14 @@
 package com.tempobox.library
 
+import androidx.test.core.app.ApplicationProvider
+import com.tempobox.database.TempoBoxDatabase
 import com.tempobox.model.AudioFormat
 import com.tempobox.model.TagData
 import com.tempobox.model.ThemeConfig
 import com.tempobox.model.Track
+import com.tempobox.playlist.M3uCodec
+import com.tempobox.playlist.SmartPlaylistEngine
+import kotlinx.coroutines.CoroutineDispatcher
 import com.tempobox.settings.AppSettings
 import com.tempobox.settings.ArtworkSettings
 import com.tempobox.settings.BluetoothSettings
@@ -24,6 +29,24 @@ import java.io.File
  * file name (`Artist__Album__Title.mp3`) so tests control metadata by simply
  * naming files — no real audio needed.
  */
+
+/** PlaylistRepository against an in-memory [db], writing under [musicDir]. */
+fun testPlaylistRepository(
+    db: TempoBoxDatabase,
+    musicDir: File,
+    codec: M3uCodec,
+    dispatcher: CoroutineDispatcher,
+): PlaylistRepository = PlaylistRepository(
+    context = ApplicationProvider.getApplicationContext(),
+    playlistDao = db.playlistDao(),
+    trackDao = db.trackDao(),
+    codec = codec,
+    engine = SmartPlaylistEngine(),
+    settingsRepository = FakeSettingsRepository(
+        AppSettings(library = LibrarySettings(locations = listOf(musicDir.absolutePath))),
+    ),
+    ioDispatcher = dispatcher,
+)
 
 class FakeTagIO : TagReader, TagWriter {
     /** Paths that should fail to read/write (permission-denied simulation). */

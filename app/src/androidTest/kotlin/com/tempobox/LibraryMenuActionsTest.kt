@@ -46,7 +46,13 @@ class LibraryMenuActionsTest {
         GrantPermissionRule.grant(android.Manifest.permission.READ_EXTERNAL_STORAGE)
     }
 
+    // All files access (an appop, not a runtime permission) gates the Edit
+    // ID3 tags and Delete permanently entries; grant it before the activity
+    // composes or those entries render disabled and the clicks do nothing.
     @get:Rule(order = 2)
+    val allFilesAccess = GrantAllFilesAccessRule()
+
+    @get:Rule(order = 3)
     val composeRule = createAndroidComposeRule<MainActivity>()
 
     @Inject
