@@ -30,6 +30,7 @@ data class AppPermissions(
     val postNotifications: Boolean = false,
     val bluetoothConnect: Boolean = false,
     val localNetwork: Boolean = false,
+    val recordAudio: Boolean = false,
 ) {
     /** True when the scanner can read the library folders at all. */
     val canReadLibrary: Boolean get() = readAudio || allFilesAccess
@@ -89,6 +90,8 @@ fun checkAppPermissions(context: Context): AppPermissions {
             granted(Manifest.permission.BLUETOOTH_CONNECT),
         localNetwork = !PermissionGates.localNetworkRequired(sdk) ||
             granted(PermissionGates.ACCESS_LOCAL_NETWORK),
+        // Runtime on every supported API level (23+), so no gate function.
+        recordAudio = granted(Manifest.permission.RECORD_AUDIO),
     )
 }
 

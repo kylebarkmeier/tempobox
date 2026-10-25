@@ -333,6 +333,28 @@ class PlayerConnection internal constructor(
         }
     }
 
+    /** Explicit pause (voice "pause"): unlike [togglePlayPause], never starts. */
+    fun pause() {
+        if (remotePlay.state.value.active) {
+            scope.launch { remotePlay.pause() }
+            return
+        }
+        withController { it.pause() }
+    }
+
+    /** Explicit resume (voice "resume"): unlike [togglePlayPause], never pauses. */
+    fun resume() {
+        if (remotePlay.state.value.active) {
+            scope.launch { remotePlay.play() }
+            return
+        }
+        withController { c ->
+            if (c.mediaItemCount == 0) return@withController
+            if (c.playbackState == Player.STATE_IDLE) c.prepare()
+            c.play()
+        }
+    }
+
     // next/previous move the local timeline even while casting: the paused
     // player is still the queue, and the item-transition listener mirrors the
     // new current track onto the renderer.
@@ -432,6 +454,57 @@ class PlayerConnection internal constructor(
             }
             setShuffleMode(mode)
         }
+    }
+
+    /** Explicit shuffle state ("shuffle on/off"), using the configured flavor. */
+    fun setShuffleEnabled(on: Boolean) {
+        scope.launch {
+            setShuffleMode(
+                if (on) defaultShuffleMode(settingsRepository.settings.first().shuffle)
+                else ShuffleMode.OFF,
+            )
+        }
+    }
+
+    // ------------------------------------------------------------------ voice commands
+
+    /**
+     * Executes a parsed in-app [VoiceCommand] (VoiceCommandActivity). Volume
+     * goes to the active renderer when casting, else to the music stream with
+     * the system volume HUD so the change is visible.
+     */
+    fun execute(command: VoiceCommand) {
+        when (command) {
+            is VoiceCommand.PlaySearch -> playFromSearch(command.query)
+            VoiceCommand.Resume -> resume()
+            VoiceCommand.Pause -> pause()
+            VoiceCommand.Stop -> stop()
+            VoiceCommand.Next -> next()
+            VoiceCommand.Previous -> previous()
+            is VoiceCommand.SetShuffle -> setShuffleEnabled(command.on)
+            is VoiceCommand.SetRepeat -> setRepeatMode(command.mode)
+            VoiceCommand.VolumeUp -> adjustVolume(up = true)
+            VoiceCommand.VolumeDown -> adjustVolume(up = false)
+        }
+    }
+
+    private fun adjustVolume(up: Boolean) {
+        val remote = remotePlay.state.value
+        if (remote.active) {
+            // Volume unknown until the renderer reports it; step from the
+            // midpoint then rather than doing nothing.
+            val current = remote.volumePercent ?: 50
+            val target = (current + if (up) VOICE_VOLUME_STEP else -VOICE_VOLUME_STEP)
+                .coerceIn(0, 100)
+            scope.launch { remotePlay.setVolume(target) }
+            return
+        }
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        audioManager.adjustStreamVolume(
+            AudioManager.STREAM_MUSIC,
+            if (up) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
+            AudioManager.FLAG_SHOW_UI,
+        )
     }
 
     // ------------------------------------------------------------------ audio output
@@ -721,6 +794,9 @@ class PlayerConnection internal constructor(
     companion object {
         private const val TAG = "PlayerConnection"
         private const val POSITION_TICK_MS = 500L
+
+        /** Renderer volume step for the voice "volume up/down" commands. */
+        private const val VOICE_VOLUME_STEP = 10
 
         /** The shuffle flavor "shuffle on" means, given the user's settings. */
         fun defaultShuffleMode(settings: ShuffleSettings): ShuffleMode = when {

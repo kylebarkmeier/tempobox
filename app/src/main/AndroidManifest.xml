@@ -43,6 +43,20 @@
     <!-- "Set album art as wallpaper" corner action -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
 
+    <!-- In-app voice commands (VoiceCommandActivity) capture one utterance
+         through the device's speech service. Maintainer signed off
+         (CLAUDE.md Safety); the app itself makes no new network calls. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Package visibility for SpeechRecognizer.isRecognitionAvailable on
+         API 30+: without it the device's recognition service is invisible
+         and voice commands would report "no speech service". -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
     <application
         android:name=".TempoBoxApplication"
         android:allowBackup="true"
@@ -76,6 +90,31 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!-- In-app voice command dialog. Launched from the Library top bar,
+             the home-screen widget, and the Quick Settings tile; transient
+             (noHistory) and in its own task so a drawer/tile launch doesn't
+             drag the whole app task to the front. -->
+        <activity
+            android:name=".voice.VoiceCommandActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.TempoBox.Voice" />
+
+        <!-- Quick Settings tile: voice command from the notification drawer -->
+        <service
+            android:name=".voice.VoiceTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_widget_mic"
+            android:label="@string/voice_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <!-- Android Auto: declares this as a media app for the car screen -->
         <meta-data

@@ -82,6 +82,13 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
   Setup and troubleshooting:
   [Voice commands](https://github.com/kylebarkmeier/tempobox/wiki/Voice-Commands)
   in the wiki
+- **In-app voice commands** that need no assistant at all: a mic button in
+  the Library top bar, on the home-screen widget, and as a Quick Settings
+  tile opens a small listening dialog. Say "play [artist/album/playlist/
+  genre/track]", "shuffle [something]", "pause", "resume", "next",
+  "previous", "shuffle on/off", "repeat off/all/one", or "volume up/down".
+  Uses your device's own speech recognizer and asks for the Microphone
+  permission on first use
 - Calls stay clean: music pauses for calls (audio focus) and TempoBox refuses
   to let car stereos restart it mid-call; it resumes when the call ends
 - Pick the output: an audio-output button in Now Playing routes playback to
@@ -169,7 +176,10 @@ out with the reason instead of failing afterwards: the *Edit ID3 tags* and
 start-on-connect without the Nearby devices permission (Android 12+), and
 rescanning without music access. Tapping a greyed settings row requests the
 permission or opens the right system screen, and granting it un-greys the
-entries when you return.
+entries when you return. In-app voice commands ask for the Microphone
+permission the first time you tap a mic button; if Android stops showing the
+dialog after repeated denials, the voice dialog offers the system-settings
+page instead.
 
 ## Running tests
 

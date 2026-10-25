@@ -1,5 +1,6 @@
 package com.tempobox.ui.library
 
+import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.automirrored.filled.ViewList
@@ -42,6 +44,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -63,6 +66,7 @@ import com.tempobox.ui.components.SwipeableLibraryItem
 import com.tempobox.ui.components.TextInputDialog
 import com.tempobox.ui.components.TrackArt
 import com.tempobox.ui.components.TrackRow
+import com.tempobox.voice.VoiceCommandActivity
 
 /**
  * The tabbed Library: Album Artists / Artists / Albums / Genres / Tracks /
@@ -117,6 +121,15 @@ fun LibraryScreen(
             },
             actions = {
                 if (!searching) {
+                    // In-app voice commands ("play X", "pause", "shuffle on").
+                    // The dialog activity requests the mic permission itself,
+                    // so the button stays enabled when it is not yet granted.
+                    val context = LocalContext.current
+                    IconButton(onClick = {
+                        context.startActivity(Intent(context, VoiceCommandActivity::class.java))
+                    }) {
+                        Icon(Icons.Filled.Mic, contentDescription = "Voice command")
+                    }
                     SearchIconButton(onClick = { searching = true })
                 }
                 // Card/list switch for the artist, album & genre tabs (product spec).

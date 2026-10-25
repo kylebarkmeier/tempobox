@@ -50,6 +50,7 @@ import com.tempobox.model.NowPlayingState
 import com.tempobox.playback.PlaybackService
 import com.tempobox.playback.PlayerConnection
 import com.tempobox.tags.TagReader
+import com.tempobox.voice.VoiceCommandActivity
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -196,6 +197,15 @@ class TempoBoxWidget : GlanceAppWidget() {
                         action = actionRunCallback<RepeatAction>(),
                         modifier = GlanceModifier.defaultWeight(),
                         toggled = WidgetControls.repeatActive(state.repeatMode),
+                    )
+                    // Voice command dialog ("play X", "pause", ...) without
+                    // opening the app; the activity asks for the mic grant.
+                    ControlIcon(
+                        iconRes = R.drawable.ic_widget_mic,
+                        contentDescription = "Voice command",
+                        size = controlSize,
+                        action = actionStartActivity<VoiceCommandActivity>(),
+                        modifier = GlanceModifier.defaultWeight(),
                     )
                 }
             }
