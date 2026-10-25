@@ -30,6 +30,7 @@ import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.tempobox.common.IoDispatcher
+import com.tempobox.library.LibraryRemovals
 import com.tempobox.library.LibraryRepository
 import com.tempobox.model.MediaButton
 import com.tempobox.model.MediaButtonAction
@@ -88,6 +89,7 @@ class PlaybackService : MediaLibraryService() {
 
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var libraryRepository: LibraryRepository
+    @Inject lateinit var libraryRemovals: LibraryRemovals
     @Inject lateinit var scrobbler: Scrobbler
     @Inject lateinit var stateStore: PlaybackStateStore
     @Inject lateinit var tagReader: TagReader
@@ -175,6 +177,31 @@ class PlaybackService : MediaLibraryService() {
         registerBluetoothReceiver()
         registerVolumeReceiver()
         startPeriodicSnapshots()
+        pruneVanishedFiles()
+    }
+
+    /**
+     * Drops queue entries whose library rows were removed because the FILE is
+     * gone (scanner and watcher removals, via [LibraryRemovals]). Without
+     * this, a file deleted in a file manager stays queued until playback
+     * reaches it and stops with FILE_NOT_FOUND. In-app permanent deletion
+     * prunes through PlayerConnection instead; remove-from-library keeps its
+     * entries on purpose (the file still plays).
+     */
+    private fun pruneVanishedFiles() {
+        scope.launch {
+            libraryRemovals.vanished.collect { trackIds ->
+                val ids = trackIds.filterTo(HashSet()) { it > 0 }
+                if (ids.isEmpty()) return@collect
+                val removedIndices = (0 until player.mediaItemCount).filter {
+                    MediaItems.toTrack(player.getMediaItemAt(it)).id in ids
+                }
+                if (removedIndices.isEmpty()) return@collect
+                Log.i(TAG, "Dropping ${removedIndices.size} queue entries whose files vanished")
+                QueueRemoval.removeIndices(player, removedIndices)
+                scheduleSnapshot()
+            }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
@@ -560,9 +587,14 @@ class PlaybackService : MediaLibraryService() {
             RepeatMode.ALL -> Player.REPEAT_MODE_ALL
             RepeatMode.ONE -> Player.REPEAT_MODE_ONE
         }
+        // Rows can be gone since the snapshot; the stored index must shift
+        // with the dropped entries or an unrelated track resumes.
+        val index = QueueRestore.remapIndex(
+            snapshot.trackIds, tracks.map { it.id }, snapshot.currentIndex,
+        )
         return MediaSession.MediaItemsWithStartPosition(
             items,
-            snapshot.currentIndex.coerceIn(0, items.lastIndex),
+            index.coerceIn(0, items.lastIndex),
             snapshot.positionMs,
         )
     }
@@ -615,9 +647,14 @@ class PlaybackService : MediaLibraryService() {
                 return@launch
             }
             val items = tracks.mapIndexed { i, t -> MediaItems.toMediaItem(t, uid = i.toLong()) }
+            // Rows can be gone since the snapshot; the stored index must shift
+            // with the dropped entries or an unrelated track resumes.
+            val index = QueueRestore.remapIndex(
+                snapshot.trackIds, tracks.map { it.id }, snapshot.currentIndex,
+            )
             player.setMediaItems(
                 items,
-                snapshot.currentIndex.coerceIn(0, items.lastIndex),
+                index.coerceIn(0, items.lastIndex),
                 snapshot.positionMs,
             )
             player.repeatMode = when (snapshot.repeatMode) {
