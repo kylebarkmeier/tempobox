@@ -6,4 +6,14 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
     </style>
+
+    <!-- VoiceCommandActivity: a floating dialog over whatever is on screen
+         (home screen for widget/tile launches), so the window is transparent
+         and the Compose card draws the visible surface. -->
+    <style name="Theme.TempoBox.Voice">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:backgroundDimEnabled">true</item>
+    </style>
 </resources>

@@ -2,4 +2,5 @@
     <string name="app_name">TempoBox</string>
     <string name="widget_label">TempoBox player</string>
     <string name="widget_description">Album art with playback controls</string>
+    <string name="voice_tile_label">Voice command</string>
 </resources>

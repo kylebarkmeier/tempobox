@@ -133,6 +133,17 @@ and bumps each row's mtime so the path+mtime artwork cache key misses.
   declares the `MEDIA_PLAY_FROM_SEARCH` intent filter (without it, "play X on
   TempoBox" falls back to a web search); the activity logs the dispatch and
   forwards the query to the session via `PlayerConnection.playFromSearch`.
+- In-app voice commands need no assistant: `VoiceCommandActivity` (a transient
+  dialog reachable from the Library top bar, the home-screen widget's mic
+  button, and a Quick Settings tile) captures one utterance with the device's
+  `SpeechRecognizer` and parses it through `VoiceCommand`, a pure, unit-tested
+  grammar in `core:playback` ("play X" routes into `VoiceSearch`; pause / stop
+  / resume / next / previous / shuffle on-off / repeat off-all-one / volume
+  up-down map onto `PlayerConnection.execute`). Unknown utterances and
+  recognizer errors are shown with the real reason (what was heard, or the
+  mapped `SpeechRecognizer` error), never silently dropped. The dialog owns
+  the RECORD_AUDIO request; a denial switches it to the Open-settings recovery
+  path, same as the local-network permission notes.
 - `CallGuard` (pure logic, audio-mode based, no phone permission) stops car
   stereos restarting music mid-call: start-on-connect is refused during any
   call mode, and playback that starts mid-call is paused after a recheck
