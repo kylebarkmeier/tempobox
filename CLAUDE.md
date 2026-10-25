@@ -14,11 +14,11 @@ Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.8
 - `core:tags`: jaudiotagger wrapper. Read/write ID3v2 / Vorbis / MP4 tags and artwork.
 - `core:playlist`: M3U/M3U8 parse and write (writes are always M3U8), smart-playlist rule engine.
 - `core:library`: scanner, file watcher, `LibraryRepository`, file delete/remove ops.
-- `core:playback`: `PlaybackService` (a `MediaLibraryService`: session + Android Auto browse tree), `PlayerConnection`, queue reordering, shuffle engines, Bluetooth glue.
+- `core:playback`: `PlaybackService` (a `MediaLibraryService`: session + Android Auto browse tree), `PlayerConnection`, queue reordering, shuffle engines, Bluetooth glue, voice resolution (`VoiceSearch` query matching, `VoiceCommand` grammar).
 - `core:remoteplay`: network play (DLNA/UPnP). SSDP discovery, AVTransport/RenderingControl SOAP control of renderers, ContentDirectory browsing of media servers, token-scoped HTTP stream server.
 - `core:scrobble`: SLS broadcasts handing played tracks to the user's scrobbler app.
 - `core:artwork`: Discogs artist images and album-art collage fallback.
-- `app`: all Compose UI, navigation drawer/tabs, widget (Glance), DI wiring.
+- `app`: all Compose UI, navigation drawer/tabs, widget (Glance), the voice entry points (`VoiceCommandActivity` dialog, Quick Settings tile, widget mic), DI wiring.
 
 ## Hard rules
 1. Dependency versions ONLY in `gradle/libs.versions.toml`.
@@ -51,7 +51,7 @@ Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.8
 - A personal phone may be connected over adb. Never run connected tests, install builds, or touch on-device app data unless the user asked for that in the current session.
 - Never commit credentials: keystores, `local.properties`, API tokens. Release signing material exists only in GitHub Actions secrets and the maintainer's offline backup.
 - Audio tags and playlist files are untrusted input. Validate paths from them (no traversal outside the library folders) and keep parser failures non-fatal.
-- The app's only network traffic is Discogs artist images. Adding a network call, permission, or third-party service needs explicit maintainer sign-off first.
+- App network traffic is exactly: Discogs artist images (HTTPS) and DLNA/UPnP network play on the local network (SSDP discovery, SOAP control, cleartext HTTP streaming). In-app voice goes through the device's speech service, not an app network call. Adding any other network call, permission, or third-party service needs explicit maintainer sign-off first; signed off so far: ACCESS_LOCAL_NETWORK (network play) and RECORD_AUDIO (in-app voice).
 - Destructive library operations (file delete, tag write) stay behind an explicit user confirmation in the UI and report per-file failures.
 
 ## Accuracy
