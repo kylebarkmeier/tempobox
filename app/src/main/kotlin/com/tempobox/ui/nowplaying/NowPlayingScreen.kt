@@ -48,6 +48,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,6 +75,7 @@ import com.tempobox.model.Track
 import com.tempobox.model.TrackInfoField
 import com.tempobox.ui.LocalSnackbar
 import com.tempobox.ui.components.ActionDialogHost
+import com.tempobox.ui.components.LibraryItemMenu
 import com.tempobox.ui.components.TrackArt
 import com.tempobox.ui.library.LibraryActionsViewModel
 import com.tempobox.ui.library.LibraryItem
@@ -134,6 +136,19 @@ fun NowPlayingContent(
                 }
                 IconButton(onClick = onOpenQueue) {
                     Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "Show queue")
+                }
+                // The standard 3-dot menu for the playing track, same entries
+                // as everywhere else (spec); "Go to…" collapses the sheet via
+                // the app-level navigator. remember: refresh() rebuilds an
+                // equal Track every position tick, and the unstable value
+                // would recompose the whole app bar twice a second. key: a
+                // track change discards the menu's open state, so an open
+                // menu cannot silently retarget to the next song.
+                val menuTrack = remember(track) { track }
+                menuTrack?.let {
+                    key(it.filePath) {
+                        LibraryItemMenu(item = LibraryItem.TrackItem(it), actions = actions)
+                    }
                 }
             },
         )

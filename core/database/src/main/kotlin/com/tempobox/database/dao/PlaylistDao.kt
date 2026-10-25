@@ -69,6 +69,10 @@ interface PlaylistDao {
     @Query("UPDATE playlists SET dateModifiedMs = :modifiedMs WHERE id = :id")
     suspend fun touch(id: Long, modifiedMs: Long)
 
+    /** Bulk [touch]: one write transaction (= one observer invalidation) for all [ids]. */
+    @Query("UPDATE playlists SET dateModifiedMs = :modifiedMs WHERE id IN (:ids)")
+    suspend fun touchAll(ids: List<Long>, modifiedMs: Long)
+
     // ---------------------------------------------------------------- entries
 
     @Insert
@@ -79,6 +83,10 @@ interface PlaylistDao {
 
     @Query("SELECT MAX(position) FROM playlist_entries WHERE playlistId = :playlistId")
     suspend fun maxPosition(playlistId: Long): Int?
+
+    /** Ids of the playlists whose entries reference any of [trackIds]. */
+    @Query("SELECT DISTINCT playlistId FROM playlist_entries WHERE trackId IN (:trackIds)")
+    suspend fun playlistIdsContaining(trackIds: List<Long>): List<Long>
 
     /** Atomically replaces a playlist's entire track list (used by reorder & file import). */
     @Transaction

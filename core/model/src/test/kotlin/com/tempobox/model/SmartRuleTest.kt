@@ -7,19 +7,26 @@ import org.junit.Test
 class SmartRuleTest {
 
     private fun track(
+        title: String = "T",
         artist: String = "Artist",
         albumArtist: String = "Album Artist",
+        album: String = "LP",
         genre: String = "Rock",
         year: Int? = 2000,
         rating: Int = 3,
+        trackNumber: Int? = 4,
+        discNumber: Int? = 1,
     ) = Track(
         filePath = "/music/t.mp3",
-        title = "T",
+        title = title,
         artist = artist,
         albumArtist = albumArtist,
+        album = album,
         genre = genre,
         year = year,
         rating = rating,
+        trackNumber = trackNumber,
+        discNumber = discNumber,
     )
 
     // ------------------------------------------------------------ string fields
@@ -55,6 +62,31 @@ class SmartRuleTest {
     fun `blank genre matches the unknown-genre placeholder`() {
         val rule = SmartRule.Condition(RuleField.GENRE, RuleOp.IS, Track.UNKNOWN_GENRE)
         assertThat(rule.matches(track(genre = ""))).isTrue()
+    }
+
+    @Test
+    fun `title matching covers IS and CONTAINS`() {
+        assertThat(
+            SmartRule.Condition(RuleField.TITLE, RuleOp.IS, "paranoid")
+                .matches(track(title = "Paranoid")),
+        ).isTrue()
+        assertThat(
+            SmartRule.Condition(RuleField.TITLE, RuleOp.CONTAINS, "rano")
+                .matches(track(title = "Paranoid")),
+        ).isTrue()
+        assertThat(
+            SmartRule.Condition(RuleField.TITLE, RuleOp.IS, "Paranoid")
+                .matches(track(title = "War Pigs")),
+        ).isFalse()
+    }
+
+    @Test
+    fun `blank album matches the unknown-album placeholder`() {
+        val rule = SmartRule.Condition(RuleField.ALBUM, RuleOp.IS, Track.UNKNOWN_ALBUM)
+        assertThat(rule.matches(track(album = ""))).isTrue()
+        assertThat(
+            SmartRule.Condition(RuleField.ALBUM, RuleOp.CONTAINS, "lp").matches(track(album = "LP")),
+        ).isTrue()
     }
 
     @Test
@@ -105,6 +137,25 @@ class SmartRuleTest {
         ).isFalse()
         assertThat(
             SmartRule.Condition(RuleField.YEAR, RuleOp.IS_NOT, "1990").matches(absent),
+        ).isTrue()
+    }
+
+    @Test
+    fun `track and disc numbers compare numerically and honor absence`() {
+        assertThat(
+            SmartRule.Condition(RuleField.TRACK_NUMBER, RuleOp.LESS_THAN, "5")
+                .matches(track(trackNumber = 4)),
+        ).isTrue()
+        assertThat(
+            SmartRule.Condition(RuleField.DISC_NUMBER, RuleOp.IS, "2")
+                .matches(track(discNumber = 1)),
+        ).isFalse()
+        val untagged = track(trackNumber = null, discNumber = null)
+        assertThat(
+            SmartRule.Condition(RuleField.TRACK_NUMBER, RuleOp.GREATER_THAN, "0").matches(untagged),
+        ).isFalse()
+        assertThat(
+            SmartRule.Condition(RuleField.DISC_NUMBER, RuleOp.IS_NOT, "1").matches(untagged),
         ).isTrue()
     }
 
@@ -183,6 +234,21 @@ class SmartRuleTest {
     fun `malformed JSON returns null instead of throwing`() {
         assertThat(SmartRule.fromJson("not json at all")).isNull()
         assertThat(SmartRule.fromJson("{}")).isNull()
+    }
+
+    @Test
+    fun `isComplete requires a value and a parseable number for numeric fields`() {
+        assertThat(SmartRule.Condition(RuleField.GENRE, RuleOp.IS, "Rock").isComplete).isTrue()
+        assertThat(SmartRule.Condition(RuleField.GENRE, RuleOp.IS, "  ").isComplete).isFalse()
+        assertThat(SmartRule.Condition(RuleField.YEAR, RuleOp.IS, " 1990 ").isComplete).isTrue()
+        assertThat(SmartRule.Condition(RuleField.YEAR, RuleOp.IS, "soon").isComplete).isFalse()
+    }
+
+    @Test
+    fun `every field and operator carries a human label`() {
+        assertThat(RuleField.entries.map { it.label }).containsNoDuplicates()
+        assertThat(RuleField.TRACK_NUMBER.label).isEqualTo("Track number")
+        assertThat(RuleOp.GREATER_THAN.label).isEqualTo(">")
     }
 
     @Test

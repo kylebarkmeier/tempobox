@@ -18,6 +18,7 @@ import com.tempobox.playback.PlayerConnection
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -129,16 +130,34 @@ class LibraryActionsViewModel @Inject constructor(
     fun requestDelete(item: LibraryItem) { _dialog.value = Dialog.ConfirmDelete(item) }
     fun requestAddToPlaylist(item: LibraryItem) { _dialog.value = Dialog.AddToPlaylist(item) }
     fun requestEditTags(item: LibraryItem) { _dialog.value = Dialog.EditTags(item) }
-    fun requestRate(track: Track) { _dialog.value = Dialog.Rate(track) }
+
+    fun requestRate(track: Track) {
+        viewModelScope.launch {
+            // Queue and Now Playing hand in a snapshot whose rating was frozen
+            // when the track was enqueued; the dialog must show the live stars.
+            _dialog.value = Dialog.Rate(liveTrack(track).single())
+        }
+    }
 
     /** Auto playlist from the current view paradigm (e.g. swiping a genre row). */
     fun requestCreateAutoPlaylist(item: LibraryItem) {
-        val rule = autoRuleFor(item)
-        if (rule == null) {
-            toast("Auto playlists need an artist, album, genre, or track")
-            return
+        viewModelScope.launch {
+            // Queue/Now Playing snapshots substitute the album artist for a
+            // blank artist tag; seeding from that would create a rule that
+            // misses the very track it was made from.
+            val resolved = if (item is LibraryItem.TrackItem) {
+                LibraryItem.TrackItem(liveTrack(item.track).single())
+            } else {
+                item
+            }
+            val rule = autoRuleFor(resolved)
+            if (rule == null) {
+                toast("Auto playlists need an artist, album, genre, or track")
+                return@launch
+            }
+            _dialog.value =
+                Dialog.CreateAutoPlaylist(suggestedName = resolved.title, initialRule = rule)
         }
-        _dialog.value = Dialog.CreateAutoPlaylist(suggestedName = item.title, initialRule = rule)
     }
 
     // ------------------------------------------------------------------ dialog completions
@@ -179,10 +198,24 @@ class LibraryActionsViewModel @Inject constructor(
             return
         }
         withTracks(item) { tracks ->
-            val failed = libraryRepository.deleteFromDevice(tracks.map { it.id })
+            // NonCancellable: once files start being deleted, the row delete,
+            // playlist rewrite, and queue prune must finish even if the user
+            // leaves the screen and this ViewModel is cleared mid-way.
+            val result = withContext(NonCancellable) {
+                val r = libraryRepository.deleteFromDevice(tracks.map { it.id })
+                // Only rows that really went away leave the queue; a track
+                // whose file survived is still playable and stays.
+                playerConnection.removeTracksFromQueue(r.deletedIds)
+                r
+            }
             toast(
-                if (failed.isEmpty()) "Deleted ${countLabel(tracks.size)} from device"
-                else "Could not delete ${failed.size} file(s) — grant All files access in Settings ▸ Library",
+                when {
+                    result.failed.isNotEmpty() ->
+                        "Could not delete ${result.failed.size} file(s) — " +
+                            "grant All files access in Settings ▸ Library"
+                    result.deletedIds.isEmpty() -> "Nothing deleted — not in the library"
+                    else -> "Deleted ${countLabel(result.deletedIds.size)} from device"
+                },
             )
             _dialog.value = null
         }
@@ -277,9 +310,22 @@ class LibraryActionsViewModel @Inject constructor(
 
     // ------------------------------------------------------------------ resolution
 
+    /**
+     * The live library row for [track], falling back to the given snapshot
+     * when there is no row (network streams, removed tracks). Queue items and
+     * Now Playing carry a Track rebuilt from MediaItem extras, which freezes
+     * the rating and drops track/disc numbers; actions must see the row.
+     */
+    private suspend fun liveTrack(track: Track): List<Track> =
+        if (track.id == 0L) {
+            listOf(track)
+        } else {
+            libraryRepository.getTracksByIds(listOf(track.id)).ifEmpty { listOf(track) }
+        }
+
     /** Expands any library item to its tracks, in sensible play order. */
     suspend fun resolveTracks(item: LibraryItem): List<Track> = when (item) {
-        is LibraryItem.TrackItem -> listOf(item.track)
+        is LibraryItem.TrackItem -> liveTrack(item.track)
         is LibraryItem.AlbumItem ->
             libraryRepository.observeAlbumTracks(item.album.name, item.album.albumArtist).first()
         is LibraryItem.ArtistItem ->
@@ -305,8 +351,14 @@ class LibraryActionsViewModel @Inject constructor(
             )
         is LibraryItem.GenreItem ->
             SmartRule.Condition(RuleField.GENRE, RuleOp.IS, item.genre.name)
-        is LibraryItem.AlbumItem ->
-            SmartRule.Condition(RuleField.ALBUM_ARTIST, RuleOp.IS, item.album.albumArtist)
+        // Artist AND album, so "Create auto playlist" on an album seeds a
+        // playlist of that album, not the artist's whole catalog.
+        is LibraryItem.AlbumItem -> SmartRule.AllOf(
+            listOf(
+                SmartRule.Condition(RuleField.ALBUM_ARTIST, RuleOp.IS, item.album.albumArtist),
+                SmartRule.Condition(RuleField.ALBUM, RuleOp.IS, item.album.name),
+            ),
+        )
         is LibraryItem.TrackItem ->
             SmartRule.Condition(RuleField.ARTIST, RuleOp.IS, item.track.artist)
         is LibraryItem.PlaylistItem -> null

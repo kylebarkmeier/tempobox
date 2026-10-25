@@ -117,6 +117,38 @@ class QueueViewModelTest {
     }
 
     @Test
+    fun `selection drops uids whose rows left the queue`() {
+        queueFlow.value = listOf(item(1), item(2), item(3))
+        viewModel.startMultiSelect(1)
+        viewModel.toggleSelected(3)
+
+        // A permanent delete (or another controller) prunes row 1 underneath
+        // the selection; the selection must follow or the count and the bulk
+        // actions lie.
+        queueFlow.value = listOf(item(2), item(3))
+
+        assertThat(viewModel.selection.value).containsExactly(3L)
+    }
+
+    @Test
+    fun `scrollTargetIndex finds the playing row in the displayed list`() {
+        val items = listOf(item(1), item(2), item(3))
+        assertThat(QueueViewModel.scrollTargetIndex(items, items, queueIndex = 2)).isEqualTo(2)
+        // A filtered view shifts the display index; the row is found by uid.
+        val filtered = listOf(item(3), item(1))
+        assertThat(QueueViewModel.scrollTargetIndex(filtered, items, queueIndex = 2)).isEqualTo(0)
+    }
+
+    @Test
+    fun `scrollTargetIndex is -1 when nothing plays or the row is filtered out`() {
+        val items = listOf(item(1), item(2))
+        assertThat(QueueViewModel.scrollTargetIndex(items, items, queueIndex = -1)).isEqualTo(-1)
+        assertThat(QueueViewModel.scrollTargetIndex(items, emptyList(), queueIndex = 0)).isEqualTo(-1)
+        assertThat(QueueViewModel.scrollTargetIndex(listOf(item(2)), items, queueIndex = 0))
+            .isEqualTo(-1)
+    }
+
+    @Test
     fun `search narrows the visible queue but never the real queue`() {
         queueFlow.value = listOf(item(1, "Alpha"), item(2, "Beta"), item(3, "Alphabet"))
 

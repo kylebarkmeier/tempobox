@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -52,6 +53,20 @@ class QueueViewModel @Inject constructor(
     /** Selected uids, or null when multi-select is off. */
     private val _selection = MutableStateFlow<Set<Long>?>(null)
     val selection: StateFlow<Set<Long>?> = _selection.asStateFlow()
+
+    init {
+        // Rows can vanish underneath a selection (a permanent delete prunes
+        // the queue, another controller edits it); keep only uids that still
+        // exist so the count and the bulk actions stay truthful.
+        viewModelScope.launch {
+            queue.collect { items ->
+                val current = _selection.value ?: return@collect
+                val present = items.mapTo(HashSet()) { it.uid }
+                val pruned = current.filterTo(mutableSetOf()) { it in present }
+                if (pruned.size != current.size) _selection.value = pruned
+            }
+        }
+    }
 
     val confirmClear: StateFlow<Boolean> = settingsRepository.settings
         .map { it.queue.confirmClearQueue }
@@ -96,5 +111,18 @@ class QueueViewModel @Inject constructor(
         if (tracks.isEmpty()) return null
         val label = if (tracks.size == 1) tracks.first().title else "${tracks.size} tracks"
         return LibraryItem.TracksItem(label, tracks)
+    }
+
+    companion object {
+        /**
+         * Where the playing track sits in the displayed (possibly filtered)
+         * list, or -1 when it is not visible. The panel scrolls here when it
+         * opens, so the view starts at the current track whatever the queue
+         * order is (shuffle off moves it mid-list).
+         */
+        fun scrollTargetIndex(visible: List<QueueItem>, queue: List<QueueItem>, queueIndex: Int): Int {
+            val uid = queue.getOrNull(queueIndex)?.uid ?: return -1
+            return visible.indexOfFirst { it.uid == uid }
+        }
     }
 }

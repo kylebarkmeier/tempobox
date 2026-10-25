@@ -380,14 +380,77 @@ class PlayerConnection internal constructor(
 
     // ------------------------------------------------------------------ queue mutation
 
+    /**
+     * Removes every queue entry playing one of [trackIds] (all occurrences,
+     * duplicates included). Used when tracks are permanently deleted from the
+     * device: a deleted file must not stay queued. Only positive ids match:
+     * network streams all share id 0, and matching it would wipe every
+     * streamed entry over one bogus request.
+     */
+    fun removeTracksFromQueue(trackIds: Collection<Long>) {
+        val ids = trackIds.filterTo(HashSet()) { it > 0 }
+        val uids = _queue.value.filter { it.track.id in ids }.map { it.uid }
+        if (uids.isNotEmpty()) removeQueueItems(uids)
+    }
+
     fun removeQueueItems(uids: Collection<Long>) = withController { c ->
-        // Contiguous ranges, back-to-front: one timeline change per run instead
-        // of per item (each change rebroadcasts the whole queue — see QueueReorder).
-        val indices = uids.mapNotNull { indexOfUid(c, it) }
-        QueueReorder.descendingRanges(indices).forEach { range ->
-            c.removeMediaItems(range.first, range.last + 1)
+        val uidSet = uids.toHashSet()
+        // One pass over the timeline instead of one scan per uid: the removal
+        // indices and the surviving items fall out together.
+        val removedIndices = mutableListOf<Int>()
+        val survivors = mutableListOf<MediaItem>()
+        for (i in 0 until c.mediaItemCount) {
+            val item = c.getMediaItemAt(i)
+            if (item.mediaId.toLongOrNull() in uidSet) removedIndices += i else survivors += item
         }
-        originalOrderUids = currentUids(c)
+        if (removedIndices.isEmpty()) return@withController
+        val ranges = QueueReorder.descendingRanges(removedIndices)
+        if (ranges.size <= QueueReorder.MAX_OPS) {
+            // Back-to-front, one timeline change per contiguous run (each
+            // change rebroadcasts the whole queue — see QueueReorder).
+            ranges.forEach { range -> c.removeMediaItems(range.first, range.last + 1) }
+        } else {
+            // Scattered removals (a bulk delete over a shuffled queue) would
+            // blow the op budget one run at a time, so rebuild instead.
+            rebuildWithout(c, removedIndices.toHashSet(), survivors)
+        }
+        // Drop only the removed uids from the remembered pre-shuffle order:
+        // overwriting it with the current (possibly shuffled) order would turn
+        // the next shuffle-off into a no-op.
+        originalOrderUids = originalOrderUids.filterNot { it in uidSet }
+    }
+
+    /**
+     * Removes [removedIndices] by rebuilding the timeline in at most
+     * [QueueReorder.MAX_OPS] operations: anchor the playing item when it
+     * survives (playback is untouched), else the next surviving item (what
+     * auto-advance would reach), remove the rest, re-add the other survivors,
+     * and reseat the anchor.
+     */
+    private fun rebuildWithout(
+        c: MediaController,
+        removedIndices: Set<Int>,
+        survivors: List<MediaItem>,
+    ) {
+        if (survivors.isEmpty()) {
+            c.clearMediaItems()
+            return
+        }
+        val current = c.currentMediaItemIndex
+        val anchorIndex = when {
+            current in 0 until c.mediaItemCount && current !in removedIndices -> current
+            else ->
+                ((current + 1) until c.mediaItemCount).firstOrNull { it !in removedIndices }
+                    ?: (0 until c.mediaItemCount).first { it !in removedIndices }
+        }
+        val anchorId = c.getMediaItemAt(anchorIndex).mediaId
+        val targetIndex = survivors.indexOfFirst { it.mediaId == anchorId }
+        if (anchorIndex != 0) c.moveMediaItem(anchorIndex, 0)
+        c.removeMediaItems(1, c.mediaItemCount)
+        // Re-added items lose their file URI crossing the binder; the service
+        // rebuilds it from the path in the metadata extras (see applyOrder).
+        c.addMediaItems(survivors.filterIndexed { i, _ -> i != targetIndex })
+        if (targetIndex > 0) c.moveMediaItem(0, targetIndex)
     }
 
     fun moveQueueItem(fromIndex: Int, toIndex: Int) = withController { c ->

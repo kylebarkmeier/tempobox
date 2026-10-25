@@ -42,18 +42,9 @@ class SmartPlaylistEngine @Inject constructor() {
      * e.g. `(Genre is Rock OR Genre is Metal) AND Year > 1990`.
      */
     fun describe(rule: SmartRule): String = when (rule) {
-        is SmartRule.Condition -> {
-            val field = rule.field.name.lowercase().replace('_', ' ')
-                .replaceFirstChar { it.uppercase() }
-            val op = when (rule.op) {
-                com.tempobox.model.RuleOp.IS -> "is"
-                com.tempobox.model.RuleOp.IS_NOT -> "is not"
-                com.tempobox.model.RuleOp.CONTAINS -> "contains"
-                com.tempobox.model.RuleOp.LESS_THAN -> "<"
-                com.tempobox.model.RuleOp.GREATER_THAN -> ">"
-            }
-            "$field $op ${rule.value}"
-        }
+        // The enum labels are the same ones the builder shows, so the summary
+        // and the dialog can never disagree.
+        is SmartRule.Condition -> "${rule.field.label} ${rule.op.label} ${rule.value}"
         is SmartRule.AllOf -> rule.rules.joinToString(" AND ") { wrap(it) }
         is SmartRule.AnyOf -> rule.rules.joinToString(" OR ") { wrap(it) }
     }
