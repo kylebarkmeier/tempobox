@@ -248,9 +248,13 @@ See `docs/ARCHITECTURE.md` for the module graph and key design decisions, and
 
 GitHub Actions runs the pipeline (see `.github/workflows/`):
 
-- **CI** (`ci.yml`) runs on every push/PR: all unit tests, Android Lint, and a
-  debug APK build (uploaded as an artifact). Pushes to `main` additionally run
-  the instrumented Compose tests on an API 34 emulator.
+- **CI** (`ci.yml`) runs on every push/PR: all unit tests, Android Lint, a
+  debug APK build (uploaded as an artifact), and the instrumented Compose
+  tests on an API 34 emulator. The emulator job prints a per-test summary
+  (counts, each failure with its message) to the log and the job summary,
+  since Gradle itself reports nothing per test for connected tests; the
+  emulator's own ERROR lines about swiftshader color buffers and adb polling
+  during boot are host noise, not test output.
 - **Release** (`release.yml`) runs on a `v*` tag push (or manually): tests,
   builds, optionally signs, and publishes a GitHub Release with the APK and
   auto-generated notes. See [docs/RELEASING.md](docs/RELEASING.md).

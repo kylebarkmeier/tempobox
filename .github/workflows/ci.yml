@@ -113,6 +113,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Run instrumented tests
+        id: instrumented
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -122,10 +123,23 @@ jobs:
           emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: ./gradlew :app:connectedDebugAndroidTest --stacktrace
 
+      # Gradle logs nothing per test for connected tests, and the emulator
+      # floods the log with harmless host-side ERROR lines (swiftshader
+      # ColorBuffer, adb polling during boot). This step is the readable
+      # verdict: counts, each failure with its message, in the log and the
+      # job summary. It also fails a run that executed zero tests.
+      - name: Summarize instrumented test results
+        if: always()
+        run: python3 .github/scripts/android-test-summary.py app/build/outputs/androidTest-results/connected "${{ steps.instrumented.outcome }}"
+
+      # HTML report plus AGP's per-test logcat captures, which show why a
+      # Compose waitUntil timed out.
       - name: Upload instrumented test reports
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: instrumented-test-reports
-          path: app/build/reports/androidTests/
+          path: |
+            app/build/reports/androidTests/
+            app/build/outputs/androidTest-results/
           retention-days: 14
