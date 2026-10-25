@@ -44,7 +44,7 @@ Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.8
 ## Workflow
 - Never commit to main. Branch, open a PR with a descriptive title and body (the squash title becomes the commit on main and feeds auto-generated release notes), then `gh pr merge --auto --squash`. A ruleset on main enforces squash merges and required status checks.
 - Before pushing, run the unit test tasks for every module you touched. Lint and the full build are CI's job.
-- Instrumented tests run on the CI emulator: on every push to main, and on a PR when it carries the `run-emulator` label. Label any PR that adds or changes instrumented tests.
+- Instrumented tests run on the CI emulator on every PR and every push to main. They gate merges once the job is a required status check, so a PR is not done while they fail.
 - One topic per PR. Resolve conflicts by rebasing the branch; never force-push main.
 
 ## Safety

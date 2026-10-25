@@ -1,11 +1,15 @@
 package com.tempobox
 
+import android.os.Build
+import android.os.ParcelFileDescriptor
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
+import androidx.test.platform.app.InstrumentationRegistry
 import com.tempobox.database.entity.TrackEntity
 import com.tempobox.model.AudioFormat
 import com.tempobox.model.Track
 import com.tempobox.database.entity.toEntity
+import org.junit.rules.ExternalResource
 import java.io.File
 import java.io.RandomAccessFile
 
@@ -20,6 +24,23 @@ import java.io.RandomAccessFile
 object TestLibrary {
 
     const val WAIT_TIMEOUT_MS = 15_000L
+
+    /**
+     * Grants the app under test All files access. It is an appop behind
+     * `Environment.isExternalStorageManager()`, not a runtime permission, so
+     * `GrantPermissionRule` cannot grant it and the CI emulator never has it:
+     * without this, every menu entry gated on `canWriteFiles` (Edit ID3 tags,
+     * Delete permanently) renders disabled and tests that click them time out.
+     */
+    fun grantAllFilesAccess() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val pkg = instrumentation.targetContext.packageName
+        val pfd = instrumentation.uiAutomation
+            .executeShellCommand("appops set --uid $pkg MANAGE_EXTERNAL_STORAGE allow")
+        // Drain the stream: the command only reliably completes once read.
+        ParcelFileDescriptor.AutoCloseInputStream(pfd).use { it.readBytes() }
+    }
 
     /** Builds a library track row; [path] must be unique per track. */
     fun track(
@@ -92,6 +113,14 @@ object TestLibrary {
         (value and 0xFF).toByte(),
         ((value shr 8) and 0xFF).toByte(),
     )
+}
+
+/**
+ * Grants All files access before the activity rule launches the UI, so the
+ * write-gated menu entries compose enabled. Order it before the compose rule.
+ */
+class GrantAllFilesAccessRule : ExternalResource() {
+    override fun before() = TestLibrary.grantAllFilesAccess()
 }
 
 /** Waits (Compose-synchronized, no sleeps) until [text] exists in the tree. */

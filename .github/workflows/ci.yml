@@ -3,16 +3,18 @@
 # Jobs:
 #   unit-tests   — all JVM unit tests (incl. Robolectric) across every module
 #   build        — Android Lint + debug APK, uploaded as a workflow artifact
-#   instrumented — Compose UI tests on an Android emulator. Emulator boots are
-#                  slow, so PRs skip them by default; label a PR "run-emulator"
-#                  to opt in. Always runs on pushes to main and manual runs.
+#   instrumented — Compose UI tests on an Android emulator. Runs on every PR
+#                  and push to main: a post-merge-only emulator job let broken
+#                  UI flows land on main unnoticed (PR #58 did exactly that),
+#                  so the ~15 min per PR is the price of a trustworthy main.
+#                  Make it a required status check so merges wait for it.
 name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 concurrency:
@@ -89,8 +91,6 @@ jobs:
 
   instrumented:
     name: Instrumented tests (emulator)
-    # Emulator jobs take ~15 min; PRs opt in with the "run-emulator" label.
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'run-emulator')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
