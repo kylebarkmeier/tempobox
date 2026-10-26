@@ -161,26 +161,70 @@ and bumps each row's mtime so the path+mtime artwork cache key misses.
   button rebuilds the persisted queue via `onPlaybackResumption`.
 - Voice queries (Assistant play-from-search arrives as
   `requestMetadata.searchQuery`; Auto's search screen via `onSearch`) resolve
-  in `VoiceSearch`: normalized exact-then-substring matching with bucket
-  priority playlist > artist > album > genre > track title, a "shuffle" token
-  setting the user's configured shuffle flavor. An unmatched query falls back
-  to the persisted queue, else a whole-library shuffle, so voice always plays
-  something. Every query logs one line under the `PlaybackService` tag.
+  in `VoiceSearch`, which reads a query several ways and tries every reading
+  for an exact name match before any reading for a whole-word match, so a
+  loose reading never beats a name that matches as spoken ("Stand By Me"
+  beats "The Last Stand" by Megadeth; "2" finds "Song 2" but not "22"). The
+  readings, in order: as spoken with its type prefix honored ("the artist
+  X", "songs by X", "album X", "my X playlist", "the song X" search one
+  bucket), the same words in every bucket, then the plain words with filler
+  and type prefix put back ("The Album Leaf", "Songs from the Big Chair",
+  "Some Girls" are names, not instructions); each also as "X by Y" (titles
+  and albums whose artist matches Y). Bucket priority within a reading is
+  playlist > artist (album artists, then track artists, so a featured singer
+  is reachable) > album > genre > track title. A "shuffle" token sets the
+  user's configured shuffle flavor; "everything", "my music", "all my songs"
+  and the like resolve to the whole library. Each bucket loads at most once
+  per query and only when a reading reaches it, off the main thread. On the
+  session path an unmatched query falls back to the persisted queue, else a
+  whole-library shuffle, so the assistant and the car always play something.
   The assistant can only target the app by name because `MainActivity`
   declares the `MEDIA_PLAY_FROM_SEARCH` intent filter (without it, "play X on
-  TempoBox" falls back to a web search); the activity logs the dispatch and
-  forwards the query to the session via `PlayerConnection.playFromSearch`.
+  TempoBox" falls back to a web search); the activity forwards the query to
+  the session via `PlayerConnection.playFromSearch`, whose `source` argument
+  rides in the request extras; the service accepts only the app's own source
+  names from that extra, since any controller may connect.
+- Every voice request is recorded by `VoiceLog` (`core:playback`), an
+  append-only file at `no_backup/voice/commands.log` (256 KB, one rotated
+  generation `.1`, writes serialized by a mutex) that outlives logcat's buffer
+  but stays out of Android Auto Backup, since it holds transcripts: timestamp,
+  source (`dialog`, `assistant-intent`, `session`, `auto-search`), what the
+  recognizer heard plus its alternative transcriptions, the parsed command
+  (or `none`), and the real outcome, every value quoted. Each line also goes
+  to logcat under the `VoiceLog` tag, the one place voice events are logged.
+  The service writes the line for play-from-search and Auto searches;
+  `VoiceActions` writes it for in-app utterances (one line per utterance,
+  after the outcome is known), and `VoiceCommandActivity` for recognizer
+  errors, keeping any partial transcription. Pull it from a debug build with
+  `adb exec-out run-as com.tempobox.debug cat no_backup/voice/commands.log`.
+  A new voice entry point must record there too.
 - In-app voice commands need no assistant: `VoiceCommandActivity` (a transient
   dialog reachable from the Library top bar, the home-screen widget's mic
   button, and a Quick Settings tile) captures one utterance with the device's
-  `SpeechRecognizer` and parses it through `VoiceCommand`, a pure, unit-tested
-  grammar in `core:playback` ("play X" routes into `VoiceSearch`; pause / stop
-  / resume / next / previous / shuffle on-off / repeat off-all-one / volume
-  up-down map onto `PlayerConnection.execute`). Unknown utterances and
-  recognizer errors are shown with the real reason (what was heard, or the
-  mapped `SpeechRecognizer` error), never silently dropped. The dialog owns
-  the RECORD_AUDIO request; a denial switches it to the Open-settings recovery
-  path, same as the local-network permission notes.
+  `SpeechRecognizer` and hands it to `VoiceActions.handle`, which parses it
+  through `VoiceCommand`, a pure, unit-tested grammar in `core:playback`,
+  runs it on the application scope (the dialog finishes before a lookup
+  completes), logs it, and reports the outcome through a callback the dialog
+  turns into a toast. `VoiceCommand.Immediate` commands (pause / stop /
+  resume / next / previous / shuffle on-off / repeat off-all-one / volume
+  up-down) map onto `PlayerConnection.execute` and are the only ones with a
+  canned confirmation. "play X" / "shuffle X" / "put on X", "add X to the
+  queue" / "queue up X", "play X next", and "add X to playlist Y" / "add this
+  to Y" (this = the playing track, refused for a network stream or a track
+  that left the library) resolve X and Y through `VoiceSearch` in-process and
+  return the real outcome in the shared `ActionMessages` wording the tap path
+  uses too ("Added 12 tracks to queue (artist: Lamb of God)", "Nothing in the
+  library matched", "No playlist named", the auto-playlist and broken-rule
+  refusals); the in-app "play X" deliberately does not use the session's
+  always-play-something fallback, so a misheard name says so instead of
+  playing something else. The grammar rejects sentences whose object is only
+  a pronoun or filler ("queue up", "play this next") rather than searching
+  for those words, and treats "put on X" as a play request, never a playlist
+  edit. Unknown utterances and recognizer errors are shown with the real
+  reason (what was heard, or the mapped `SpeechRecognizer` error), never
+  silently dropped. The dialog owns the RECORD_AUDIO request; a denial
+  switches it to the Open-settings recovery path, same as the local-network
+  permission notes.
 - `CallGuard` (pure logic, audio-mode based, no phone permission) stops car
   stereos restarting music mid-call: start-on-connect is refused during any
   call mode, and playback that starts mid-call is paused after a recheck

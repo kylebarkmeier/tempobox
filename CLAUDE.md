@@ -14,7 +14,7 @@ Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.8
 - `core:tags`: jaudiotagger wrapper. Read/write ID3v2 / Vorbis / MP4 tags and artwork.
 - `core:playlist`: M3U/M3U8 parse and write (writes are always M3U8), smart-playlist rule engine.
 - `core:library`: scanner, file watcher, `LibraryRepository`, file delete/remove ops.
-- `core:playback`: `PlaybackService` (a `MediaLibraryService`: session + Android Auto browse tree), `PlayerConnection`, queue reordering, shuffle engines, Bluetooth glue, voice resolution (`VoiceSearch` query matching, `VoiceCommand` grammar).
+- `core:playback`: `PlaybackService` (a `MediaLibraryService`: session + Android Auto browse tree), `PlayerConnection`, queue reordering, shuffle engines, Bluetooth glue, voice (`VoiceCommand` grammar, `VoiceSearch` matching, `VoiceActions` execution with honest outcomes, `VoiceLog` on-device request log), `ActionMessages` (queue/playlist toast wording shared by tap and voice).
 - `core:remoteplay`: network play (DLNA/UPnP). SSDP discovery, AVTransport/RenderingControl SOAP control of renderers, ContentDirectory browsing of media servers, token-scoped HTTP stream server.
 - `core:scrobble`: SLS broadcasts handing played tracks to the user's scrobbler app.
 - `core:artwork`: Discogs artist images and album-art collage fallback.
@@ -40,6 +40,7 @@ Package root: `com.tempobox`. minSdk 26, targetSdk 35, compileSdk 37. Gradle 9.8
 - The scanner never deletes rows it could not verify: an unreadable location or failed walk skips the removal phase and is counted in `ScanState.Done`.
 - Log once per cause where a site runs per item or per emission (seen-sets like `JAudioTaggerIO.loggedArtworkFailures`); spam hides signal.
 - Grey out UI whose feature cannot work without an ungranted permission (disabled, one-line reason, tap action to grant) via `rememberAppPermissions`; keep the failure snackbar as backstop.
+- Every voice request (in-app dialog, assistant intent, session search, Auto search) records one `VoiceLog` line: source, heard text with alternatives, parsed command or `none`, real outcome. A new voice entry point or command must record there too (`VoiceActions.handle` does it for in-app commands). The file lives in `noBackupFilesDir` because it holds transcripts. Pull from a debug build: `adb exec-out run-as com.tempobox.debug cat no_backup/voice/commands.log`.
 
 ## Workflow
 - Never commit to main. Branch, open a PR with a descriptive title and body (the squash title becomes the commit on main and feeds auto-generated release notes), then `gh pr merge --auto --squash`. A ruleset on main enforces squash merges and required status checks.

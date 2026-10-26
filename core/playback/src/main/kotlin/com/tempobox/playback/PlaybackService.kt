@@ -95,6 +95,7 @@ class PlaybackService : MediaLibraryService() {
     @Inject lateinit var tagReader: TagReader
     @Inject lateinit var browseTree: LibraryBrowseTree
     @Inject lateinit var voiceSearch: VoiceSearch
+    @Inject lateinit var voiceLog: VoiceLog
     @Inject lateinit var shuffleEngine: ShuffleEngine
     @Inject lateinit var remotePlay: RemotePlayController
     @Inject @IoDispatcher lateinit var ioDispatcher: CoroutineDispatcher
@@ -342,9 +343,16 @@ class PlaybackService : MediaLibraryService() {
             // Assistant / Gemini "play X on TempoBox" arrives as one item whose
             // request metadata carries the recognized text (Media3's mapping of
             // the legacy playFromSearch).
-            val searchQuery = mediaItems.singleOrNull()?.requestMetadata?.searchQuery
+            val request = mediaItems.singleOrNull()?.requestMetadata
+            val searchQuery = request?.searchQuery
             if (searchQuery != null) {
-                return scope.loggedFuture(TAG, "voiceQueue($searchQuery)") { voiceQueue(searchQuery) }
+                // Any controller may connect, so the extra is trusted only
+                // when it names one of the app's own sources.
+                val source = request.extras?.getString(VoiceLog.EXTRA_SOURCE)
+                    ?.takeIf { it in VoiceLog.KNOWN_SOURCES } ?: VoiceLog.SOURCE_SESSION
+                return scope.loggedFuture(TAG, "voiceQueue($searchQuery)") {
+                    voiceQueue(searchQuery, source)
+                }
             }
 
             val node = mediaItems.singleOrNull()?.let { BrowseIds.decode(it.mediaId) }
@@ -393,7 +401,10 @@ class PlaybackService : MediaLibraryService() {
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<Void>> = scope.loggedFuture(TAG, "onSearch($query)") {
             val resolution = voiceSearch.resolve(query)
-            Log.i(TAG, "onSearch '$query' -> ${resolution?.description ?: "no match"}")
+            voiceLog.record(
+                VoiceLog.SOURCE_AUTO_SEARCH, query, "Search",
+                resolution?.let { "${it.tracks.size} results (${it.description})" } ?: "no match",
+            )
             session.notifySearchResultChanged(
                 browser, query, resolution?.tracks?.size ?: 0, params,
             )
@@ -541,13 +552,24 @@ class PlaybackService : MediaLibraryService() {
      * flavor when asked), or, for an empty/unmatched query, the persisted
      * queue, or the whole library shuffled. Voice must always play something.
      */
-    private suspend fun voiceQueue(query: String): MediaSession.MediaItemsWithStartPosition {
+    private suspend fun voiceQueue(
+        query: String,
+        source: String,
+    ): MediaSession.MediaItemsWithStartPosition {
         val resolution = voiceSearch.resolve(query)
-        Log.i(TAG, "Voice query '$query' -> ${resolution?.description ?: "no match, falling back"}")
         if (resolution == null) {
-            resumptionQueue()?.let { return it }
+            resumptionQueue()?.let {
+                voiceLog.record(source, query, "PlaySearch", "no match; resumed the saved queue")
+                return it
+            }
             val all = libraryRepository.observeTracks().first()
-            if (all.isEmpty()) throw UnsupportedOperationException("library is empty")
+            if (all.isEmpty()) {
+                voiceLog.record(source, query, "PlaySearch", "no match; the library is empty")
+                throw UnsupportedOperationException("library is empty")
+            }
+            voiceLog.record(
+                source, query, "PlaySearch", "no match; shuffled the whole library (${all.size} tracks)",
+            )
             return MediaSession.MediaItemsWithStartPosition(
                 orderForVoice(all, shuffle = true)
                     .map { MediaItems.toMediaItem(it, uid = nextServiceUid()) },
@@ -555,6 +577,11 @@ class PlaybackService : MediaLibraryService() {
                 0,
             )
         }
+        voiceLog.record(
+            source, query, "PlaySearch",
+            "playing ${resolution.tracks.size} tracks (${resolution.description}" +
+                (if (resolution.shuffle) ", shuffled)" else ")"),
+        )
         val ordered = orderForVoice(resolution.tracks, resolution.shuffle)
         return MediaSession.MediaItemsWithStartPosition(
             ordered.map { MediaItems.toMediaItem(it, uid = nextServiceUid()) },

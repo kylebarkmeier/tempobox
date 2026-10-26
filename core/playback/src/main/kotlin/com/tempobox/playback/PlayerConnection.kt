@@ -240,16 +240,23 @@ class PlayerConnection internal constructor(
      * Hands a spoken query to the service's voice resolver: the same
      * play-from-search path Assistant drives through the session
      * (`PlaybackService.onSetMediaItems` sees `requestMetadata.searchQuery`),
-     * here reached from the MEDIA_PLAY_FROM_SEARCH activity intent. The
-     * service always plays something; an empty or unmatched query falls back
-     * to the persisted queue, else a library shuffle.
+     * here reached from the MEDIA_PLAY_FROM_SEARCH activity intent. [source]
+     * (a [VoiceLog] constant) rides along in the request extras so the
+     * service's log line says where the query came from. The service always
+     * plays something; an empty or unmatched query falls back to the
+     * persisted queue, else a library shuffle. The in-app dialog does not
+     * use this path: [VoiceActions] resolves in-process so it can report a
+     * miss instead.
      */
-    fun playFromSearch(query: String) {
+    fun playFromSearch(query: String, source: String) {
         scope.launch {
             val controller = controller()
             val item = MediaItem.Builder()
                 .setRequestMetadata(
-                    MediaItem.RequestMetadata.Builder().setSearchQuery(query).build(),
+                    MediaItem.RequestMetadata.Builder()
+                        .setSearchQuery(query)
+                        .setExtras(Bundle().apply { putString(VoiceLog.EXTRA_SOURCE, source) })
+                        .build(),
                 )
                 .build()
             controller.setMediaItems(listOf(item))
@@ -303,10 +310,13 @@ class PlayerConnection internal constructor(
         }
     }
 
-    /** Inserts [tracks] right after the current one. */
-    fun playNext(tracks: List<Track>) {
+    /**
+     * Inserts [tracks] right after the current one. Suspends until the
+     * insert is issued, so a caller's "Playing N next" is not a guess.
+     */
+    suspend fun playNext(tracks: List<Track>) {
         if (tracks.isEmpty()) return
-        scope.launch {
+        withContext(Dispatchers.Main.immediate) {
             val controller = controller()
             val items = tracks.map { newItem(it) }
             val at = if (controller.mediaItemCount == 0) 0 else controller.currentMediaItemIndex + 1
@@ -485,13 +495,12 @@ class PlayerConnection internal constructor(
     // ------------------------------------------------------------------ voice commands
 
     /**
-     * Executes a parsed in-app [VoiceCommand] (VoiceCommandActivity). Volume
-     * goes to the active renderer when casting, else to the music stream with
-     * the system volume HUD so the change is visible.
+     * Executes a parsed in-app [VoiceCommand.Immediate] (via [VoiceActions]).
+     * Volume goes to the active renderer when casting, else to the music
+     * stream with the system volume HUD so the change is visible.
      */
-    fun execute(command: VoiceCommand) {
+    fun execute(command: VoiceCommand.Immediate) {
         when (command) {
-            is VoiceCommand.PlaySearch -> playFromSearch(command.query)
             VoiceCommand.Resume -> resume()
             VoiceCommand.Pause -> pause()
             VoiceCommand.Stop -> stop()

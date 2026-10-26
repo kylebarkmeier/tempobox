@@ -18,6 +18,31 @@ private val COMBINING_MARKS = Regex("\\p{Mn}+")
 fun String.searchNormalized(): String =
     COMBINING_MARKS.replace(Normalizer.normalize(this, Normalizer.Form.NFD), "").lowercase()
 
+private val NON_WORD = Regex("[^\\p{L}\\p{N}]")
+
+/**
+ * Keyword form for spoken-command matching: [searchNormalized] with every
+ * character that is not a letter or digit removed, so "don't" and "dont",
+ * "AC/DC" and "acdc" compare equal.
+ */
+fun String.searchKeyword(): String = NON_WORD.replace(searchNormalized(), "")
+
+/**
+ * A matcher for [phrase] as whole words: "trip" is found in "Road Trip" but
+ * not in "Triptych", "2" in "Song 2" but not in "22". It takes text already
+ * passed through [searchNormalized], so one matcher can scan a whole list of
+ * normalized keys without recompiling. A blank phrase matches nothing.
+ */
+fun wordPhraseMatcher(phrase: String): (String) -> Boolean {
+    val wanted = phrase.trim().searchNormalized()
+    if (wanted.isEmpty()) return { false }
+    val pattern = Regex("(?<![\\p{L}\\p{N}])" + Regex.escape(wanted) + "(?![\\p{L}\\p{N}])")
+    return { normalized -> pattern.containsMatchIn(normalized) }
+}
+
+/** True when [phrase] occurs in this text as whole words after normalization; see [wordPhraseMatcher]. */
+fun String.containsWordPhrase(phrase: String): Boolean = wordPhraseMatcher(phrase)(searchNormalized())
+
 /** True when any of [fields] contains [query] after normalization. */
 fun searchMatches(query: String, vararg fields: String): Boolean {
     val normalized = query.trim().searchNormalized()
