@@ -30,6 +30,7 @@ import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.tempobox.common.IoDispatcher
+import com.tempobox.common.resultOf
 import com.tempobox.library.LibraryRemovals
 import com.tempobox.library.LibraryRepository
 import com.tempobox.model.MediaButton
@@ -58,6 +59,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -347,9 +349,12 @@ class PlaybackService : MediaLibraryService() {
             val searchQuery = request?.searchQuery
             if (searchQuery != null) {
                 // Any controller may connect, so the extra is trusted only
-                // when it names one of the app's own sources.
+                // when it names one of the app's own sources; anything else
+                // (Android Auto's own voice requests land here too) is logged
+                // as the session plus the controller's package.
                 val source = request.extras?.getString(VoiceLog.EXTRA_SOURCE)
-                    ?.takeIf { it in VoiceLog.KNOWN_SOURCES } ?: VoiceLog.SOURCE_SESSION
+                    ?.takeIf { it in VoiceLog.KNOWN_SOURCES }
+                    ?: VoiceLog.sessionSource(controller.packageName)
                 return scope.loggedFuture(TAG, "voiceQueue($searchQuery)") {
                     voiceQueue(searchQuery, source)
                 }
@@ -400,11 +405,17 @@ class PlaybackService : MediaLibraryService() {
             query: String,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<Void>> = scope.loggedFuture(TAG, "onSearch($query)") {
-            val resolution = voiceSearch.resolve(query)
+            // One VoiceLog line per search, a failed lookup included.
+            val result = resultOf { voiceSearch.resolve(query) }
             voiceLog.record(
-                VoiceLog.SOURCE_AUTO_SEARCH, query, "Search",
-                resolution?.let { "${it.tracks.size} results (${it.description})" } ?: "no match",
+                VoiceLog.SOURCE_AUTO_SEARCH, query, "Search(query=$query)",
+                result.fold(
+                    { it?.let { r -> "${r.tracks.size} results (${r.description})" } ?: "no match" },
+                    { e -> "failed: ${e.message ?: e.javaClass.simpleName}" },
+                ),
             )
+            val resolution = result.getOrThrow()
+            lastSearch = query to resolution
             session.notifySearchResultChanged(
                 browser, query, resolution?.tracks?.size ?: 0, params,
             )
@@ -420,8 +431,12 @@ class PlaybackService : MediaLibraryService() {
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> =
             scope.loggedFuture(TAG, "onGetSearchResult($query)") {
-                val tracks = voiceSearch.resolve(query)?.tracks.orEmpty()
-                val items = browseTree.searchResultItems(tracks).page(page, pageSize)
+                // The browser fetches what onSearch just announced (a miss
+                // included); resolve again only for a query that did not
+                // come through onSearch.
+                val announced = lastSearch?.takeIf { it.first == query }
+                val resolution = if (announced != null) announced.second else voiceSearch.resolve(query)
+                val items = browseTree.searchResultItems(resolution?.tracks.orEmpty()).page(page, pageSize)
                 LibraryResult.ofItemList(ImmutableList.copyOf(items), params)
             }
 
@@ -547,44 +562,50 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    /** The last Auto search, so `onGetSearchResult` serves what `onSearch` announced instead of resolving twice. */
+    private var lastSearch: Pair<String, VoiceSearch.Resolution?>? = null
+
     /**
      * Queue for a voice query: the resolved match (shuffled with the user's
      * flavor when asked), or, for an empty/unmatched query, the persisted
      * queue, or the whole library shuffled. Voice must always play something.
+     * Exactly one VoiceLog line per request, a failed lookup included; the
+     * command column carries the same shape the in-app path writes.
      */
     private suspend fun voiceQueue(
         query: String,
         source: String,
     ): MediaSession.MediaItemsWithStartPosition {
+        val result = resultOf { buildVoiceQueue(query) }
+        voiceLog.record(
+            source, query, VoiceCommand.PlaySearch(query).toString(),
+            result.fold({ it.outcome }, { e -> "failed: ${e.message ?: e.javaClass.simpleName}" }),
+        )
+        return result.getOrThrow().items
+    }
+
+    private class VoiceQueue(val items: MediaSession.MediaItemsWithStartPosition, val outcome: String)
+
+    private suspend fun buildVoiceQueue(query: String): VoiceQueue {
         val resolution = voiceSearch.resolve(query)
         if (resolution == null) {
-            resumptionQueue()?.let {
-                voiceLog.record(source, query, "PlaySearch", "no match; resumed the saved queue")
-                return it
-            }
-            val all = libraryRepository.observeTracks().first()
-            if (all.isEmpty()) {
-                voiceLog.record(source, query, "PlaySearch", "no match; the library is empty")
-                throw UnsupportedOperationException("library is empty")
-            }
-            voiceLog.record(
-                source, query, "PlaySearch", "no match; shuffled the whole library (${all.size} tracks)",
-            )
-            return MediaSession.MediaItemsWithStartPosition(
-                orderForVoice(all, shuffle = true)
-                    .map { MediaItems.toMediaItem(it, uid = nextServiceUid()) },
-                0,
-                0,
-            )
+            resumptionQueue()?.let { return VoiceQueue(it, "no match; resumed the saved queue") }
+            val all = voiceSearch.wholeLibrary(shuffle = true)
+                ?: throw UnsupportedOperationException("no match; the library is empty")
+            return VoiceQueue(queueOf(all), "no match; shuffled the whole library (${all.tracks.size} tracks)")
         }
-        voiceLog.record(
-            source, query, "PlaySearch",
+        return VoiceQueue(
+            queueOf(resolution),
             "playing ${resolution.tracks.size} tracks (${resolution.description}" +
                 (if (resolution.shuffle) ", shuffled)" else ")"),
         )
-        val ordered = orderForVoice(resolution.tracks, resolution.shuffle)
-        return MediaSession.MediaItemsWithStartPosition(
-            ordered.map { MediaItems.toMediaItem(it, uid = nextServiceUid()) },
+    }
+
+    /** Builds the items off the main thread: a whole-library request is thousands of them. */
+    private suspend fun queueOf(resolution: VoiceSearch.Resolution) = withContext(Dispatchers.Default) {
+        MediaSession.MediaItemsWithStartPosition(
+            orderForVoice(resolution.tracks, resolution.shuffle)
+                .map { MediaItems.toMediaItem(it, uid = nextServiceUid()) },
             0,
             0,
         )

@@ -209,7 +209,7 @@ class PlaylistRepositoryTest {
         )
         // Membership is rule-driven; a manual add is refused (reachable from
         // the UI when a broken rule makes the playlist look static).
-        assertThat(repository.addToPlaylist(smart.id, listOf(t.id))).isFalse()
+        assertThat(repository.addToPlaylist(smart.id, listOf(t.id))).isEqualTo(AddToPlaylistResult.SMART_PLAYLIST)
         assertThat(db.playlistDao().getPlaylistTracks(smart.id)).isEmpty()
     }
 
@@ -231,7 +231,7 @@ class PlaylistRepositoryTest {
         assertThat(playlist.isSmart).isFalse()
 
         // Refused, not crashed, and refreshSmartExports leaves it alone.
-        assertThat(repository.addToPlaylist(id, listOf(t.id))).isFalse()
+        assertThat(repository.addToPlaylist(id, listOf(t.id))).isEqualTo(AddToPlaylistResult.SMART_PLAYLIST)
         repository.refreshSmartExports()
         assertThat(repository.getPlaylist(id)!!.ruleBroken).isTrue()
     }

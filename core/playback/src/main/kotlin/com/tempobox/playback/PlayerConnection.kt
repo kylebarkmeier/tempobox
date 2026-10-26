@@ -221,11 +221,13 @@ class PlayerConnection internal constructor(
 
     /**
      * Replaces the queue with [tracks] and starts playing at [startIndex]
-     * (the library "Play" buttons). Turns shuffle off — the chosen order wins.
+     * (the library "Play" buttons). Turns shuffle off: the chosen order wins.
+     * Suspends until the controller has the new queue, so a caller's
+     * "Playing N tracks" is not a guess and a failure reaches the caller.
      */
-    fun playTracks(tracks: List<Track>, startIndex: Int = 0) {
+    suspend fun playTracks(tracks: List<Track>, startIndex: Int = 0) {
         if (tracks.isEmpty()) return
-        scope.launch {
+        withContext(Dispatchers.Main.immediate) {
             val controller = controller()
             val items = tracks.map { newItem(it) }
             originalOrderUids = items.map { it.mediaId.toLong() }
@@ -267,11 +269,12 @@ class PlayerConnection internal constructor(
 
     /**
      * Replaces the queue with [tracks] in shuffled order using the user's
-     * configured shuffle flavor (the "Shuffle" menu actions).
+     * configured shuffle flavor (the "Shuffle" menu actions). Suspends like
+     * [playTracks].
      */
-    fun playShuffled(tracks: List<Track>) {
+    suspend fun playShuffled(tracks: List<Track>) {
         if (tracks.isEmpty()) return
-        scope.launch {
+        withContext(Dispatchers.Main.immediate) {
             val mode = defaultShuffleMode(settingsRepository.settings.first().shuffle)
             val order = shuffleEngine.order(tracks, mode)
             val controller = controller()
@@ -312,17 +315,27 @@ class PlayerConnection internal constructor(
 
     /**
      * Inserts [tracks] right after the current one. Suspends until the
-     * insert is issued, so a caller's "Playing N next" is not a guess.
+     * insert is issued, so a caller's "Playing N next" is not a guess. With
+     * nothing queued there is no "next": the tracks become the queue and
+     * start, so the same words still hold.
      */
     suspend fun playNext(tracks: List<Track>) {
         if (tracks.isEmpty()) return
         withContext(Dispatchers.Main.immediate) {
             val controller = controller()
             val items = tracks.map { newItem(it) }
-            val at = if (controller.mediaItemCount == 0) 0 else controller.currentMediaItemIndex + 1
-            controller.addMediaItems(at, items)
-            originalOrderUids = currentUids(controller) // manual edit redefines the order
-            if (controller.playbackState == Player.STATE_IDLE) controller.prepare()
+            if (controller.mediaItemCount == 0) {
+                // Same as playTracks: the given order is the order, shuffle off.
+                originalOrderUids = items.map { it.mediaId.toLong() }
+                _shuffleMode.value = ShuffleMode.OFF
+                controller.setMediaItems(items, 0, 0)
+                controller.prepare()
+                controller.play()
+            } else {
+                controller.addMediaItems(controller.currentMediaItemIndex + 1, items)
+                originalOrderUids = currentUids(controller) // manual edit redefines the order
+                if (controller.playbackState == Player.STATE_IDLE) controller.prepare()
+            }
         }
     }
 
@@ -437,12 +450,17 @@ class PlayerConnection internal constructor(
      * (timeline moves only). OFF restores the pre-shuffle order.
      */
     fun setShuffleMode(mode: ShuffleMode) {
-        scope.launch {
+        scope.launch { applyShuffleMode(mode) }
+    }
+
+    /** [setShuffleMode]'s body, awaitable by callers that report the result (voice). */
+    private suspend fun applyShuffleMode(mode: ShuffleMode) {
+        withContext(Dispatchers.Main.immediate) {
             val controller = controller()
             if (controller.mediaItemCount == 0) {
                 _shuffleMode.value = mode
                 refresh(controller) // keep state.shuffleMode (UI + widget) in sync
-                return@launch
+                return@withContext
             }
             val currentUid = controller.currentMediaItem?.mediaId?.toLongOrNull()
             val targetOrder: List<Long> = if (mode == ShuffleMode.OFF) {
@@ -495,23 +513,105 @@ class PlayerConnection internal constructor(
     // ------------------------------------------------------------------ voice commands
 
     /**
-     * Executes a parsed in-app [VoiceCommand.Immediate] (via [VoiceActions]).
+     * Executes a parsed in-app [VoiceCommand.Immediate] (via [VoiceActions])
+     * and returns what happened: the command's confirmation, or why it had
+     * no effect ("Nothing to resume: the queue is empty"), so the toast and
+     * the voice log never claim a transport change that did not occur.
      * Volume goes to the active renderer when casting, else to the music
      * stream with the system volume HUD so the change is visible.
      */
-    fun execute(command: VoiceCommand.Immediate) {
-        when (command) {
-            VoiceCommand.Resume -> resume()
-            VoiceCommand.Pause -> pause()
-            VoiceCommand.Stop -> stop()
-            VoiceCommand.Next -> next()
-            VoiceCommand.Previous -> previous()
-            is VoiceCommand.SetShuffle -> setShuffleEnabled(command.on)
-            is VoiceCommand.SetRepeat -> setRepeatMode(command.mode)
-            VoiceCommand.VolumeUp -> adjustVolume(up = true)
-            VoiceCommand.VolumeDown -> adjustVolume(up = false)
+    suspend fun execute(command: VoiceCommand.Immediate): String = when (command) {
+        VoiceCommand.Resume -> if (remotePlay.state.value.active) {
+            remotePlay.play()
+            command.confirmation()
+        } else {
+            onController { c ->
+                if (c.mediaItemCount == 0) {
+                    "Nothing to resume: the queue is empty"
+                } else {
+                    if (c.playbackState == Player.STATE_IDLE) c.prepare()
+                    c.play()
+                    command.confirmation()
+                }
+            }
+        }
+
+        VoiceCommand.Pause -> if (remotePlay.state.value.active) {
+            remotePlay.pause()
+            command.confirmation()
+        } else {
+            onController { c ->
+                when {
+                    c.mediaItemCount == 0 -> "Nothing is playing"
+                    !c.playWhenReady -> "Already paused"
+                    else -> {
+                        c.pause()
+                        command.confirmation()
+                    }
+                }
+            }
+        }
+
+        VoiceCommand.Stop -> onController { c ->
+            c.stop()
+            command.confirmation()
+        }
+
+        // next/previous move the local timeline even while casting; see next().
+        VoiceCommand.Next -> onController { c ->
+            when {
+                c.mediaItemCount == 0 -> "The queue is empty"
+                !c.hasNextMediaItem() -> "Already at the last track"
+                else -> {
+                    c.seekToNextMediaItem()
+                    command.confirmation()
+                }
+            }
+        }
+
+        VoiceCommand.Previous -> onController { c ->
+            when {
+                c.mediaItemCount == 0 -> "The queue is empty"
+                !c.hasPreviousMediaItem() -> "Already at the first track"
+                else -> {
+                    c.seekToPreviousMediaItem()
+                    command.confirmation()
+                }
+            }
+        }
+
+        is VoiceCommand.SetShuffle -> {
+            applyShuffleMode(
+                if (command.on) defaultShuffleMode(settingsRepository.settings.first().shuffle)
+                else ShuffleMode.OFF,
+            )
+            command.confirmation()
+        }
+
+        is VoiceCommand.SetRepeat -> onController { c ->
+            c.repeatMode = command.mode.toPlayerRepeatMode()
+            command.confirmation()
+        }
+
+        VoiceCommand.VolumeUp -> {
+            adjustVolume(up = true)
+            command.confirmation()
+        }
+
+        VoiceCommand.VolumeDown -> {
+            adjustVolume(up = false)
+            command.confirmation()
         }
     }
+
+    /** [withController] for callers that need the answer: runs on the main thread and publishes the state after. */
+    private suspend fun <T> onController(block: (MediaController) -> T): T =
+        withContext(Dispatchers.Main.immediate) {
+            val c = controller()
+            val result = block(c)
+            refresh(c)
+            result
+        }
 
     private fun adjustVolume(up: Boolean) {
         val remote = remotePlay.state.value
@@ -722,11 +822,13 @@ class PlayerConnection internal constructor(
     }
 
     fun setRepeatMode(mode: RepeatMode) = withController { c ->
-        c.repeatMode = when (mode) {
-            RepeatMode.OFF -> Player.REPEAT_MODE_OFF
-            RepeatMode.ALL -> Player.REPEAT_MODE_ALL
-            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
-        }
+        c.repeatMode = mode.toPlayerRepeatMode()
+    }
+
+    private fun RepeatMode.toPlayerRepeatMode(): Int = when (this) {
+        RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+        RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+        RepeatMode.ONE -> Player.REPEAT_MODE_ONE
     }
 
     /** Cycles OFF → ALL → ONE → OFF (repeat button). */

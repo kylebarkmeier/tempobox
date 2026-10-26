@@ -172,30 +172,47 @@ and bumps each row's mtime so the path+mtime artwork cache key misses.
   "Some Girls" are names, not instructions); each also as "X by Y" (titles
   and albums whose artist matches Y). Bucket priority within a reading is
   playlist > artist (album artists, then track artists, so a featured singer
-  is reachable) > album > genre > track title. A "shuffle" token sets the
-  user's configured shuffle flavor; "everything", "my music", "all my songs"
-  and the like resolve to the whole library. Each bucket loads at most once
-  per query and only when a reading reaches it, off the main thread. On the
-  session path an unmatched query falls back to the persisted queue, else a
-  whole-library shuffle, so the assistant and the car always play something.
-  The assistant can only target the app by name because `MainActivity`
-  declares the `MEDIA_PLAY_FROM_SEARCH` intent filter (without it, "play X on
-  TempoBox" falls back to a web search); the activity forwards the query to
-  the session via `PlayerConnection.playFromSearch`, whose `source` argument
-  rides in the request extras; the service accepts only the app's own source
-  names from that extra, since any controller may connect.
+  is reachable) > album > genre > track title. Names compare in their
+  `searchKeywords` form (letters and digits only), so "Mr Brightside",
+  "ACDC" and a straight apostrophe find "Mr. Brightside", "AC/DC" and a
+  curly-quoted tag; a lone article or filler word never whole-word matches
+  ("my" does not play "My Favorites"). A "shuffle" token sets the user's
+  configured shuffle flavor; "everything", "my music", "all my songs" and the
+  like resolve to the whole library in library order, while vague requests
+  ("something", "some music") resolve to it shuffled; a playlist or artist
+  literally named one of those phrases still wins by its exact name. Each
+  bucket loads at most once per query and only when a reading reaches it,
+  off the main thread (the track bucket and the shuffled whole library use
+  the unsorted one-shot `getTracks`; track artists come from a names-only
+  query). On the session path an unmatched query falls back to the persisted
+  queue, else a whole-library shuffle, so the assistant and the car always
+  play something. The assistant can only target the app by name because
+  `MainActivity` declares the `MEDIA_PLAY_FROM_SEARCH` intent filter (without
+  it, "play X on TempoBox" falls back to a web search); the activity forwards
+  the query once per launch (not again on a rotation) to the session via
+  `PlayerConnection.playFromSearch`, whose `source` argument rides in the
+  request extras; the service accepts only the app's own source names from
+  that extra, since any controller may connect, and logs any other
+  controller's query (Android Auto's own voice requests included) as
+  `session:<package>`. Auto's search screen resolves once: `onGetSearchResult`
+  serves what `onSearch` announced.
 - Every voice request is recorded by `VoiceLog` (`core:playback`), an
   append-only file at `no_backup/voice/commands.log` (256 KB, one rotated
-  generation `.1`, writes serialized by a mutex) that outlives logcat's buffer
-  but stays out of Android Auto Backup, since it holds transcripts: timestamp,
-  source (`dialog`, `assistant-intent`, `session`, `auto-search`), what the
+  generation `.1`, one writer coroutine draining a channel so lines land in
+  record order) that outlives logcat's buffer but stays out of Android Auto
+  Backup, since it holds transcripts: timestamp, source (`dialog`,
+  `assistant-intent`, `session:<package>`, `auto-search`), what the
   recognizer heard plus its alternative transcriptions, the parsed command
-  (or `none`), and the real outcome, every value quoted. Each line also goes
-  to logcat under the `VoiceLog` tag, the one place voice events are logged.
-  The service writes the line for play-from-search and Auto searches;
-  `VoiceActions` writes it for in-app utterances (one line per utterance,
-  after the outcome is known), and `VoiceCommandActivity` for recognizer
-  errors, keeping any partial transcription. Pull it from a debug build with
+  (or `none`; a play request is `PlaySearch(query=...)` from every source,
+  the Auto search screen `Search(query=...)`), and
+  the real outcome, every value quoted. Each line also goes to logcat under
+  the `VoiceLog` tag, the tag to filter on for voice requests (a failure
+  inside the code that handled one still logs under that code's own tag).
+  The service writes the line for play-from-search and Auto searches, a
+  failed lookup included (`outcome="failed: ..."`); `VoiceActions` writes it
+  for in-app utterances (one line per utterance, after the outcome is
+  known), and `VoiceCommandActivity` for recognizer errors, keeping any
+  partial transcription. Pull it from a debug build with
   `adb exec-out run-as com.tempobox.debug cat no_backup/voice/commands.log`.
   A new voice entry point must record there too.
 - In-app voice commands need no assistant: `VoiceCommandActivity` (a transient
@@ -203,23 +220,32 @@ and bumps each row's mtime so the path+mtime artwork cache key misses.
   button, and a Quick Settings tile) captures one utterance with the device's
   `SpeechRecognizer` and hands it to `VoiceActions.handle`, which parses it
   through `VoiceCommand`, a pure, unit-tested grammar in `core:playback`,
-  runs it on the application scope (the dialog finishes before a lookup
-  completes), logs it, and reports the outcome through a callback the dialog
-  turns into a toast. `VoiceCommand.Immediate` commands (pause / stop /
-  resume / next / previous / shuffle on-off / repeat off-all-one / volume
-  up-down) map onto `PlayerConnection.execute` and are the only ones with a
-  canned confirmation. "play X" / "shuffle X" / "put on X", "add X to the
-  queue" / "queue up X", "play X next", and "add X to playlist Y" / "add this
-  to Y" (this = the playing track, refused for a network stream or a track
-  that left the library) resolve X and Y through `VoiceSearch` in-process and
-  return the real outcome in the shared `ActionMessages` wording the tap path
-  uses too ("Added 12 tracks to queue (artist: Lamb of God)", "Nothing in the
-  library matched", "No playlist named", the auto-playlist and broken-rule
-  refusals); the in-app "play X" deliberately does not use the session's
-  always-play-something fallback, so a misheard name says so instead of
-  playing something else. The grammar rejects sentences whose object is only
-  a pronoun or filler ("queue up", "play this next") rather than searching
-  for those words, and treats "put on X" as a play request, never a playlist
+  runs it on the application scope, logs it, and reports the outcome through
+  a callback; the dialog shows "Working…" meanwhile and then the outcome
+  itself for a moment before closing (a text toast is cut to two lines on
+  Android 12+, which is where the reason would go; a toast is only the
+  fallback when the dialog was dismissed first). `VoiceCommand.Immediate`
+  commands (pause / stop / resume / next / previous / shuffle on-off / repeat
+  off-all-one / volume up-down) map onto `PlayerConnection.execute`, which
+  awaits the controller and answers with the confirmation or with why
+  nothing changed ("Nothing to resume: the queue is empty", "Already at the
+  last track"). "play X" / "shuffle X" / "put on X", "add X to the queue" /
+  "queue up X", "play X next", and "add X to playlist Y" / "add this to Y"
+  (this = the playing track, refused for a network stream or a track that
+  left the library) resolve X and Y through `VoiceSearch` in-process, await
+  the player (`playTracks`, `playShuffled`, `playNext` and `addToQueue` all
+  suspend until the controller has the change; `playNext` on an empty queue
+  starts playback, so "Playing N next" holds) and return the real outcome
+  in the shared `ActionMessages` wording the tap path uses too ("Added 12
+  tracks to queue (artist: Lamb of God)", "Nothing in the library matched",
+  "No playlist named", the auto-playlist, broken-rule and playlist-gone
+  refusals, which `PlaylistRepository.addToPlaylist` distinguishes with an
+  `AddToPlaylistResult`); the in-app "play X" deliberately does not use the
+  session's always-play-something fallback, so a misheard name says so
+  instead of playing something else. The grammar rejects sentences whose
+  object is only a pronoun or filler ("queue up", "play this next", "play
+  my") rather than searching for those words, and treats "put on X" as a
+  play request whatever X contains ("put on Born to Run"), never a playlist
   edit. Unknown utterances and recognizer errors are shown with the real
   reason (what was heard, or the mapped `SpeechRecognizer` error), never
   silently dropped. The dialog owns the RECORD_AUDIO request; a denial

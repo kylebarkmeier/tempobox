@@ -109,10 +109,6 @@ class MediaScannerTest {
 
     /**
      * Collects every [LibraryRemovals.vanished] batch emitted from now on.
-     * Shares the test scheduler so delivery is synchronous with the emit; a
-     * collector on its own scheduler can silently miss emissions.
-     */
-    /**
      * Subscribes before returning (undispatched start) and collects on the
      * test scheduler, so an emission from a Room thread is appended on the
      * test thread before the test resumes: an unconfined collector appended

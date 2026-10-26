@@ -1,6 +1,7 @@
 package com.tempobox.ui.library
 
 import com.google.common.truth.Truth.assertThat
+import com.tempobox.library.AddToPlaylistResult
 import com.tempobox.library.LibraryRepository
 import com.tempobox.library.PlaylistRepository
 import com.tempobox.model.Genre
@@ -80,7 +81,7 @@ class LibraryActionsViewModelTest {
     @Test
     fun `play on a track overwrites the queue with that track`() {
         viewModel.play(LibraryItem.TrackItem(track))
-        verify { player.playTracks(listOf(track), 0) }
+        coVerify { player.playTracks(listOf(track), 0) }
     }
 
     @Test
@@ -89,13 +90,13 @@ class LibraryActionsViewModelTest {
         coEvery { libraryRepository.observeGenreTracks("Rock") } returns flowOf(genreTracks)
 
         viewModel.play(LibraryItem.GenreItem(Genre("Rock", trackCount = 2, albumCount = 1)))
-        verify { player.playTracks(genreTracks, 0) }
+        coVerify { player.playTracks(genreTracks, 0) }
     }
 
     @Test
     fun `shuffle delegates to playShuffled`() {
         viewModel.shuffle(LibraryItem.TrackItem(track))
-        verify { player.playShuffled(listOf(track)) }
+        coVerify { player.playShuffled(listOf(track)) }
     }
 
     @Test
@@ -257,12 +258,22 @@ class LibraryActionsViewModelTest {
 
     @Test
     fun `a refused playlist add is reported, not claimed as success`() {
-        coEvery { playlistRepository.addToPlaylist(5L, listOf(1L)) } returns false
+        coEvery { playlistRepository.addToPlaylist(5L, listOf(1L)) } returns AddToPlaylistResult.SMART_PLAYLIST
         val messages = collectMessages()
 
         viewModel.addToExistingPlaylist(LibraryItem.TrackItem(track), 5L, "Favs")
 
         assertThat(messages.single()).contains("auto rule")
+    }
+
+    @Test
+    fun `a playlist that vanished before the add is reported as gone, not as an auto rule`() {
+        coEvery { playlistRepository.addToPlaylist(5L, listOf(1L)) } returns AddToPlaylistResult.MISSING
+        val messages = collectMessages()
+
+        viewModel.addToExistingPlaylist(LibraryItem.TrackItem(track), 5L, "Favs")
+
+        assertThat(messages.single()).isEqualTo("Can't add tracks to \"Favs\": it no longer exists")
     }
 
     @Test

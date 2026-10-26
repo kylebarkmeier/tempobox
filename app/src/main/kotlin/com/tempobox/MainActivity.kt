@@ -50,7 +50,9 @@ class MainActivity : ComponentActivity() {
             permissionLauncher.launch(LibraryPermissions.runtimePermissions().toTypedArray())
         }
 
-        handleVoicePlayIntent(intent)
+        // Only on the first creation: a rotation or a restore recreates the
+        // activity with the same intent, and the request must not play again.
+        if (savedInstanceState == null) handleVoicePlayIntent(intent)
 
         setContent {
             AppRoot()
@@ -65,8 +67,8 @@ class MainActivity : ComponentActivity() {
     private fun handleVoicePlayIntent(intent: Intent?) {
         if (intent?.action != MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) return
         val query = intent.getStringExtra(SearchManager.QUERY).orEmpty()
-        // One line per spoken request, so `adb logcat -s MainActivity
-        // PlaybackService` shows whether the assistant dispatched at all.
+        // Shows that the assistant dispatched at all; what the query resolved
+        // to is the service's VoiceLog line (`adb logcat -s MainActivity VoiceLog`).
         Log.i(TAG, "Play-from-search intent: '$query'")
         playerConnection.playFromSearch(query, VoiceLog.SOURCE_ASSISTANT_INTENT)
     }

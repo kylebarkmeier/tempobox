@@ -68,11 +68,10 @@ class VoiceSearchTest {
             listOf(Genre(name = "Trance", trackCount = 2, albumCount = 1)),
         )
         // Only a track artist: a featured singer on someone else's album.
-        every { library.observeTrackArtists() } returns flowOf(
-            listOf(AlbumArtist(name = "Guest Singer", albumCount = 1, trackCount = 1)),
-        )
+        coEvery { library.getTrackArtistNames() } returns listOf("Allicorn", "Guest Singer")
         every { library.observeTrackArtistTracks("Guest Singer") } returns flowOf(listOf(guestTrack))
         every { library.observeTracks() } answers { flowOf(tracks) }
+        coEvery { library.getTracks() } answers { tracks }
         every { library.observeArtistTracks("Allicorn") } returns flowOf(allicornTracks)
         every { library.observeArtistTracks("Sigur Rós") } returns flowOf(listOf(track(3, "Svefn")))
         every { library.observeArtistTracks("The Album Leaf") } returns flowOf(listOf(track(7, "Window")))
@@ -160,10 +159,42 @@ class VoiceSearchTest {
         assertThat(voiceSearch.resolve("Simon & Garfunkel")!!.description).isEqualTo("artist: Simon & Garfunkel")
     }
 
+    @Test
+    fun `punctuation in a tag or in the transcription does not matter`() = runTest {
+        tracks = tracks + track(20, "Don’t Stop Believin’", artist = "Journey") +
+            track(21, "Mr. Brightside", artist = "The Killers")
+        assertThat(voiceSearch.resolve("don't stop believin")!!.description)
+            .isEqualTo("track: Don’t Stop Believin’ by Journey")
+        assertThat(voiceSearch.resolve("mr brightside")!!.description)
+            .isEqualTo("track: Mr. Brightside by The Killers")
+        // The recognizer writes "ACDC"; the artist filter folds the tag the same way.
+        assertThat(voiceSearch.resolve("back in black by acdc")!!.description).isEqualTo("album: Back in Black")
+        // A session-path query may arrive with sentence punctuation attached.
+        assertThat(voiceSearch.resolve("back in black.")!!.description).isEqualTo("album: Back in Black")
+    }
+
+    @Test
+    fun `a lone article or filler word never matches loosely`() = runTest {
+        coEvery { playlists.getPlaylists() } returns listOf(roadTrip, Playlist(id = 8, name = "My Favorites"))
+        tracks = tracks + track(16, "Stand By Me", artist = "Ben E. King") + track(18, "The End", artist = "The Doors")
+        assertThat(voiceSearch.resolve("my")).isNull()
+        assertThat(voiceSearch.resolve("me")).isNull()
+        assertThat(voiceSearch.resolve("the")).isNull()
+        // An exact name that is such a word is still fine.
+        tracks = tracks + track(17, "Me", artist = "Allicorn")
+        assertThat(voiceSearch.resolve("me")!!.description).isEqualTo("track: Me by Allicorn")
+    }
+
     // ------------------------------------------------------------------ typed requests
 
     @Test
     fun `a spoken type limits the search to that bucket first`() = runTest {
+        // A playlist shares the artist's name: the bare name picks the playlist
+        // (bucket order), the type word picks the artist.
+        val allicornList = Playlist(id = 6, name = "Allicorn")
+        coEvery { playlists.getPlaylists() } returns listOf(roadTrip, allicornList)
+        coEvery { playlists.getPlaylistTracks(allicornList) } returns listOf(track(9, "x"))
+        assertThat(voiceSearch.resolve("allicorn")!!.description).isEqualTo("playlist: Allicorn")
         assertThat(voiceSearch.resolve("the artist allicorn")!!.description).isEqualTo("artist: Allicorn")
         assertThat(voiceSearch.resolve("songs by allicorn")!!.description).isEqualTo("artist: Allicorn")
         assertThat(voiceSearch.resolve("the album back in black")!!.description)
@@ -214,6 +245,31 @@ class VoiceSearchTest {
     }
 
     @Test
+    fun `vague requests take the whole library shuffled, filler included`() = runTest {
+        listOf("play something", "play some music", "play me some music", "play me something", "music").forEach {
+            val resolution = voiceSearch.resolve(it)!!
+            assertThat(resolution.description).isEqualTo("whole library (3 tracks)")
+            assertThat(resolution.shuffle).isTrue()
+        }
+    }
+
+    @Test
+    fun `a collection literally named like a library phrase wins by its exact name`() = runTest {
+        val myMusic = Playlist(id = 6, name = "My Music")
+        val mix = Playlist(id = 7, name = "My Music Mix")
+        coEvery { playlists.getPlaylists() } returns listOf(roadTrip, mix, myMusic)
+        coEvery { playlists.getPlaylistTracks(myMusic) } returns listOf(track(9, "x"))
+        coEvery { playlists.getPlaylistTracks(mix) } returns listOf(track(10, "y"))
+        assertThat(voiceSearch.resolve("play my music")!!.description).isEqualTo("playlist: My Music")
+        // Only an exact playlist or artist name: a whole-word match ("My
+        // Music Mix") or a track titled "Everything" does not hijack the phrase.
+        coEvery { playlists.getPlaylists() } returns listOf(roadTrip, mix)
+        tracks = tracks + track(11, "Everything")
+        assertThat(voiceSearch.resolve("play my music")!!.description).isEqualTo("whole library (4 tracks)")
+        assertThat(voiceSearch.resolve("everything")!!.description).isEqualTo("whole library (4 tracks)")
+    }
+
+    @Test
     fun `X by Y limits the title to that artist`() = runTest {
         val resolution = voiceSearch.resolve("thunderstruck by allicorn")!!
         assertThat(resolution.description).isEqualTo("track: Thunderstruck by Allicorn")
@@ -245,11 +301,15 @@ class VoiceSearchTest {
     fun `each bucket loads at most once per query and only when reached`() = runTest {
         voiceSearch.resolve("road trip")
         verify(exactly = 0) { library.observeAlbumArtists() }
-        verify(exactly = 0) { library.observeTracks() }
+        coVerify(exactly = 0) { library.getTracks() }
         coVerify(exactly = 1) { playlists.getPlaylists() }
 
         voiceSearch.resolve("stand by me")
         // Several readings and two match passes, one load of the track table.
+        coVerify(exactly = 1) { library.getTracks() }
+        // The whole library in order is the only reading that pays for the sort.
+        verify(exactly = 0) { library.observeTracks() }
+        voiceSearch.resolve("everything")
         verify(exactly = 1) { library.observeTracks() }
     }
 
@@ -272,6 +332,10 @@ class VoiceSearchTest {
         assertThat(VoiceSearch.parseQuery("AC/DC"))
             .isEqualTo(VoiceSearch.Query("AC/DC", shuffle = false, scope = VoiceSearch.Scope.ANY))
         assertThat(VoiceSearch.parseQuery("everything").scope).isEqualTo(VoiceSearch.Scope.LIBRARY)
+        assertThat(VoiceSearch.parseQuery("play me something"))
+            .isEqualTo(VoiceSearch.Query("", shuffle = true, scope = VoiceSearch.Scope.LIBRARY, plain = "me something"))
+        assertThat(VoiceSearch.spokenName("shuffle lamb of gob")).isEqualTo("lamb of gob")
+        assertThat(VoiceSearch.spokenName("play")).isEqualTo("play")
     }
 
     // ------------------------------------------------------------------ playlists by name
@@ -281,6 +345,9 @@ class VoiceSearchTest {
         assertThat(voiceSearch.findPlaylist("ROAD TRIP")?.id).isEqualTo(5L)
         assertThat(voiceSearch.findPlaylist("my road trip playlist")?.id).isEqualTo(5L)
         assertThat(voiceSearch.findPlaylist("the playlist road trip")?.id).isEqualTo(5L)
+        // "add this to my road trip": the article goes even without the word "playlist".
+        assertThat(voiceSearch.findPlaylist("my road trip")?.id).isEqualTo(5L)
+        assertThat(voiceSearch.findPlaylist("the road trip")?.id).isEqualTo(5L)
         assertThat(voiceSearch.findPlaylist("trip")?.id).isEqualTo(5L)
         assertThat(voiceSearch.findPlaylist("beach")).isNull()
         assertThat(voiceSearch.findPlaylist("  ")).isNull()

@@ -95,8 +95,11 @@
              the home-screen widget, and the Quick Settings tile; transient
              (noHistory) and in its own task so a drawer/tile launch doesn't
              drag the whole app task to the front. -->
+        <!-- Handles its own rotation: a recreated dialog would start listening
+             again while the first command is still running. -->
         <activity
             android:name=".voice.VoiceCommandActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleTop"

@@ -19,29 +19,38 @@ fun String.searchNormalized(): String =
     COMBINING_MARKS.replace(Normalizer.normalize(this, Normalizer.Form.NFD), "").lowercase()
 
 private val NON_WORD = Regex("[^\\p{L}\\p{N}]")
+private val WHITESPACE = Regex("\\s+")
 
 /**
- * Keyword form for spoken-command matching: [searchNormalized] with every
- * character that is not a letter or digit removed, so "don't" and "dont",
- * "AC/DC" and "acdc" compare equal.
+ * Keyword form of one spoken word: [searchNormalized] with every character
+ * that is not a letter or digit removed, so "don't", "don’t" and "dont"
+ * compare equal, as do "AC/DC" and "acdc". A symbol-only word ("&") folds to
+ * the empty string.
  */
 fun String.searchKeyword(): String = NON_WORD.replace(searchNormalized(), "")
 
 /**
+ * Keyword form of a name or phrase: each word reduced to its [searchKeyword],
+ * symbol-only words dropped, single-spaced. This is the key both sides of a
+ * voice name match use, so a recognizer that writes "Mr Brightside" or
+ * "ACDC" still finds the tags "Mr. Brightside" and "AC/DC".
+ */
+fun String.searchKeywords(): String =
+    trim().split(WHITESPACE).map { it.searchKeyword() }.filter { it.isNotEmpty() }.joinToString(" ")
+
+/**
  * A matcher for [phrase] as whole words: "trip" is found in "Road Trip" but
- * not in "Triptych", "2" in "Song 2" but not in "22". It takes text already
- * passed through [searchNormalized], so one matcher can scan a whole list of
- * normalized keys without recompiling. A blank phrase matches nothing.
+ * not in "Triptych", "2" in "Song 2" but not in "22". It scans keys produced
+ * by [searchKeywords] (the phrase is folded the same way), so one matcher
+ * can run over a whole list without recompiling. A blank phrase matches
+ * nothing.
  */
 fun wordPhraseMatcher(phrase: String): (String) -> Boolean {
-    val wanted = phrase.trim().searchNormalized()
+    val wanted = phrase.searchKeywords()
     if (wanted.isEmpty()) return { false }
     val pattern = Regex("(?<![\\p{L}\\p{N}])" + Regex.escape(wanted) + "(?![\\p{L}\\p{N}])")
-    return { normalized -> pattern.containsMatchIn(normalized) }
+    return { key -> pattern.containsMatchIn(key) }
 }
-
-/** True when [phrase] occurs in this text as whole words after normalization; see [wordPhraseMatcher]. */
-fun String.containsWordPhrase(phrase: String): Boolean = wordPhraseMatcher(phrase)(searchNormalized())
 
 /** True when any of [fields] contains [query] after normalization. */
 fun searchMatches(query: String, vararg fields: String): Boolean {

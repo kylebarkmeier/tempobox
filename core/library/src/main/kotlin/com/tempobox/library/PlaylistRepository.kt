@@ -35,6 +35,17 @@ import javax.inject.Singleton
  *    they pick up new matching tracks automatically; their M3U8 export is
  *    refreshed by [LibraryInitializer] whenever the library changes.
  */
+/** Why [PlaylistRepository.addToPlaylist] did or did not append. */
+enum class AddToPlaylistResult {
+    ADDED,
+
+    /** Membership is rule-driven (a broken rule counts: the row still carries one). */
+    SMART_PLAYLIST,
+
+    /** The playlist row is gone. */
+    MISSING,
+}
+
 @Singleton
 class PlaylistRepository @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -149,22 +160,23 @@ class PlaylistRepository @Inject constructor(
     // ------------------------------------------------------------------ mutation
 
     /**
-     * Appends tracks to a static playlist and rewrites its file. Returns false
-     * without changing anything for a smart playlist (membership is
-     * rule-driven) — reachable from the UI when a broken rule makes a smart
-     * playlist look static, so this must refuse, not crash.
+     * Appends tracks to a static playlist and rewrites its file. Refuses,
+     * without changing anything, a smart playlist (membership is rule-driven;
+     * reachable from the UI when a broken rule makes one look static) and a
+     * row that no longer exists, naming which so the caller can say the real
+     * reason.
      */
-    suspend fun addToPlaylist(playlistId: Long, trackIds: List<Long>): Boolean =
+    suspend fun addToPlaylist(playlistId: Long, trackIds: List<Long>): AddToPlaylistResult =
         withContext(ioDispatcher) {
-            val playlist = playlistDao.getById(playlistId) ?: return@withContext false
+            val playlist = playlistDao.getById(playlistId) ?: return@withContext AddToPlaylistResult.MISSING
             if (playlist.smartRuleJson != null) {
                 Log.e(TAG, "Refusing to add tracks to smart playlist \"${playlist.name}\"")
-                return@withContext false
+                return@withContext AddToPlaylistResult.SMART_PLAYLIST
             }
             playlistDao.appendEntries(playlistId, trackIds)
             playlistDao.touch(playlistId, System.currentTimeMillis())
             exportStatic(playlistId)
-            true
+            AddToPlaylistResult.ADDED
         }
 
     /** Replaces a static playlist's contents (reorder / remove entries). */

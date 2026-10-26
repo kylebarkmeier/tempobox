@@ -3,6 +3,7 @@ package com.tempobox.playback
 import android.util.Log
 import com.tempobox.common.ApplicationScope
 import com.tempobox.common.resultOf
+import com.tempobox.library.AddToPlaylistResult
 import com.tempobox.library.LibraryRepository
 import com.tempobox.library.PlaylistRepository
 import kotlinx.coroutines.CoroutineScope
@@ -67,18 +68,13 @@ class VoiceActions @Inject constructor(
 
     /** Executes [command] and returns the outcome text. */
     suspend fun execute(command: VoiceCommand): String = when (command) {
-        is VoiceCommand.Immediate -> {
-            player.execute(command)
-            command.confirmation()
-        }
+        is VoiceCommand.Immediate -> player.execute(command)
 
         is VoiceCommand.PlaySearch -> resolved(command.query) { r ->
-            // Replaces the queue like the library's Play and Shuffle buttons,
-            // whose confirmations these outcomes mirror: the controller call
-            // is queued on the main thread and cannot be awaited here.
+            // Replaces the queue like the library's Play and Shuffle buttons;
+            // both suspend until the controller has the new queue.
             if (r.shuffle) player.playShuffled(r.tracks) else player.playTracks(r.tracks)
-            "Playing ${ActionMessages.countLabel(r.tracks.size)}" +
-                if (r.shuffle) " shuffled (${r.description})" else " (${r.description})"
+            ActionMessages.playing(r.tracks.size, r.shuffle, r.description)
         }
 
         is VoiceCommand.AddToQueue -> resolved(command.query) { r ->
@@ -121,17 +117,16 @@ class VoiceActions @Inject constructor(
                 ?: return nothingMatched(command.query)
             resolution.tracks to resolution.description
         }
-        val added = playlistRepository.addToPlaylist(playlist.id, tracks.map { it.id })
-        return if (added) {
-            ActionMessages.addedToPlaylist(tracks.size, playlist.name, what)
-        } else {
-            // Smart and broken rules were refused above; false now means the
-            // row vanished between the lookup and the insert.
-            ActionMessages.playlistGone(playlist.name)
+        return when (playlistRepository.addToPlaylist(playlist.id, tracks.map { it.id })) {
+            AddToPlaylistResult.ADDED -> ActionMessages.addedToPlaylist(tracks.size, playlist.name, what)
+            AddToPlaylistResult.SMART_PLAYLIST -> ActionMessages.autoPlaylistRefusal(playlist.name)
+            AddToPlaylistResult.MISSING -> ActionMessages.playlistGone(playlist.name)
         }
     }
 
-    private fun nothingMatched(query: String) = "Nothing in the library matched \"$query\""
+    /** The miss names the request as spoken, without the command words ("shuffle"). */
+    private fun nothingMatched(query: String) =
+        "Nothing in the library matched \"${VoiceSearch.spokenName(query)}\""
 
     private companion object {
         const val TAG = "VoiceActions"

@@ -51,6 +51,16 @@ class LibraryRepository @Inject constructor(
             sort.sortTracks(rows.map { it.toModel() })
         }
 
+    /** Every track, unsorted: for callers that pick one or shuffle, where the sort is the costly part. */
+    suspend fun getTracks(): List<Track> = withContext(ioDispatcher) {
+        trackDao.getAll().map { it.toModel() }
+    }
+
+    /** Distinct track-artist names (album artist when the track artist is empty), nothing else loaded. */
+    suspend fun getTrackArtistNames(): List<String> = withContext(ioDispatcher) {
+        trackDao.getTrackArtistNames()
+    }
+
     /** Default sort mirrors the album's natural order: disc then track number. */
     fun observeAlbumTracks(
         album: String,

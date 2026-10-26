@@ -232,6 +232,19 @@ class TrackDaoTest {
     }
 
     @Test
+    fun `getTrackArtistNames applies the album-artist fallback and is distinct`() = runTest {
+        dao.upsertKeepingUserData(
+            listOf(
+                entity("/1.mp3", artist = "Solo", albumArtist = "Band"),
+                entity("/2.mp3", artist = "", albumArtist = "Band"),
+                entity("/3.mp3", artist = "Solo", albumArtist = "Other"),
+            ),
+        )
+        assertThat(dao.getTrackArtistNames()).containsExactly("Band", "Solo")
+        assertThat(dao.getAll()).hasSize(3)
+    }
+
+    @Test
     fun `genre album art groups per genre and album, summing play counts`() = runTest {
         dao.upsertKeepingUserData(
             listOf(

@@ -18,6 +18,10 @@ object ActionMessages {
         else -> "Added ${countLabel(added)} to queue" + suffix(detail)
     }
 
+    /** The queue was replaced by [count] tracks; [detail] names what they are. */
+    fun playing(count: Int, shuffled: Boolean, detail: String? = null): String =
+        "Playing ${countLabel(count)}" + (if (shuffled) " shuffled" else "") + suffix(detail)
+
     fun playingNext(count: Int, detail: String? = null): String =
         "Playing ${countLabel(count)} next" + suffix(detail)
 

@@ -14,6 +14,40 @@ class SearchingTest {
         durationMs = 0, artworkTrackPath = null, dateAddedMs = 0, dateModifiedMs = 0,
     )
 
+    // ---------------------------------------------------------------- keywords
+
+    @Test
+    fun `searchKeyword folds case and punctuation of one word`() {
+        assertThat("Don’t".searchKeyword()).isEqualTo("dont")
+        assertThat("don't".searchKeyword()).isEqualTo("dont")
+        assertThat("AC/DC".searchKeyword()).isEqualTo("acdc")
+        assertThat("Rós".searchKeyword()).isEqualTo("ros")
+        assertThat("&".searchKeyword()).isEmpty()
+    }
+
+    @Test
+    fun `searchKeywords folds every word and drops symbol-only ones`() {
+        assertThat("Mr. Brightside".searchKeywords()).isEqualTo("mr brightside")
+        assertThat("Simon & Garfunkel".searchKeywords()).isEqualTo("simon garfunkel")
+        assertThat("  Sigur   Rós ".searchKeywords()).isEqualTo("sigur ros")
+        assertThat("Don’t Stop Believin’".searchKeywords()).isEqualTo("dont stop believin")
+        assertThat("back in black.".searchKeywords()).isEqualTo("back in black")
+        assertThat("".searchKeywords()).isEmpty()
+    }
+
+    @Test
+    fun `wordPhraseMatcher matches whole words of folded keys`() {
+        val trip = wordPhraseMatcher("trip")
+        assertThat(trip("road trip")).isTrue()
+        assertThat(trip("triptych")).isFalse()
+        val two = wordPhraseMatcher("2")
+        assertThat(two("song 2")).isTrue()
+        assertThat(two("22")).isFalse()
+        // The phrase is folded like the keys, so punctuation on either side is moot.
+        assertThat(wordPhraseMatcher("Mr. Brightside")("the mr brightside remix")).isTrue()
+        assertThat(wordPhraseMatcher("  ")("anything")).isFalse()
+    }
+
     // ------------------------------------------------------------- empty query
 
     @Test
