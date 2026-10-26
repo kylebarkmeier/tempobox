@@ -78,6 +78,14 @@ interface TrackDao {
     @Query("SELECT COUNT(*) FROM tracks")
     suspend fun count(): Int
 
+    /** One-shot, unsorted read of every row (voice resolution; the sorted flow is [observeAll]). */
+    @Query("SELECT * FROM tracks")
+    suspend fun getAll(): List<TrackEntity>
+
+    /** Distinct track-artist names with the same albumArtist fallback as [observeTrackArtists]. */
+    @Query("SELECT DISTINCT (CASE WHEN artist = '' THEN albumArtist ELSE artist END) FROM tracks")
+    suspend fun getTrackArtistNames(): List<String>
+
     // ---------------------------------------------------------------- observers
 
     @Query("SELECT * FROM tracks")

@@ -82,11 +82,12 @@ class NetworkBrowseViewModel @Inject constructor(
     fun playFrom(entry: DidlLite.Entry.Audio) {
         val tracks = audioEntries().map { it.toTrack() }
         val start = audioEntries().indexOfFirst { it.id == entry.id }.coerceAtLeast(0)
-        player.playTracks(tracks, start)
+        viewModelScope.launch { player.playTracks(tracks, start) }
     }
 
     fun playAll() {
-        player.playTracks(audioEntries().map { it.toTrack() })
+        val tracks = audioEntries().map { it.toTrack() }
+        viewModelScope.launch { player.playTracks(tracks) }
     }
 
     fun addToQueue(entry: DidlLite.Entry.Audio) {

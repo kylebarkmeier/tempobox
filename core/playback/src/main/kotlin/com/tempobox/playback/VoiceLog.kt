@@ -5,14 +5,13 @@ import android.util.Log
 import com.tempobox.common.ApplicationScope
 import com.tempobox.common.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.IOException
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -26,8 +25,10 @@ import javax.inject.Singleton
  * event: where it came from, what the recognizer heard (plus its
  * alternatives), what it parsed to, and what actually happened, so a "voice
  * did nothing" report can be checked against the facts instead of a guess.
- * Each line is also written to logcat under the `VoiceLog` tag, the one
- * place voice events are logged.
+ * Each line is also written to logcat under the `VoiceLog` tag, the tag to
+ * filter on for voice requests (a crash inside the code that handled one
+ * still logs under that code's own tag). Lines land in the order they were
+ * recorded: one writer coroutine drains a channel.
  *
  * Pull from a debug build with
  * `adb exec-out run-as com.tempobox.debug cat no_backup/voice/commands.log`
@@ -48,8 +49,12 @@ class VoiceLog internal constructor(
         @ApplicationScope scope: CoroutineScope,
     ) : this(File(context.noBackupFilesDir, "voice/commands.log"), dispatcher, scope)
 
-    /** Serializes rotation and appends: two writers at the size limit must not both rotate. */
-    private val lock = Mutex()
+    /** Lines wait here for the single writer, so two quick records cannot swap places in the file. */
+    private val pending = Channel<String>(Channel.UNLIMITED)
+
+    init {
+        scope.launch { for (line in pending) write(line) }
+    }
 
     /**
      * Records one event; the line is written in the background. [command]
@@ -75,22 +80,23 @@ class VoiceLog internal constructor(
             append(" outcome=").append(quote(outcome))
         }
         Log.i(TAG, line)
-        scope.launch { write(line) }
+        pending.trySend(line) // unlimited buffer: never fails while the channel is open
     }
 
-    internal suspend fun write(line: String) = withContext(dispatcher) {
-        lock.withLock {
-            try {
-                rotateIfFull()
-                val dir = file.parentFile
-                if (dir != null && !dir.isDirectory && !dir.mkdirs()) {
-                    Log.w(TAG, "Could not create ${dir.path}; voice log line dropped")
-                    return@withLock
-                }
-                file.appendText(line + "\n")
-            } catch (e: IOException) {
-                Log.w(TAG, "Could not write the voice log", e)
+    private suspend fun write(line: String) = withContext(dispatcher) {
+        try {
+            rotateIfFull()
+            val dir = file.parentFile
+            if (dir != null && !dir.isDirectory && !dir.mkdirs()) {
+                Log.w(TAG, "Could not create ${dir.path}; voice log line dropped")
+                return@withContext
             }
+            file.appendText(line + "\n")
+        } catch (e: Exception) {
+            // One writer serves every line: a SecurityException or the like
+            // must not end it, so anything but cancellation is logged here.
+            if (e is CancellationException) throw e
+            Log.w(TAG, "Could not write the voice log", e)
         }
     }
 
@@ -128,13 +134,20 @@ class VoiceLog internal constructor(
         /** The assistant's MEDIA_PLAY_FROM_SEARCH intent (MainActivity). */
         const val SOURCE_ASSISTANT_INTENT = "assistant-intent"
 
-        /** A search query that reached the media session from another controller. */
+        /**
+         * A search query that reached the media session from another
+         * controller (Android Auto's own voice requests among them); logged
+         * as `session:<package>`, see [sessionSource].
+         */
         const val SOURCE_SESSION = "session"
 
         /** Android Auto's search screen (onSearch). */
         const val SOURCE_AUTO_SEARCH = "auto-search"
 
-        /** The only values the session accepts from a controller's extra; anything else is [SOURCE_SESSION]. */
+        /** The only values the session accepts from a controller's extra; anything else is [sessionSource]. */
         val KNOWN_SOURCES = setOf(SOURCE_DIALOG, SOURCE_ASSISTANT_INTENT)
+
+        /** The source for a query another controller sent to the session, named by its package. */
+        fun sessionSource(packageName: String): String = "$SOURCE_SESSION:$packageName"
     }
 }

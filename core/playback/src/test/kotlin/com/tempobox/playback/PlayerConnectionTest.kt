@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -102,17 +103,17 @@ class PlayerConnectionTest {
 
     @Test
     fun `playShuffled publishes the shuffle mode without any controller event`() {
-        connection.playShuffled(listOf(track(1), track(2), track(3)))
+        runBlocking { connection.playShuffled(listOf(track(1), track(2), track(3))) }
         idleMain()
         assertThat(connection.state.value.shuffleMode).isNotEqualTo(ShuffleMode.OFF)
     }
 
     @Test
     fun `playTracks publishes shuffle OFF without any controller event`() {
-        connection.playShuffled(listOf(track(1), track(2), track(3)))
+        runBlocking { connection.playShuffled(listOf(track(1), track(2), track(3))) }
         idleMain()
 
-        connection.playTracks(listOf(track(1), track(2)))
+        runBlocking { connection.playTracks(listOf(track(1), track(2))) }
         idleMain()
 
         assertThat(connection.state.value.shuffleMode).isEqualTo(ShuffleMode.OFF)
@@ -136,7 +137,7 @@ class PlayerConnectionTest {
 
     @Test
     fun `a queue replaced outside the connection drops the stale shuffle flag`() {
-        connection.playShuffled(listOf(track(1), track(2), track(3)))
+        runBlocking { connection.playShuffled(listOf(track(1), track(2), track(3))) }
         idleMain()
         assertThat(connection.state.value.shuffleMode).isNotEqualTo(ShuffleMode.OFF)
 
@@ -239,7 +240,7 @@ class PlayerConnectionTest {
     @Test
     fun `removing a queued track keeps the un-shuffle order`() {
         // playTracks remembers [u1, u2, u3] as the original order.
-        connection.playTracks(listOf(track(1), track(2), track(3)))
+        runBlocking { connection.playTracks(listOf(track(1), track(2), track(3))) }
         idleMain()
         val set = slot<List<MediaItem>>()
         verify { controller.setMediaItems(capture(set), any(), any()) }
@@ -334,6 +335,49 @@ class PlayerConnectionTest {
 
         assertThat(connection.addToQueue(listOf(track(1)))).isEqualTo(0) // duplicate
         assertThat(connection.addToQueue(listOf(track(1), track(2)))).isEqualTo(1)
+    }
+
+    // ------------------------------------------------------------------ voice transport outcomes
+
+    @Test
+    fun `execute says why a transport command had no effect`() = runTest {
+        every { controller.mediaItemCount } returns 0
+        assertThat(connection.execute(VoiceCommand.Resume)).isEqualTo("Nothing to resume: the queue is empty")
+        assertThat(connection.execute(VoiceCommand.Next)).isEqualTo("The queue is empty")
+        assertThat(connection.execute(VoiceCommand.Pause)).isEqualTo("Nothing is playing")
+        verify(exactly = 0) { controller.play() }
+        verify(exactly = 0) { controller.seekToNextMediaItem() }
+
+        mockTimeline(listOf(MediaItems.toMediaItem(track(1), uid = 1L), MediaItems.toMediaItem(track(2), uid = 2L)))
+        every { controller.hasNextMediaItem() } returns false
+        every { controller.hasPreviousMediaItem() } returns true
+        assertThat(connection.execute(VoiceCommand.Next)).isEqualTo("Already at the last track")
+        assertThat(connection.execute(VoiceCommand.Previous)).isEqualTo("Previous track")
+        verify { controller.seekToPreviousMediaItem() }
+        every { controller.playWhenReady } returns false
+        assertThat(connection.execute(VoiceCommand.Pause)).isEqualTo("Already paused")
+        verify(exactly = 0) { controller.pause() }
+    }
+
+    @Test
+    fun `execute confirms a transport command that took effect`() = runTest {
+        mockTimeline(listOf(MediaItems.toMediaItem(track(1), uid = 1L)))
+        every { controller.playbackState } returns Player.STATE_IDLE
+        assertThat(connection.execute(VoiceCommand.Resume)).isEqualTo("Resuming")
+        verify { controller.prepare() }
+        verify { controller.play() }
+        every { controller.playWhenReady } returns true
+        assertThat(connection.execute(VoiceCommand.Pause)).isEqualTo("Pausing")
+        verify { controller.pause() }
+    }
+
+    @Test
+    fun `playNext on an empty queue starts playing the tracks`() = runTest {
+        every { controller.mediaItemCount } returns 0
+        connection.playNext(listOf(track(1), track(2)))
+        verify { controller.setMediaItems(any<List<MediaItem>>(), 0, 0L) }
+        verify { controller.play() }
+        verify(exactly = 0) { controller.addMediaItems(any(), any<List<MediaItem>>()) }
     }
 
     // ------------------------------------------------------------------ network renderer routing
@@ -460,7 +504,7 @@ class PlayerConnectionTest {
 
     @Test
     fun `shuffle mode changes nudge the home-screen widget`() {
-        connection.playShuffled(listOf(track(1), track(2), track(3)))
+        runBlocking { connection.playShuffled(listOf(track(1), track(2), track(3))) }
         idleMain()
 
         val app = ApplicationProvider.getApplicationContext<Application>()

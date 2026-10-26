@@ -1,6 +1,7 @@
 package com.tempobox.playback
 
 import com.google.common.truth.Truth.assertThat
+import com.tempobox.library.AddToPlaylistResult
 import com.tempobox.library.LibraryRepository
 import com.tempobox.library.PlaylistRepository
 import com.tempobox.model.AudioFormat
@@ -64,7 +65,7 @@ class VoiceActionsTest {
         coEvery { playlists.getPlaylists() } returns listOf(roadTrip)
         coEvery { voiceSearch.findPlaylist("road trip", any()) } returns roadTrip
         coEvery { voiceSearch.findPlaylist("nothing", any()) } returns null
-        coEvery { playlists.addToPlaylist(any(), any()) } returns true
+        coEvery { playlists.addToPlaylist(any(), any()) } returns AddToPlaylistResult.ADDED
         coEvery { library.getTracksByIds(any()) } answers { firstArg<List<Long>>().map { track(it, "live $it") } }
         every { player.state } returns MutableStateFlow(NowPlayingState())
     }
@@ -115,29 +116,44 @@ class VoiceActionsTest {
     // ------------------------------------------------------------------ commands
 
     @Test
-    fun `immediate commands go to the player and confirm`() = runTest {
-        val outcome = actions.execute(VoiceCommand.Pause)
-        verify { player.execute(VoiceCommand.Pause) }
-        assertThat(outcome).isEqualTo("Pausing")
+    fun `immediate commands report what the player says happened`() = runTest {
+        coEvery { player.execute(VoiceCommand.Pause) } returns "Pausing"
+        assertThat(actions.execute(VoiceCommand.Pause)).isEqualTo("Pausing")
+        // The player's refusal is the outcome, not the canned confirmation.
+        coEvery { player.execute(VoiceCommand.Resume) } returns "Nothing to resume: the queue is empty"
+        assertThat(actions.execute(VoiceCommand.Resume)).isEqualTo("Nothing to resume: the queue is empty")
     }
 
     @Test
     fun `play search resolves in-process and replaces the queue`() = runTest {
         assertThat(actions.execute(VoiceCommand.PlaySearch("allicorn")))
             .isEqualTo("Playing 2 tracks (artist: Allicorn)")
-        verify { player.playTracks(allicorn.tracks) }
+        coVerify { player.playTracks(allicorn.tracks) }
         assertThat(actions.execute(VoiceCommand.PlaySearch("shuffle allicorn")))
             .isEqualTo("Playing 2 tracks shuffled (artist: Allicorn)")
-        verify { player.playShuffled(allicorn.tracks) }
+        coVerify { player.playShuffled(allicorn.tracks) }
         verify(exactly = 0) { player.playFromSearch(any(), any()) }
+    }
+
+    @Test
+    fun `a failing play reaches the caller instead of a claimed success`() = runTest(dispatcher) {
+        coEvery { player.playTracks(any(), any()) } throws IllegalStateException("controller gone")
+        var reported: String? = null
+        actions.handle("play allicorn", emptyList(), VoiceLog.SOURCE_DIALOG) { _, o -> reported = o }
+        scope.advanceUntilIdle()
+        assertThat(reported).isEqualTo("Couldn't do that: controller gone")
     }
 
     @Test
     fun `play search with no match plays nothing and says so`() = runTest {
         assertThat(actions.execute(VoiceCommand.PlaySearch("nobody")))
             .isEqualTo("Nothing in the library matched \"nobody\"")
-        verify(exactly = 0) { player.playTracks(any(), any()) }
-        verify(exactly = 0) { player.playShuffled(any()) }
+        coVerify(exactly = 0) { player.playTracks(any(), any()) }
+        coVerify(exactly = 0) { player.playShuffled(any()) }
+        // The miss names the request as spoken, without the command word.
+        coEvery { voiceSearch.resolve("shuffle nobody", any()) } returns null
+        assertThat(actions.execute(VoiceCommand.PlaySearch("shuffle nobody")))
+            .isEqualTo("Nothing in the library matched \"nobody\"")
     }
 
     @Test
@@ -238,9 +254,13 @@ class VoiceActionsTest {
     }
 
     @Test
-    fun `a playlist deleted mid-command is reported as gone`() = runTest {
-        coEvery { playlists.addToPlaylist(5, any()) } returns false
+    fun `the repository's refusal reason is the outcome`() = runTest {
+        coEvery { playlists.addToPlaylist(5, any()) } returns AddToPlaylistResult.MISSING
         assertThat(actions.execute(VoiceCommand.AddToPlaylist("allicorn", "road trip")))
             .isEqualTo("Can't add tracks to \"Road Trip\": it no longer exists")
+        // A rule that appeared between the lookup and the insert.
+        coEvery { playlists.addToPlaylist(5, any()) } returns AddToPlaylistResult.SMART_PLAYLIST
+        assertThat(actions.execute(VoiceCommand.AddToPlaylist("allicorn", "road trip")))
+            .isEqualTo("Can't add tracks to \"Road Trip\": its auto rule picks the tracks")
     }
 }

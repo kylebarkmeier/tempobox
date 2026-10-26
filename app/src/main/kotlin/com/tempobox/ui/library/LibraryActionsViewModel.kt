@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tempobox.common.IoDispatcher
+import com.tempobox.library.AddToPlaylistResult
 import com.tempobox.library.LibraryRepository
 import com.tempobox.library.PlaylistRepository
 import com.tempobox.model.RuleField
@@ -86,8 +87,9 @@ class LibraryActionsViewModel @Inject constructor(
     fun play(item: LibraryItem) = withTracks(item) { playerConnection.playTracks(it) }
 
     /** Play a track list starting from a tapped position (album/playlist rows). */
-    fun playFrom(tracks: List<Track>, index: Int) =
-        playerConnection.playTracks(tracks, index)
+    fun playFrom(tracks: List<Track>, index: Int) {
+        viewModelScope.launch { playerConnection.playTracks(tracks, index) }
+    }
 
     /** Shuffle (menu): overwrite the queue, shuffled per the user's settings. */
     fun shuffle(item: LibraryItem) = withTracks(item) { playerConnection.playShuffled(it) }
@@ -218,10 +220,12 @@ class LibraryActionsViewModel @Inject constructor(
 
     fun addToExistingPlaylist(item: LibraryItem, playlistId: Long, playlistName: String) =
         withTracks(item) { tracks ->
-            val added = playlistRepository.addToPlaylist(playlistId, tracks.map { it.id })
             toast(
-                if (added) ActionMessages.addedToPlaylist(tracks.size, playlistName)
-                else ActionMessages.autoPlaylistRefusal(playlistName),
+                when (playlistRepository.addToPlaylist(playlistId, tracks.map { it.id })) {
+                    AddToPlaylistResult.ADDED -> ActionMessages.addedToPlaylist(tracks.size, playlistName)
+                    AddToPlaylistResult.SMART_PLAYLIST -> ActionMessages.autoPlaylistRefusal(playlistName)
+                    AddToPlaylistResult.MISSING -> ActionMessages.playlistGone(playlistName)
+                },
             )
             _dialog.value = null
         }

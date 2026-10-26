@@ -23,7 +23,10 @@ sealed interface VoiceCommand {
     /** Commands that need no library lookup; [PlayerConnection.execute] runs them. */
     sealed interface Immediate : VoiceCommand {
 
-        /** Toast text: these cannot fail once the player is reached. */
+        /**
+         * Toast text when the command took effect. [PlayerConnection.execute]
+         * answers with something else when it could not ("Nothing to resume").
+         */
         fun confirmation(): String = when (this) {
             Resume -> "Resuming"
             Pause -> "Pausing"
@@ -85,7 +88,8 @@ sealed interface VoiceCommand {
             "skip this", "skip this track", "skip this song", "skip track", "skip song",
             "skip ahead", "skip forward", "skip to the next track", "skip to the next song",
             "play next", "play the next", "play next track", "play next song",
-            "play the next track", "play the next song", "play the next one",
+            "play the next track", "play the next song", "play the next one", "put on next",
+            "put on the next one",
         )
         private val PREVIOUS = setOf(
             "previous", "back", "go back", "previous track", "previous song", "previous one",
@@ -95,6 +99,8 @@ sealed interface VoiceCommand {
         )
         private val SHUFFLE_ON = setOf(
             "shuffle", "shuffle on", "turn on shuffle", "turn shuffle on", "enable shuffle",
+            "shuffle mode", "shuffle mode on", "play shuffle", "play shuffled", "play on shuffle",
+            "put on shuffle", "put it on shuffle",
         )
         private val SHUFFLE_OFF = setOf(
             "shuffle off", "turn off shuffle", "turn shuffle off", "disable shuffle",
@@ -102,12 +108,12 @@ sealed interface VoiceCommand {
         )
         private val REPEAT_ALL = setOf(
             "repeat", "repeat on", "repeat all", "repeat everything", "loop", "loop all",
-            "turn on repeat", "turn repeat on",
+            "turn on repeat", "turn repeat on", "put on repeat", "put it on repeat",
         )
         private val REPEAT_ONE = setOf(
             "repeat one", "repeat this", "repeat this track", "repeat this song",
             "repeat track", "repeat song", "loop this", "loop this track", "loop this song",
-            "loop track", "loop song",
+            "loop track", "loop song", "put on repeat one", "put it on repeat one",
         )
         private val REPEAT_OFF = setOf(
             "repeat off", "no repeat", "stop repeating", "turn off repeat",
@@ -149,8 +155,13 @@ sealed interface VoiceCommand {
             "the track thats playing",
         )
 
-        /** An object made only of these is not a name worth searching for. */
-        private val STOPWORDS = setOf("the", "a", "an", "some", "up", "it", "that", "this")
+        /**
+         * An object made only of these is not a name worth searching for: a
+         * cut-off "play my" would otherwise whole-word match "My Favorites".
+         * Pronouns are covered by [THIS_PHRASES]; titles like "Up" or "It"
+         * stay requestable.
+         */
+        private val STOPWORDS = setOf("the", "a", "an", "some", "my", "me")
 
         private val SENTENCE_PUNCTUATION = Regex("[.,!?;:\"“”]")
         private val WHITESPACE = Regex("\\s+")
@@ -172,8 +183,12 @@ sealed interface VoiceCommand {
                 .split(WHITESPACE)
                 .filter { it.isNotEmpty() }
                 .map { Word(it, it.searchKeyword()) }
+                // A stray symbol at either end ("- play x") is not a word
+                // the sentence rules should see; one inside a name stays.
+                .dropWhile { it.key.isEmpty() }
+                .dropLastWhile { it.key.isEmpty() }
+            if (words.isEmpty()) return null
             val keys = words.map { it.key }
-            if (keys.all { it.isEmpty() }) return null
             val text = keys.filter { it.isNotEmpty() }.joinToString(" ")
 
             return when (text) {
@@ -247,24 +262,30 @@ sealed interface VoiceCommand {
             val last = keys.last()
             fun of(command: VoiceCommand?): Sentence = command?.let { Sentence.Of(it) } ?: Sentence.Rejected
 
-            // "queue X", "queue up X", "queue X next".
+            // "queue X", "queue up X", "queue X next", "queue X in the queue".
             if (first in QUEUE_VERBS) {
                 val start = if (keys.getOrNull(1) == "up") 2 else 1
                 if (start >= n) return Sentence.Rejected
-                return if (last == "next") {
-                    of(words.name(start, n - 1)?.let { PlayNext(it) })
+                val next = last == "next"
+                val end = words.beforeQueueTarget(if (next) n - 1 else n)
+                return of(words.name(start, end)?.let { if (next) PlayNext(it) else AddToQueue(it) })
+            }
+
+            // "put on X" is the everyday way to ask for X and never a
+            // playlist edit, whatever X contains ("put on Born to Run").
+            if (first == "put" && keys.getOrNull(1) == "on") {
+                if (n <= 2 || words.isQueueTarget(2, n)) return Sentence.Rejected
+                return if (last == "next" && n > 3) {
+                    of(words.name(2, n - 1)?.let { PlayNext(it) })
                 } else {
-                    of(words.name(start, n)?.let { AddToQueue(it) })
+                    of(words.name(2, n)?.let { PlaySearch(it) })
                 }
             }
 
             // "play X next", "add X next", "put X in the queue next". A title
             // that itself ends in "next" is the price of this sentence shape.
             if (last == "next" && n >= 3 && (first == "play" || first in ADD_VERBS)) {
-                var end = n - 1
-                val split = targetSplit(words, end)
-                if (split != null && words.isQueueTarget(split + 1, end)) end = split
-                return of(words.name(1, end)?.let { PlayNext(it) })
+                return of(words.name(1, words.beforeQueueTarget(n - 1))?.let { PlayNext(it) })
             }
 
             if (first !in ADD_VERBS || n < 3) return Sentence.None
@@ -275,15 +296,8 @@ sealed interface VoiceCommand {
             if (words.isQueueTarget(targetFrom, n)) {
                 return of(words.name(1, split)?.let { AddToQueue(it) })
             }
-            if (words.keys(1, split).isEmpty()) {
-                // "put on X" is the everyday way to ask for X; any other
-                // subject-less sentence is not a command.
-                return if (first == "put" && preposition == "on") {
-                    of(words.name(targetFrom, n)?.let { PlaySearch(it) })
-                } else {
-                    Sentence.Rejected
-                }
-            }
+            // A subject-less sentence ("add to the end") is not a command.
+            if (words.keys(1, split).isEmpty()) return Sentence.Rejected
             val explicitPlaylist = "playlist" in keys.subList(targetFrom, n)
             if (!explicitPlaylist && preposition !in PLAYLIST_PREPOSITIONS) return Sentence.Rejected
             val playlist = words.spoken(targetFrom, n)
@@ -294,20 +308,31 @@ sealed interface VoiceCommand {
             }
         }
 
+        /** [end] moved in front of a trailing queue target ("X to the queue"), else unchanged. */
+        private fun List<Word>.beforeQueueTarget(end: Int): Int {
+            val split = targetSplit(this, end) ?: return end
+            return if (isQueueTarget(split + 1, end)) split else end
+        }
+
         /**
          * Index of the preposition that separates subject from target, among
          * words[1 until end]. Names can contain "to" ("Back to Black"), so a
          * queue target wins outright, then an explicit "playlist" right after
-         * the preposition, else the last preposition.
+         * the preposition; when the sentence ends in "playlist", the last
+         * preposition followed by an article (so both "to my Road to Nowhere
+         * playlist" and "Back to the Future to my road trip playlist" split
+         * right); else the last preposition.
          */
         private fun targetSplit(words: List<Word>, end: Int): Int? {
             val keys = words.map { it.key }
             val candidates = (1 until end - 1).filter { keys[it] in TARGET_PREPOSITIONS }
+            val endsInPlaylist = end > 0 && keys[end - 1] == "playlist"
             return candidates.lastOrNull { words.isQueueTarget(it + 1, end) }
                 ?: candidates.firstOrNull { i ->
                     keys[i + 1] == "playlist" ||
                         (keys[i + 1] in ARTICLES && keys.getOrNull(i + 2) == "playlist")
                 }
+                ?: candidates.lastOrNull { endsInPlaylist && keys[it + 1] in ARTICLES }
                 ?: candidates.lastOrNull()
         }
     }

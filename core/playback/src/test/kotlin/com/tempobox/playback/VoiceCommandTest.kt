@@ -34,7 +34,7 @@ class VoiceCommandTest {
         listOf(
             "next", "skip", "next track", "Skip this song", "skip forward", "play next",
             "play the next", "play next track", "play next song", "play the next one",
-            "skip to the next track",
+            "skip to the next track", "put on next",
         ).forEach {
             assertThat(VoiceCommand.parse(it)).isEqualTo(VoiceCommand.Next)
         }
@@ -54,7 +54,10 @@ class VoiceCommandTest {
 
     @Test
     fun `shuffle phrases parse to SetShuffle`() {
-        listOf("shuffle", "shuffle on", "turn on shuffle").forEach {
+        listOf(
+            "shuffle", "shuffle on", "turn on shuffle", "play shuffle", "play shuffled",
+            "put on shuffle", "put it on shuffle", "shuffle mode",
+        ).forEach {
             assertThat(VoiceCommand.parse(it)).isEqualTo(VoiceCommand.SetShuffle(true))
         }
         listOf("shuffle off", "stop shuffling", "turn shuffle off", "no shuffle").forEach {
@@ -64,10 +67,10 @@ class VoiceCommandTest {
 
     @Test
     fun `repeat phrases parse to SetRepeat`() {
-        listOf("repeat", "repeat all", "loop", "turn on repeat").forEach {
+        listOf("repeat", "repeat all", "loop", "turn on repeat", "put it on repeat").forEach {
             assertThat(VoiceCommand.parse(it)).isEqualTo(VoiceCommand.SetRepeat(RepeatMode.ALL))
         }
-        listOf("repeat one", "repeat this song", "loop this track").forEach {
+        listOf("repeat one", "repeat this song", "loop this track", "put it on repeat one").forEach {
             assertThat(VoiceCommand.parse(it)).isEqualTo(VoiceCommand.SetRepeat(RepeatMode.ONE))
         }
         listOf("repeat off", "stop repeating", "don't repeat", "loop off").forEach {
@@ -95,6 +98,16 @@ class VoiceCommandTest {
             .isEqualTo(VoiceCommand.PlaySearch("Back in Black"))
         assertThat(VoiceCommand.parse("play everything"))
             .isEqualTo(VoiceCommand.PlaySearch("everything"))
+        // Titles that are also small words stay requestable.
+        assertThat(VoiceCommand.parse("play Up")).isEqualTo(VoiceCommand.PlaySearch("Up"))
+    }
+
+    @Test
+    fun `a cut-off play with only an article or filler is not a search`() {
+        listOf("play my", "play me", "play the", "play some", "shuffle my", "put on my").forEach {
+            assertThat(VoiceCommand.parse(it)).isNull()
+        }
+        assertThat(VoiceCommand.parse("play me some metal")).isEqualTo(VoiceCommand.PlaySearch("me some metal"))
     }
 
     @Test
@@ -114,6 +127,16 @@ class VoiceCommandTest {
             .isEqualTo(VoiceCommand.PlaySearch("my road trip playlist"))
         assertThat(VoiceCommand.parse("put on some lamb of god"))
             .isEqualTo(VoiceCommand.PlaySearch("some lamb of god"))
+        // A preposition inside the name must not turn it into a target.
+        assertThat(VoiceCommand.parse("put on Born to Run"))
+            .isEqualTo(VoiceCommand.PlaySearch("Born to Run"))
+        assertThat(VoiceCommand.parse("put on Back in Black"))
+            .isEqualTo(VoiceCommand.PlaySearch("Back in Black"))
+        assertThat(VoiceCommand.parse("put on Walking on Sunshine"))
+            .isEqualTo(VoiceCommand.PlaySearch("Walking on Sunshine"))
+        assertThat(VoiceCommand.parse("put on Highway to Hell next"))
+            .isEqualTo(VoiceCommand.PlayNext("Highway to Hell"))
+        assertThat(VoiceCommand.parse("put on the queue")).isNull()
     }
 
     @Test
@@ -133,14 +156,19 @@ class VoiceCommandTest {
         assertThat(VoiceCommand.parse("add Simon & Garfunkel to the queue"))
             .isEqualTo(VoiceCommand.AddToQueue("Simon & Garfunkel"))
         assertThat(VoiceCommand.parse("&")).isNull()
+        // A stray symbol at either end is not a word the sentence sees.
+        assertThat(VoiceCommand.parse("- play lamb of god"))
+            .isEqualTo(VoiceCommand.PlaySearch("lamb of god"))
+        assertThat(VoiceCommand.parse("play thunderstruck next 🎵"))
+            .isEqualTo(VoiceCommand.PlayNext("thunderstruck"))
     }
 
     @Test
     fun `unknown utterances parse to null`() {
         listOf(
             "", "   ", "what is the weather", "open settings", "add", "add to the queue",
-            "save this song", "put it on shuffle", "put it on repeat", "put on the", "put on it",
-            "put on some", "shuffle the", "shuffle it",
+            "add to the end", "save this song", "put on the", "put on it", "put on some",
+            "shuffle the", "shuffle it",
         ).forEach {
             assertThat(VoiceCommand.parse(it)).isNull()
         }
@@ -198,9 +226,13 @@ class VoiceCommandTest {
             .isEqualTo(VoiceCommand.PlayNext("lamb of god"))
         assertThat(VoiceCommand.parse("put lamb of god next"))
             .isEqualTo(VoiceCommand.PlayNext("lamb of god"))
-        // A queue target before "next" adds nothing to the name.
+        // A queue target before "next" adds nothing to the name, whatever the verb.
         assertThat(VoiceCommand.parse("add lamb of god to the queue next"))
             .isEqualTo(VoiceCommand.PlayNext("lamb of god"))
+        assertThat(VoiceCommand.parse("queue thunderstruck in the queue next"))
+            .isEqualTo(VoiceCommand.PlayNext("thunderstruck"))
+        assertThat(VoiceCommand.parse("queue back to black to the queue"))
+            .isEqualTo(VoiceCommand.AddToQueue("back to black"))
     }
 
     // ------------------------------------------------------------------ playlists
@@ -256,6 +288,19 @@ class VoiceCommandTest {
         // A queue target at the end wins over a playlist mentioned in the subject.
         assertThat(VoiceCommand.parse("add the songs from playlist road trip to the queue"))
             .isEqualTo(VoiceCommand.AddToQueue("the songs from playlist road trip"))
+    }
+
+    @Test
+    fun `a trailing playlist word lets the target start at the last preposition with an article`() {
+        assertThat(VoiceCommand.parse("add thunderstruck to my Road to Nowhere playlist"))
+            .isEqualTo(VoiceCommand.AddToPlaylist("thunderstruck", "my Road to Nowhere playlist"))
+        assertThat(VoiceCommand.parse("add this to my Road to Nowhere playlist"))
+            .isEqualTo(VoiceCommand.AddToPlaylist(null, "my Road to Nowhere playlist"))
+        // A subject containing "to" or "to the" keeps it.
+        assertThat(VoiceCommand.parse("add back to black to my road trip playlist"))
+            .isEqualTo(VoiceCommand.AddToPlaylist("back to black", "my road trip playlist"))
+        assertThat(VoiceCommand.parse("add Back to the Future to my road trip playlist"))
+            .isEqualTo(VoiceCommand.AddToPlaylist("Back to the Future", "my road trip playlist"))
     }
 
     // ------------------------------------------------------------------ confirmations

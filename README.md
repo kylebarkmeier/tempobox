@@ -88,9 +88,10 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
 - Voice playback (experimental): "Hey Google, play [artist/album/playlist/
   genre/track] on TempoBox", with "shuffle ..." honored, a spoken type ("play
   the artist X", "songs by X", "the album X", "my X playlist") searched
-  first, "play [song] by [artist]" for same-named titles, and "play
-  everything" / "shuffle my music" for the whole library; Android Auto's
-  search screen works too. Matching is exact first, then whole words, and
+  first, "play [song] by [artist]" for same-named titles, "play
+  everything" / "shuffle my music" for the whole library and "play
+  something" for it shuffled; Android Auto's search screen works too.
+  Matching is exact first, then whole words, ignoring punctuation, and
   whether Assistant/Gemini targets a sideloaded app can vary by device.
   Setup and troubleshooting:
   [Voice commands](https://github.com/kylebarkmeier/tempobox/wiki/Voice-Commands)
@@ -102,10 +103,10 @@ Bluetooth behavior. No cloud account, no ads, no telemetry.
   everything", "add [artist/album/song] to the queue", "play [song] next",
   "add this to [playlist]", "add [artist] to playlist [name]", "pause",
   "resume", "next", "previous", "shuffle on/off", "repeat off/all/one", or
-  "volume up/down". The toast afterwards says what really happened ("Playing
+  "volume up/down". The dialog then shows what really happened ("Playing
   12 tracks (artist: ...)", "Added 12 tracks to queue", "Nothing in the
-  library matched ..."), and every request is kept in an on-device log for
-  troubleshooting (see the wiki).
+  library matched ...", "Nothing to resume: the queue is empty"), and every
+  request is kept in an on-device log for troubleshooting (see the wiki).
   Uses your device's own speech recognizer and asks for the Microphone
   permission on first use
 - Calls stay clean: music pauses for calls (audio focus) and TempoBox refuses

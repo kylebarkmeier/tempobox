@@ -52,11 +52,10 @@ import javax.inject.Inject
 /**
  * Transient voice-command dialog: captures one utterance with the device's
  * [SpeechRecognizer], hands it to [VoiceActions] (which parses it through
- * the unit-tested [VoiceCommand] grammar, runs it after this dialog is gone,
- * and logs it), and finishes. Launched from the Library top bar, the
- * home-screen widget, and the Quick Settings tile ([VoiceTileService]);
- * Android Auto voice goes through the media session's search instead
- * (PlaybackService.onSearch).
+ * the unit-tested [VoiceCommand] grammar, runs it, and logs it), shows the
+ * outcome, and finishes. Launched from the Library top bar, the home-screen
+ * widget, and the Quick Settings tile ([VoiceTileService]); the assistant
+ * and Android Auto go through the media session instead (PlaybackService).
  *
  * Needs no assistant: the recognizer is the device's own speech service.
  */
@@ -68,6 +67,7 @@ class VoiceCommandActivity : ComponentActivity() {
     @Inject lateinit var settingsRepository: SettingsRepository
 
     private var recognizer: SpeechRecognizer? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     /** What the dialog shows; mutated by the recognition listener (main thread). */
     private var state by mutableStateOf<VoiceState>(VoiceState.Starting)
@@ -95,10 +95,31 @@ class VoiceCommandActivity : ComponentActivity() {
         beginOrRequestPermission()
     }
 
+    /** The delayed close after an outcome; cancelled on destroy so it never runs on a dead activity. */
+    private val closeAfterOutcome = Runnable { finish() }
+
     override fun onDestroy() {
+        mainHandler.removeCallbacks(closeAfterOutcome)
         recognizer?.destroy()
         recognizer = null
         super.onDestroy()
+    }
+
+    /**
+     * Shows what really happened in the dialog itself: a text toast is cut to
+     * two lines on Android 12+, which is where the reason would go. When the
+     * dialog was dismissed while the lookup ran, a toast is the fallback.
+     */
+    private fun showOutcome(command: VoiceCommand, outcome: String) {
+        if (isFinishing || isDestroyed) {
+            Toast.makeText(applicationContext, outcome, Toast.LENGTH_LONG).show()
+            return
+        }
+        state = VoiceState.Done(outcome)
+        mainHandler.postDelayed(
+            closeAfterOutcome,
+            if (command is VoiceCommand.Immediate) SHOW_OUTCOME_SHORT_MS else SHOW_OUTCOME_LONG_MS,
+        )
     }
 
     private fun beginOrRequestPermission() {
@@ -150,15 +171,12 @@ class VoiceCommandActivity : ComponentActivity() {
             val alternatives = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 ?.mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }.orEmpty()
             val heard = alternatives.firstOrNull().orEmpty()
-            // The command outlives this dialog; the callback must not keep
-            // the finished activity alive, so it captures only these two.
-            val app = applicationContext
-            val mainHandler = Handler(Looper.getMainLooper())
+            // The dialog stays up until the outcome is known (a lookup takes
+            // a moment), so the callback may reference the activity; it is
+            // held only until then.
             val command = voiceActions.handle(heard, alternatives.drop(1), VoiceLog.SOURCE_DIALOG) {
                     command, outcome ->
-                // A toast outlives the activity and names what really happened.
-                val length = if (command is VoiceCommand.Immediate) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
-                mainHandler.post { Toast.makeText(app, outcome, length).show() }
+                mainHandler.post { showOutcome(command, outcome) }
             }
             if (command == null) {
                 state = VoiceState.Error(
@@ -167,7 +185,7 @@ class VoiceCommandActivity : ComponentActivity() {
                 )
                 return
             }
-            finish()
+            state = VoiceState.Working(heard)
         }
 
         override fun onError(error: Int) {
@@ -188,12 +206,24 @@ class VoiceCommandActivity : ComponentActivity() {
         override fun onEndOfSpeech() = Unit
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
     }
+
+    private companion object {
+        /** How long the outcome stays up before the dialog closes itself. */
+        const val SHOW_OUTCOME_SHORT_MS = 1200L
+        const val SHOW_OUTCOME_LONG_MS = 2500L
+    }
 }
 
 /** Dialog phases. */
 internal sealed interface VoiceState {
     data object Starting : VoiceState
     data class Listening(val heard: String?) : VoiceState
+
+    /** The utterance parsed; its lookup or player call is running. */
+    data class Working(val heard: String) : VoiceState
+
+    /** What happened, shown briefly before the dialog closes. */
+    data class Done(val outcome: String) : VoiceState
     data class Error(val message: String, val retryable: Boolean) : VoiceState
     data object PermissionDenied : VoiceState
 }
@@ -237,6 +267,30 @@ private fun VoiceDialog(
                         TextButton(onClick = onCancel) { Text("Cancel") }
                     }
 
+                    is VoiceState.Working -> {
+                        Text(
+                            state.heard,
+                            style = MaterialTheme.typography.titleMedium,
+                            textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            "Working…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        // The command keeps running; only the dialog goes.
+                        TextButton(onClick = onCancel) { Text("Dismiss") }
+                    }
+
+                    is VoiceState.Done -> {
+                        Text(
+                            state.outcome,
+                            style = MaterialTheme.typography.bodyLarge,
+                            textAlign = TextAlign.Center,
+                        )
+                        TextButton(onClick = onCancel) { Text("Close") }
+                    }
+
                     is VoiceState.Error -> {
                         Text(
                             state.message,
@@ -275,7 +329,7 @@ private fun VoiceDialog(
 @Composable
 private fun Hint() {
     Text(
-        "Try “play ‹artist, album or playlist›”, “add ‹artist› to the queue”, " +
+        "Try “play ‹artist, album or playlist›”, “put on ‹something›”, “add ‹artist› to the queue”, " +
             "“play ‹song› next”, “add this to ‹playlist›”, “shuffle everything”, “next”, “pause”",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
