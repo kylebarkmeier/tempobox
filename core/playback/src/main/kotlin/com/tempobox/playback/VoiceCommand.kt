@@ -199,7 +199,11 @@ sealed interface VoiceCommand {
                         "play" -> PlaySearch(words.name(1, words.size) ?: return null)
                         // "shuffle X": keep the token; VoiceSearch strips it
                         // and sets the shuffle flag on whatever X resolves to.
-                        "shuffle" -> PlaySearch(words.spoken(0, words.size))
+                        "shuffle" -> if (words.name(1, words.size) == null) {
+                            null
+                        } else {
+                            PlaySearch(words.spoken(0, words.size))
+                        }
                         else -> null
                     }
                 }
@@ -275,7 +279,7 @@ sealed interface VoiceCommand {
                 // "put on X" is the everyday way to ask for X; any other
                 // subject-less sentence is not a command.
                 return if (first == "put" && preposition == "on") {
-                    Sentence.Of(PlaySearch(words.spoken(targetFrom, n)))
+                    of(words.name(targetFrom, n)?.let { PlaySearch(it) })
                 } else {
                     Sentence.Rejected
                 }

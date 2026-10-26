@@ -293,5 +293,10 @@ class VoiceSearchTest {
         )
         assertThat(voiceSearch.findPlaylist("end")).isNull()
         assertThat(voiceSearch.findPlaylist("my playlist")?.id).isEqualTo(7L)
+        // Without a playlist literally named so, the leftover article must
+        // not pick "My Favorites" as a whole-word match.
+        coEvery { playlists.getPlaylists() } returns listOf(roadTrip, Playlist(id = 8, name = "My Favorites"))
+        assertThat(voiceSearch.findPlaylist("my playlist")).isNull()
+        assertThat(voiceSearch.findPlaylist("the playlist")).isNull()
     }
 }

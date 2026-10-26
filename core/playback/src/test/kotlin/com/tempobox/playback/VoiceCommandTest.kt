@@ -139,7 +139,8 @@ class VoiceCommandTest {
     fun `unknown utterances parse to null`() {
         listOf(
             "", "   ", "what is the weather", "open settings", "add", "add to the queue",
-            "save this song", "put it on shuffle", "put it on repeat",
+            "save this song", "put it on shuffle", "put it on repeat", "put on the", "put on it",
+            "put on some", "shuffle the", "shuffle it",
         ).forEach {
             assertThat(VoiceCommand.parse(it)).isNull()
         }

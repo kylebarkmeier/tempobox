@@ -7,6 +7,7 @@ import com.google.common.truth.Truth.assertThat
 import com.tempobox.database.TempoBoxDatabase
 import com.tempobox.playlist.M3uCodec
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -111,9 +112,15 @@ class MediaScannerTest {
      * Shares the test scheduler so delivery is synchronous with the emit; a
      * collector on its own scheduler can silently miss emissions.
      */
+    /**
+     * Subscribes before returning (undispatched start) and collects on the
+     * test scheduler, so an emission from a Room thread is appended on the
+     * test thread before the test resumes: an unconfined collector appended
+     * from the emitting thread and raced the assertion on CI.
+     */
     private fun TestScope.collectVanished(): MutableList<List<Long>> {
         val batches = mutableListOf<List<Long>>()
-        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+        backgroundScope.launch(start = CoroutineStart.UNDISPATCHED) {
             removals.vanished.collect { batches += it }
         }
         return batches

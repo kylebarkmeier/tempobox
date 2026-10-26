@@ -28,16 +28,20 @@ private val NON_WORD = Regex("[^\\p{L}\\p{N}]")
 fun String.searchKeyword(): String = NON_WORD.replace(searchNormalized(), "")
 
 /**
- * True when [phrase] occurs in this text as whole words after normalization:
- * "trip" is found in "Road Trip" but not in "Triptych", "2" in "Song 2" but
- * not in "22". A blank phrase matches nothing.
+ * A matcher for [phrase] as whole words: "trip" is found in "Road Trip" but
+ * not in "Triptych", "2" in "Song 2" but not in "22". It takes text already
+ * passed through [searchNormalized], so one matcher can scan a whole list of
+ * normalized keys without recompiling. A blank phrase matches nothing.
  */
-fun String.containsWordPhrase(phrase: String): Boolean {
+fun wordPhraseMatcher(phrase: String): (String) -> Boolean {
     val wanted = phrase.trim().searchNormalized()
-    if (wanted.isEmpty()) return false
+    if (wanted.isEmpty()) return { false }
     val pattern = Regex("(?<![\\p{L}\\p{N}])" + Regex.escape(wanted) + "(?![\\p{L}\\p{N}])")
-    return pattern.containsMatchIn(searchNormalized())
+    return { normalized -> pattern.containsMatchIn(normalized) }
 }
+
+/** True when [phrase] occurs in this text as whole words after normalization; see [wordPhraseMatcher]. */
+fun String.containsWordPhrase(phrase: String): Boolean = wordPhraseMatcher(phrase)(searchNormalized())
 
 /** True when any of [fields] contains [query] after normalization. */
 fun searchMatches(query: String, vararg fields: String): Boolean {

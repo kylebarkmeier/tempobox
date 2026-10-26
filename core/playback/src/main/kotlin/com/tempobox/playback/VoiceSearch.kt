@@ -8,9 +8,9 @@ import com.tempobox.model.AlbumArtist
 import com.tempobox.model.Genre
 import com.tempobox.model.Playlist
 import com.tempobox.model.Track
-import com.tempobox.model.containsWordPhrase
 import com.tempobox.model.searchKeyword
 import com.tempobox.model.searchNormalized
+import com.tempobox.model.wordPhraseMatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -100,7 +100,13 @@ class VoiceSearch @Inject constructor(
                 .filter { it.isNotEmpty() }
                 .distinct()
             for (q in candidates) all.firstOrNull { it.name.searchNormalized() == q }?.let { return@withContext it }
-            for (q in candidates) all.firstOrNull { it.name.containsWordPhrase(q) }?.let { return@withContext it }
+            // "my playlist" leaves the article "my" as a candidate; as a whole
+            // word it would match "My Favorites", so only the exact pass may use it.
+            val loose = candidates.filterNot { q -> q.split(WHITESPACE).all { it in ARTICLES || it == "playlist" } }
+            for (q in loose) {
+                val matches = wordPhraseMatcher(q)
+                all.firstOrNull { matches(it.name.searchNormalized()) }?.let { return@withContext it }
+            }
             null
         }
 
@@ -130,9 +136,11 @@ class VoiceSearch @Inject constructor(
         if (q.isEmpty()) return null
         val wanted = if (reading.scope == Scope.ANY) ALL_BUCKETS else setOf(reading.scope)
         val buckets = if (reading.artist == null) wanted else wanted intersect setOf(Scope.ALBUM, Scope.TRACK)
-        val hit: (String) -> Boolean = if (exact) { key -> key == q } else { key -> key.containsWordPhrase(q) }
+        // Keys are already normalized; the matchers are compiled once per reading.
+        val hit: (String) -> Boolean = if (exact) { key -> key == q } else wordPhraseMatcher(q)
+        val artistMatches = reading.artist?.let { wordPhraseMatcher(it) }
         val artistOk: (String) -> Boolean = { name ->
-            reading.artist == null || name.containsWordPhrase(reading.artist)
+            artistMatches == null || artistMatches(name.searchNormalized())
         }
 
         if (Scope.PLAYLIST in buckets) {
