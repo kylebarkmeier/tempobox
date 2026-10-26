@@ -120,13 +120,16 @@ class PlayerConnectionTest {
 
     @Test
     fun `playFromSearch sends one item carrying the spoken query`() {
-        connection.playFromSearch("lamb of god")
+        connection.playFromSearch("lamb of god", VoiceLog.SOURCE_ASSISTANT_INTENT)
         idleMain()
 
         val items = slot<List<MediaItem>>()
         verify { controller.setMediaItems(capture(items)) }
         assertThat(items.captured).hasSize(1)
         assertThat(items.captured.single().requestMetadata.searchQuery).isEqualTo("lamb of god")
+        // The source rides in the extras so the service's log line names it.
+        assertThat(items.captured.single().requestMetadata.extras?.getString(VoiceLog.EXTRA_SOURCE))
+            .isEqualTo(VoiceLog.SOURCE_ASSISTANT_INTENT)
         verify { controller.prepare() }
         verify { controller.play() }
     }

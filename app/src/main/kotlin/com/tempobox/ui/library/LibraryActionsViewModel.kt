@@ -14,6 +14,7 @@ import com.tempobox.model.SmartRule
 import com.tempobox.model.SwipeAction
 import com.tempobox.model.TagData
 import com.tempobox.model.Track
+import com.tempobox.playback.ActionMessages
 import com.tempobox.playback.PlayerConnection
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -93,18 +94,12 @@ class LibraryActionsViewModel @Inject constructor(
 
     fun addToQueue(item: LibraryItem) = withTracks(item) {
         val added = playerConnection.addToQueue(it)
-        toast(
-            when {
-                added == 0 -> "Already in queue"
-                added < it.size -> "Added ${countLabel(added)} to queue (rest already queued)"
-                else -> "Added ${countLabel(added)} to queue"
-            },
-        )
+        toast(ActionMessages.addedToQueue(added, it.size))
     }
 
     fun playNext(item: LibraryItem) = withTracks(item) {
         playerConnection.playNext(it)
-        toast("Playing ${countLabel(it.size)} next")
+        toast(ActionMessages.playingNext(it.size))
     }
 
     /** "Go to artist": open the artist detail screen this item belongs to. */
@@ -225,8 +220,8 @@ class LibraryActionsViewModel @Inject constructor(
         withTracks(item) { tracks ->
             val added = playlistRepository.addToPlaylist(playlistId, tracks.map { it.id })
             toast(
-                if (added) "Added ${countLabel(tracks.size)} to \"$playlistName\""
-                else "Can't add tracks to \"$playlistName\" — its auto rule picks the tracks",
+                if (added) ActionMessages.addedToPlaylist(tracks.size, playlistName)
+                else ActionMessages.autoPlaylistRefusal(playlistName),
             )
             _dialog.value = null
         }
@@ -376,7 +371,7 @@ class LibraryActionsViewModel @Inject constructor(
         _messages.tryEmit(message)
     }
 
-    private fun countLabel(count: Int) = if (count == 1) "1 track" else "$count tracks"
+    private fun countLabel(count: Int) = ActionMessages.countLabel(count)
 
     companion object {
         private const val TAG = "LibraryActions"

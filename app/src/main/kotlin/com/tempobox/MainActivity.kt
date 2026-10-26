@@ -11,6 +11,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import com.tempobox.library.LibraryPermissions
 import com.tempobox.playback.PlayerConnection
+import com.tempobox.playback.VoiceLog
 import com.tempobox.ui.AppRoot
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -67,7 +68,7 @@ class MainActivity : ComponentActivity() {
         // One line per spoken request, so `adb logcat -s MainActivity
         // PlaybackService` shows whether the assistant dispatched at all.
         Log.i(TAG, "Play-from-search intent: '$query'")
-        playerConnection.playFromSearch(query)
+        playerConnection.playFromSearch(query, VoiceLog.SOURCE_ASSISTANT_INTENT)
     }
 
     private companion object {

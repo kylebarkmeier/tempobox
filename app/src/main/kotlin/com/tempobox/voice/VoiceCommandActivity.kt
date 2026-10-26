@@ -4,10 +4,11 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -39,8 +40,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.tempobox.model.ThemeConfig
-import com.tempobox.playback.PlayerConnection
+import com.tempobox.playback.VoiceActions
 import com.tempobox.playback.VoiceCommand
+import com.tempobox.playback.VoiceLog
 import com.tempobox.settings.SettingsRepository
 import com.tempobox.ui.permissions.openAppSettings
 import com.tempobox.ui.theme.TempoBoxTheme
@@ -49,18 +51,20 @@ import javax.inject.Inject
 
 /**
  * Transient voice-command dialog: captures one utterance with the device's
- * [SpeechRecognizer], parses it through the unit-tested [VoiceCommand]
- * grammar, executes it via [PlayerConnection.execute], and finishes. Launched
- * from the Library top bar, the home-screen widget, and the Quick Settings
- * tile ([VoiceTileService]); Android Auto voice goes through the media
- * session's search instead (PlaybackService.onSearch).
+ * [SpeechRecognizer], hands it to [VoiceActions] (which parses it through
+ * the unit-tested [VoiceCommand] grammar, runs it after this dialog is gone,
+ * and logs it), and finishes. Launched from the Library top bar, the
+ * home-screen widget, and the Quick Settings tile ([VoiceTileService]);
+ * Android Auto voice goes through the media session's search instead
+ * (PlaybackService.onSearch).
  *
  * Needs no assistant: the recognizer is the device's own speech service.
  */
 @AndroidEntryPoint
 class VoiceCommandActivity : ComponentActivity() {
 
-    @Inject lateinit var player: PlayerConnection
+    @Inject lateinit var voiceActions: VoiceActions
+    @Inject lateinit var voiceLog: VoiceLog
     @Inject lateinit var settingsRepository: SettingsRepository
 
     private var recognizer: SpeechRecognizer? = null
@@ -141,31 +145,41 @@ class VoiceCommandActivity : ComponentActivity() {
         }
 
         override fun onResults(results: Bundle?) {
-            val heard = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                ?.firstOrNull()?.trim().orEmpty()
-            val command = VoiceCommand.parse(heard)
+            // The recognizer's other guesses go to the log too: when the
+            // first one was wrong, they show what was probably meant.
+            val alternatives = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                ?.mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }.orEmpty()
+            val heard = alternatives.firstOrNull().orEmpty()
+            // The command outlives this dialog; the callback must not keep
+            // the finished activity alive, so it captures only these two.
+            val app = applicationContext
+            val mainHandler = Handler(Looper.getMainLooper())
+            val command = voiceActions.handle(heard, alternatives.drop(1), VoiceLog.SOURCE_DIALOG) {
+                    command, outcome ->
+                // A toast outlives the activity and names what really happened.
+                val length = if (command is VoiceCommand.Immediate) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
+                mainHandler.post { Toast.makeText(app, outcome, length).show() }
+            }
             if (command == null) {
-                // One line per utterance so a "nothing happened" report can be
-                // checked against what the recognizer actually produced.
-                Log.i(TAG, "No command in '$heard'")
                 state = VoiceState.Error(
                     if (heard.isBlank()) "Did not hear anything" else "No command in “$heard”",
                     retryable = true,
                 )
                 return
             }
-            Log.i(TAG, "Voice command from '$heard': $command")
-            player.execute(command)
-            // The dialog is gone before the command takes effect; a toast
-            // outlives the activity and names what was understood.
-            Toast.makeText(this@VoiceCommandActivity, command.confirmation(), Toast.LENGTH_SHORT)
-                .show()
             finish()
         }
 
         override fun onError(error: Int) {
-            Log.w(TAG, "Speech recognition error $error")
-            state = VoiceState.Error(recognizerErrorMessage(error), retryable = true)
+            val message = recognizerErrorMessage(error)
+            // Partial text already shown in the dialog is the best record of
+            // what was said when the recognizer then gives up.
+            val heard = (state as? VoiceState.Listening)?.heard.orEmpty()
+            voiceLog.record(
+                VoiceLog.SOURCE_DIALOG, heard, command = null,
+                outcome = "recognizer error $error: $message",
+            )
+            state = VoiceState.Error(message, retryable = true)
         }
 
         override fun onBeginningOfSpeech() = Unit
@@ -173,10 +187,6 @@ class VoiceCommandActivity : ComponentActivity() {
         override fun onBufferReceived(buffer: ByteArray?) = Unit
         override fun onEndOfSpeech() = Unit
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
-    }
-
-    private companion object {
-        const val TAG = "VoiceCommand"
     }
 }
 
@@ -265,8 +275,8 @@ private fun VoiceDialog(
 @Composable
 private fun Hint() {
     Text(
-        "Try “play ‹artist, album or playlist›”, “next”, " +
-            "“pause”, “shuffle on”, “repeat one”",
+        "Try “play ‹artist, album or playlist›”, “add ‹artist› to the queue”, " +
+            "“play ‹song› next”, “add this to ‹playlist›”, “shuffle everything”, “next”, “pause”",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,
