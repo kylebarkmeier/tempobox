@@ -1,8 +1,12 @@
 package com.tempobox.playback
 
+import android.os.Bundle
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
 import com.tempobox.model.AudioFormat
+import com.tempobox.model.ShuffleMode
 import com.tempobox.model.Track
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -109,5 +113,45 @@ class MediaItemsTest {
         assertThat(queueItem.track.id).isEqualTo(0)
         assertThat(queueItem.track.filePath).isEmpty()
         assertThat(queueItem.track.format).isEqualTo(AudioFormat.OTHER)
+    }
+
+    @Test
+    fun `a service shuffle mark survives the item round trip`() {
+        val marked = MediaItems.toMediaItem(track, uid = 7, shuffled = MediaItems.Shuffled(ShuffleMode.ANTI_REPEAT, 3))
+        assertThat(MediaItems.shuffled(marked)).isEqualTo(MediaItems.Shuffled(ShuffleMode.ANTI_REPEAT, 3))
+        assertThat(MediaItems.shuffled(MediaItems.toMediaItem(track, uid = 8))).isNull()
+        // The mark does not leak into the queue-facing track.
+        assertThat(MediaItems.toTrack(marked)).isEqualTo(MediaItems.toTrack(MediaItems.toMediaItem(track, uid = 7)))
+        // Another controller's extras with the same keys but no usable mode are no mark.
+        val bogus = MediaItem.Builder()
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setExtras(
+                        Bundle().apply {
+                            putString("voiceShuffleMode", "SIDEWAYS")
+                            putInt("voiceOriginalIndex", 0)
+                        },
+                    )
+                    .build(),
+            )
+            .build()
+        assertThat(MediaItems.shuffled(bogus)).isNull()
+    }
+
+    @Test
+    fun `voiceQueue marks shuffled items with their pre-shuffle position and leaves an ordered queue unmarked`() {
+        val tracks = listOf(track.copy(id = 1), track.copy(id = 2, title = "B"), track.copy(id = 3, title = "C"))
+        var uid = 100L
+        val shuffled = MediaItems.voiceQueue(tracks, order = listOf(2, 0, 1), mode = ShuffleMode.ALL) { uid++ }
+        assertThat(shuffled.map { it.mediaId }).containsExactly("100", "101", "102").inOrder()
+        assertThat(shuffled.map { MediaItems.toTrack(it).id }).containsExactly(3L, 1L, 2L).inOrder()
+        assertThat(shuffled.map { MediaItems.shuffled(it) })
+            .containsExactly(
+                MediaItems.Shuffled(ShuffleMode.ALL, 2), MediaItems.Shuffled(ShuffleMode.ALL, 0), MediaItems.Shuffled(ShuffleMode.ALL, 1),
+            )
+            .inOrder()
+        val ordered = MediaItems.voiceQueue(tracks, order = tracks.indices.toList(), mode = null) { uid++ }
+        assertThat(ordered.map { MediaItems.toTrack(it).id }).containsExactly(1L, 2L, 3L).inOrder()
+        assertThat(ordered.map { MediaItems.shuffled(it) }).containsExactly(null, null, null)
     }
 }

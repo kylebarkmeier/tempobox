@@ -125,13 +125,10 @@ class VoiceLog internal constructor(
         internal const val MAX_BYTES = 256L * 1024
         private val TIMESTAMP: DateTimeFormatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
 
-        /** MediaItem request-metadata extra naming where a search query came from. */
-        const val EXTRA_SOURCE = "com.tempobox.voice.source"
-
         /** The in-app listening dialog (VoiceCommandActivity). */
         const val SOURCE_DIALOG = "dialog"
 
-        /** The assistant's MEDIA_PLAY_FROM_SEARCH intent (MainActivity). */
+        /** The assistant's MEDIA_PLAY_FROM_SEARCH intent (MainActivity, via VoiceActions.playFromAssistant). */
         const val SOURCE_ASSISTANT_INTENT = "assistant-intent"
 
         /**
@@ -143,9 +140,6 @@ class VoiceLog internal constructor(
 
         /** Android Auto's search screen (onSearch). */
         const val SOURCE_AUTO_SEARCH = "auto-search"
-
-        /** The only values the session accepts from a controller's extra; anything else is [sessionSource]. */
-        val KNOWN_SOURCES = setOf(SOURCE_DIALOG, SOURCE_ASSISTANT_INTENT)
 
         /** The source for a query another controller sent to the session, named by its package. */
         fun sessionSource(packageName: String): String = "$SOURCE_SESSION:$packageName"

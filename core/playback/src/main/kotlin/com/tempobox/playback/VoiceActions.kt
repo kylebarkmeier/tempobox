@@ -16,8 +16,11 @@ import javax.inject.Singleton
  * toast shows and [VoiceLog] keeps. [VoiceCommand.Immediate] commands go
  * straight to [PlayerConnection.execute]; everything else resolves its
  * names through [VoiceSearch] here, so a miss says "nothing matched" instead
- * of claiming success or quietly playing something else. The assistant and
- * Android Auto paths stay in [PlaybackService], where a miss must still play
+ * of claiming success or quietly playing something else. The assistant's
+ * play request ([playFromAssistant]) resolves here too, so shuffle state and
+ * the log line come from one place; only a miss there falls back to playing
+ * something, since the assistant shows no outcome. Android Auto and other
+ * controllers stay in [PlaybackService], where a miss must still play
  * something because the car cannot show a toast.
  *
  * [handle] owns the coroutine: the in-app dialog finishes before a lookup
@@ -66,16 +69,41 @@ class VoiceActions @Inject constructor(
         return command
     }
 
+    /**
+     * The assistant's "play X on TempoBox" (MainActivity's
+     * MEDIA_PLAY_FROM_SEARCH intent). Resolves in-process like the dialog,
+     * but the assistant shows no outcome, so a miss must still play something:
+     * the queue that is there, else the saved one, else the whole library
+     * shuffled. One [VoiceLog] line either way.
+     */
+    fun playFromAssistant(query: String) {
+        // The VoiceLog line comes after the lookup; this shows the request arrived at all.
+        Log.i(TAG, "Assistant request: \"$query\"")
+        scope.launch {
+            val outcome = resultOf { playOrFallback(query) }.getOrElse { e ->
+                Log.e(TAG, "Assistant request \"$query\" failed", e)
+                "failed: ${e.message ?: e.javaClass.simpleName}"
+            }
+            voiceLog.record(
+                VoiceLog.SOURCE_ASSISTANT_INTENT, query, VoiceCommand.PlaySearch(query).toString(), outcome,
+            )
+        }
+    }
+
+    private suspend fun playOrFallback(query: String): String {
+        voiceSearch.resolve(query)?.let { return play(it) }
+        if (player.resumeQueue()) return "no match; resumed the current queue"
+        if (player.restoreSavedQueue()) return "no match; resumed the saved queue"
+        val all = voiceSearch.wholeLibrary(shuffle = true) ?: return "no match; the library is empty"
+        player.playShuffled(all.tracks)
+        return "no match; shuffled the whole library (${all.tracks.size} tracks)"
+    }
+
     /** Executes [command] and returns the outcome text. */
     suspend fun execute(command: VoiceCommand): String = when (command) {
         is VoiceCommand.Immediate -> player.execute(command)
 
-        is VoiceCommand.PlaySearch -> resolved(command.query) { r ->
-            // Replaces the queue like the library's Play and Shuffle buttons;
-            // both suspend until the controller has the new queue.
-            if (r.shuffle) player.playShuffled(r.tracks) else player.playTracks(r.tracks)
-            ActionMessages.playing(r.tracks.size, r.shuffle, r.description)
-        }
+        is VoiceCommand.PlaySearch -> resolved(command.query) { play(it) }
 
         is VoiceCommand.AddToQueue -> resolved(command.query) { r ->
             ActionMessages.addedToQueue(player.addToQueue(r.tracks), r.tracks.size, r.description)
@@ -87,6 +115,12 @@ class VoiceActions @Inject constructor(
         }
 
         is VoiceCommand.AddToPlaylist -> addToPlaylist(command)
+    }
+
+    /** Replaces the queue like the library's Play and Shuffle buttons; both suspend until the controller has it. */
+    private suspend fun play(r: VoiceSearch.Resolution): String {
+        if (r.shuffle) player.playShuffled(r.tracks) else player.playTracks(r.tracks)
+        return ActionMessages.playing(r.tracks.size, r.shuffle, r.description)
     }
 
     private suspend fun resolved(query: String, block: suspend (VoiceSearch.Resolution) -> String): String {

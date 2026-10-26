@@ -37,6 +37,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.time.Duration
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -64,6 +67,7 @@ class PlayerConnectionTest {
         every { renderers } returns MutableStateFlow(emptyList())
         every { servers } returns MutableStateFlow(emptyList())
     }
+    private val stateStore = mockk<PlaybackStateStore>()
     private lateinit var connection: PlayerConnection
 
     private fun track(id: Long) = Track(
@@ -89,11 +93,13 @@ class PlayerConnectionTest {
         // would NPE on it in a background coroutine (invisible to plain tests,
         // but runTest-based ones fail on the accumulated uncaught exceptions).
         every { controller.currentMediaItem } returns null
+        coEvery { stateStore.load() } returns null
         connection = PlayerConnection(
             context = ApplicationProvider.getApplicationContext(),
             shuffleEngine = ShuffleEngine(),
             settingsRepository = settingsRepository,
             remotePlay = remotePlay,
+            stateStore = stateStore,
             controllerOverride = Futures.immediateFuture(controller),
         )
         idleMain()
@@ -120,22 +126,6 @@ class PlayerConnectionTest {
     }
 
     @Test
-    fun `playFromSearch sends one item carrying the spoken query`() {
-        connection.playFromSearch("lamb of god", VoiceLog.SOURCE_ASSISTANT_INTENT)
-        idleMain()
-
-        val items = slot<List<MediaItem>>()
-        verify { controller.setMediaItems(capture(items)) }
-        assertThat(items.captured).hasSize(1)
-        assertThat(items.captured.single().requestMetadata.searchQuery).isEqualTo("lamb of god")
-        // The source rides in the extras so the service's log line names it.
-        assertThat(items.captured.single().requestMetadata.extras?.getString(VoiceLog.EXTRA_SOURCE))
-            .isEqualTo(VoiceLog.SOURCE_ASSISTANT_INTENT)
-        verify { controller.prepare() }
-        verify { controller.play() }
-    }
-
-    @Test
     fun `a queue replaced outside the connection drops the stale shuffle flag`() {
         runBlocking { connection.playShuffled(listOf(track(1), track(2), track(3))) }
         idleMain()
@@ -154,6 +144,117 @@ class PlayerConnectionTest {
         connection.seekTo(0) // any command path runs refresh()
         idleMain()
 
+        assertThat(connection.state.value.shuffleMode).isEqualTo(ShuffleMode.OFF)
+    }
+
+    @Test
+    fun `a voice queue the service shuffled is adopted with shuffle on and its pre-shuffle order`() {
+        // Service uids, each item carrying the flavor and the track's pre-shuffle position.
+        val foreign = listOf(
+            MediaItems.toMediaItem(track(9), uid = 5_000_000_001L, shuffled = MediaItems.Shuffled(ShuffleMode.ALL, 2)),
+            MediaItems.toMediaItem(track(10), uid = 5_000_000_002L, shuffled = MediaItems.Shuffled(ShuffleMode.ALL, 0)),
+            MediaItems.toMediaItem(track(11), uid = 5_000_000_003L, shuffled = MediaItems.Shuffled(ShuffleMode.ALL, 1)),
+        )
+        mockTimeline(foreign)
+        assertThat(connection.state.value.shuffleMode).isEqualTo(ShuffleMode.ALL)
+
+        // "shuffle off" restores the order the service shuffled from.
+        connection.setShuffleMode(ShuffleMode.OFF)
+        idleMain()
+        val restored = slot<List<MediaItem>>()
+        verify { controller.addMediaItems(capture(restored)) }
+        assertThat(restored.captured.map { it.mediaId })
+            .containsExactly("5000000002", "5000000003", "5000000001").inOrder()
+        assertThat(connection.state.value.shuffleMode).isEqualTo(ShuffleMode.OFF)
+    }
+
+    @Test
+    fun `resumeQueue plays what is queued and refuses an empty queue`() = runTest {
+        assertThat(connection.resumeQueue()).isFalse()
+        verify(exactly = 0) { controller.play() }
+
+        mockTimeline(listOf(MediaItems.toMediaItem(track(1), uid = 1L)))
+        every { controller.playbackState } returns Player.STATE_IDLE
+        assertThat(connection.resumeQueue()).isTrue()
+        verify { controller.prepare() }
+        verify { controller.play() }
+    }
+
+    @Test
+    fun `restoreSavedQueue asks the session only when a snapshot exists and persistence is on`() = runTest {
+        assertThat(connection.restoreSavedQueue()).isFalse()
+        verify(exactly = 0) { controller.play() }
+
+        coEvery { stateStore.load() } returns PlaybackStateStore.Snapshot(trackIds = listOf(1L, 2L))
+        every { settingsRepository.settings } returns flowOf(
+            AppSettings(queue = QueueSettings(persistQueue = false)),
+        )
+        assertThat(connection.restoreSavedQueue()).isFalse()
+        verify(exactly = 0) { controller.play() }
+    }
+
+    @Test
+    fun `restoreSavedQueue is true once the session's restore reaches the queue`() = runTest {
+        coEvery { stateStore.load() } returns PlaybackStateStore.Snapshot(trackIds = listOf(1L, 2L))
+        val restore = async { connection.restoreSavedQueue() }
+        runCurrent()
+        // The play request on the empty player is what makes the session restore ...
+        verify(exactly = 1) { controller.play() }
+        assertThat(restore.isCompleted).isFalse()
+        // ... and the restored timeline arriving is what makes the answer true.
+        mockTimeline(listOf(MediaItems.toMediaItem(track(1), uid = 0L), MediaItems.toMediaItem(track(2), uid = 1L)))
+        assertThat(restore.await()).isTrue()
+    }
+
+    @Test
+    fun `restoreSavedQueue plays a queue the service restored meanwhile`() = runTest {
+        // Cold start through the assistant: the service's own startup restore
+        // landed between the snapshot check and the controller call.
+        coEvery { stateStore.load() } returns PlaybackStateStore.Snapshot(trackIds = listOf(1L))
+        mockTimeline(listOf(MediaItems.toMediaItem(track(1), uid = 0L)))
+        every { controller.playbackState } returns Player.STATE_IDLE
+        assertThat(connection.restoreSavedQueue()).isTrue()
+        verify { controller.prepare() }
+        verify(exactly = 1) { controller.play() }
+    }
+
+    @Test
+    fun `resumeQueue after the queue played to the end starts it over`() = runTest {
+        mockTimeline(listOf(MediaItems.toMediaItem(track(1), uid = 1L)))
+        every { controller.playbackState } returns Player.STATE_ENDED
+        assertThat(connection.resumeQueue()).isTrue()
+        verify { controller.seekToDefaultPosition(0) }
+        verify { controller.play() }
+    }
+
+    @Test
+    fun `restoreSavedQueue gives up when nothing arrives`() = runTest {
+        coEvery { stateStore.load() } returns PlaybackStateStore.Snapshot(trackIds = listOf(1L))
+        val restore = async { connection.restoreSavedQueue() }
+        runCurrent()
+        verify(exactly = 1) { controller.play() }
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
+        assertThat(restore.await()).isFalse()
+    }
+
+    @Test
+    fun `the first queue a connection sees keeps the chosen shuffle flag unless it is marked`() {
+        connection.setShuffleMode(ShuffleMode.ALL)
+        idleMain()
+        mockTimeline(listOf(MediaItems.toMediaItem(track(1), uid = 0L)))
+        assertThat(connection.state.value.shuffleMode).isEqualTo(ShuffleMode.ALL)
+    }
+
+    @Test
+    fun `a partly marked foreign queue is adopted as unmarked`() {
+        runBlocking { connection.playShuffled(listOf(track(1), track(2))) }
+        idleMain()
+        mockTimeline(
+            listOf(
+                MediaItems.toMediaItem(track(9), uid = 5_000_000_001L, shuffled = MediaItems.Shuffled(ShuffleMode.ALL, 1)),
+                MediaItems.toMediaItem(track(10), uid = 5_000_000_002L),
+            ),
+        )
         assertThat(connection.state.value.shuffleMode).isEqualTo(ShuffleMode.OFF)
     }
 

@@ -7,6 +7,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import com.tempobox.model.AudioFormat
 import com.tempobox.model.QueueItem
+import com.tempobox.model.ShuffleMode
 import com.tempobox.model.Track
 import java.io.File
 
@@ -31,6 +32,16 @@ object MediaItems {
     private const val EXT_FORMAT = "format"
     private const val EXT_ALBUM_ARTIST = "albumArtist"
     private const val EXT_YEAR = "year"
+    private const val EXT_SHUFFLE_MODE = "voiceShuffleMode"
+    private const val EXT_ORIGINAL_INDEX = "voiceOriginalIndex"
+
+    /**
+     * Marks one item of a queue the service shuffled (a voice request from
+     * another controller): the flavor used and the track's pre-shuffle
+     * position, so [PlayerConnection] can adopt the queue with shuffle on
+     * and restore that order on "shuffle off".
+     */
+    data class Shuffled(val mode: ShuffleMode, val originalIndex: Int)
 
     fun artworkUri(path: String): Uri = "$ARTWORK_SCHEME:///${Uri.encode(path)}".toUri()
 
@@ -43,8 +54,12 @@ object MediaItems {
             null
         }
 
-    fun toMediaItem(track: Track, uid: Long): MediaItem {
+    fun toMediaItem(track: Track, uid: Long, shuffled: Shuffled? = null): MediaItem {
         val extras = Bundle().apply {
+            shuffled?.let {
+                putString(EXT_SHUFFLE_MODE, it.mode.name)
+                putInt(EXT_ORIGINAL_INDEX, it.originalIndex)
+            }
             putLong(EXT_TRACK_ID, track.id)
             putString(EXT_PATH, track.filePath)
             putLong(EXT_DURATION, track.durationMs)
@@ -79,6 +94,25 @@ object MediaItems {
         } else {
             Uri.fromFile(File(path))
         }
+
+    /**
+     * The items for a voice queue the service built: [order] indexes
+     * [tracks] in play order; with a [mode] every item carries its
+     * [Shuffled] mark (the track's pre-shuffle position is its index in
+     * [tracks]), without one the items are unmarked. [uid] allocates each
+     * item's queue uid.
+     */
+    fun voiceQueue(tracks: List<Track>, order: List<Int>, mode: ShuffleMode?, uid: () -> Long): List<MediaItem> =
+        order.map { i -> toMediaItem(tracks[i], uid(), shuffled = mode?.let { Shuffled(it, originalIndex = i) }) }
+
+    /** The [Shuffled] mark on an item, or null for an item no service shuffle produced. */
+    fun shuffled(item: MediaItem): Shuffled? {
+        val extras = item.mediaMetadata.extras ?: return null
+        val name = extras.getString(EXT_SHUFFLE_MODE) ?: return null
+        if (!extras.containsKey(EXT_ORIGINAL_INDEX)) return null
+        val mode = ShuffleMode.entries.firstOrNull { it.name == name } ?: return null
+        return Shuffled(mode, extras.getInt(EXT_ORIGINAL_INDEX))
+    }
 
     /** Rebuilds the queue-facing [Track] from an item's metadata (lossy but complete for UI). */
     fun toTrack(item: MediaItem): Track {

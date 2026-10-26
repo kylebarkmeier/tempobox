@@ -36,7 +36,6 @@ import com.tempobox.library.LibraryRepository
 import com.tempobox.model.MediaButton
 import com.tempobox.model.MediaButtonAction
 import com.tempobox.model.RepeatMode
-import com.tempobox.model.Track
 import com.tempobox.model.VolumeTapAction
 import com.tempobox.remoteplay.RemotePlayController
 import com.tempobox.scrobble.Scrobbler
@@ -342,21 +341,16 @@ class PlaybackService : MediaLibraryService() {
             startIndex: Int,
             startPositionMs: Long,
         ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
-            // Assistant / Gemini "play X on TempoBox" arrives as one item whose
-            // request metadata carries the recognized text (Media3's mapping of
-            // the legacy playFromSearch).
-            val request = mediaItems.singleOrNull()?.requestMetadata
-            val searchQuery = request?.searchQuery
+            // A controller's "play X" arrives as one item whose request
+            // metadata carries the recognized text (Media3's mapping of the
+            // legacy playFromSearch): Android Auto's voice requests, or any
+            // other controller bound to the session, logged by package. The
+            // app's own assistant intent does not come this way: it resolves
+            // in-process through VoiceActions.
+            val searchQuery = mediaItems.singleOrNull()?.requestMetadata?.searchQuery
             if (searchQuery != null) {
-                // Any controller may connect, so the extra is trusted only
-                // when it names one of the app's own sources; anything else
-                // (Android Auto's own voice requests land here too) is logged
-                // as the session plus the controller's package.
-                val source = request.extras?.getString(VoiceLog.EXTRA_SOURCE)
-                    ?.takeIf { it in VoiceLog.KNOWN_SOURCES }
-                    ?: VoiceLog.sessionSource(controller.packageName)
                 return scope.loggedFuture(TAG, "voiceQueue($searchQuery)") {
-                    voiceQueue(searchQuery, source)
+                    voiceQueue(searchQuery, VoiceLog.sessionSource(controller.packageName))
                 }
             }
 
@@ -596,27 +590,25 @@ class PlaybackService : MediaLibraryService() {
         }
         return VoiceQueue(
             queueOf(resolution),
-            "playing ${resolution.tracks.size} tracks (${resolution.description}" +
-                (if (resolution.shuffle) ", shuffled)" else ")"),
+            ActionMessages.playing(resolution.tracks.size, resolution.shuffle, resolution.description),
         )
     }
 
-    /** Builds the items off the main thread: a whole-library request is thousands of them. */
+    /**
+     * Builds the items off the main thread (a whole-library request is
+     * thousands of them). A shuffled queue marks every item with the flavor
+     * and the track's pre-shuffle position, so PlayerConnection adopts it
+     * with shuffle on and can restore the order.
+     */
     private suspend fun queueOf(resolution: VoiceSearch.Resolution) = withContext(Dispatchers.Default) {
-        MediaSession.MediaItemsWithStartPosition(
-            orderForVoice(resolution.tracks, resolution.shuffle)
-                .map { MediaItems.toMediaItem(it, uid = nextServiceUid()) },
-            0,
-            0,
-        )
-    }
-
-    private fun orderForVoice(tracks: List<Track>, shuffle: Boolean): List<Track> {
-        if (!shuffle) return tracks
-        val mode = PlayerConnection.defaultShuffleMode(
-            settingsState.value?.shuffle ?: ShuffleSettings(),
-        )
-        return shuffleEngine.order(tracks, mode).map { tracks[it] }
+        val tracks = resolution.tracks
+        val mode = if (resolution.shuffle) {
+            PlayerConnection.defaultShuffleMode(settingsState.value?.shuffle ?: ShuffleSettings())
+        } else {
+            null
+        }
+        val order = if (mode == null) tracks.indices.toList() else shuffleEngine.order(tracks, mode)
+        MediaSession.MediaItemsWithStartPosition(MediaItems.voiceQueue(tracks, order, mode, ::nextServiceUid), 0, 0)
     }
 
     /**

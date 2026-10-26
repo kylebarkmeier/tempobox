@@ -51,6 +51,7 @@ import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -72,6 +73,7 @@ class PlayerConnection internal constructor(
     private val shuffleEngine: ShuffleEngine,
     private val settingsRepository: SettingsRepository,
     private val remotePlay: RemotePlayController,
+    private val stateStore: PlaybackStateStore,
     controllerOverride: ListenableFuture<MediaController>?,
 ) {
     @Inject constructor(
@@ -79,7 +81,8 @@ class PlayerConnection internal constructor(
         shuffleEngine: ShuffleEngine,
         settingsRepository: SettingsRepository,
         remotePlay: RemotePlayController,
-    ) : this(context, shuffleEngine, settingsRepository, remotePlay, controllerOverride = null)
+        stateStore: PlaybackStateStore,
+    ) : this(context, shuffleEngine, settingsRepository, remotePlay, stateStore, controllerOverride = null)
 
     /** Controller calls must happen on the thread it connected on (main). */
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -239,31 +242,46 @@ class PlayerConnection internal constructor(
     }
 
     /**
-     * Hands a spoken query to the service's voice resolver: the same
-     * play-from-search path Assistant drives through the session
-     * (`PlaybackService.onSetMediaItems` sees `requestMetadata.searchQuery`),
-     * here reached from the MEDIA_PLAY_FROM_SEARCH activity intent. [source]
-     * (a [VoiceLog] constant) rides along in the request extras so the
-     * service's log line says where the query came from. The service always
-     * plays something; an empty or unmatched query falls back to the
-     * persisted queue, else a library shuffle. The in-app dialog does not
-     * use this path: [VoiceActions] resolves in-process so it can report a
-     * miss instead.
+     * Plays the queue that is there (paused, stopped or never started).
+     * False when it is empty, so the caller can decide what to play instead.
      */
-    fun playFromSearch(query: String, source: String) {
-        scope.launch {
-            val controller = controller()
-            val item = MediaItem.Builder()
-                .setRequestMetadata(
-                    MediaItem.RequestMetadata.Builder()
-                        .setSearchQuery(query)
-                        .setExtras(Bundle().apply { putString(VoiceLog.EXTRA_SOURCE, source) })
-                        .build(),
-                )
-                .build()
-            controller.setMediaItems(listOf(item))
-            controller.prepare()
-            controller.play()
+    suspend fun resumeQueue(): Boolean = onController { c ->
+        if (c.mediaItemCount == 0) return@onController false
+        when (c.playbackState) {
+            Player.STATE_IDLE -> c.prepare()
+            // Played to the end: "play" means the queue again, not the last track.
+            Player.STATE_ENDED -> c.seekToDefaultPosition(0)
+        }
+        c.play()
+        true
+    }
+
+    /**
+     * With nothing queued, asks the session to bring back the persisted
+     * queue: a play request on an empty player is what makes the session
+     * call `onPlaybackResumption`, the same path as the car's play button.
+     * True only once the queue holds it (the saved tracks may all have left
+     * the library, and then nothing comes); false when persistence is off,
+     * nothing usable is saved, or the restore did not land in time, so the
+     * caller can play something else.
+     */
+    suspend fun restoreSavedQueue(): Boolean {
+        if (!settingsRepository.settings.first().queue.persistQueue) return false
+        if (stateStore.load()?.trackIds.isNullOrEmpty()) return false
+        return withContext(Dispatchers.Main.immediate) {
+            val c = controller()
+            if (c.mediaItemCount > 0) {
+                // The service's own startup restore landed meanwhile (a cold
+                // start through the assistant): that is the saved queue, play it.
+                if (c.playbackState == Player.STATE_IDLE) c.prepare()
+                c.play()
+                refresh(c)
+                return@withContext true
+            }
+            c.play()
+            val restored = withTimeoutOrNull(RESTORE_TIMEOUT_MS) { _queue.first { it.isNotEmpty() } } != null
+            refresh(c)
+            restored
         }
     }
 
@@ -439,6 +457,8 @@ class PlayerConnection internal constructor(
     /** Clears everything and stops playback (queue view's Clear button). */
     fun clearQueue() = withController { c ->
         c.clearMediaItems()
+        // Nothing is shuffled any more; the next queue starts from a clean flag.
+        _shuffleMode.value = ShuffleMode.OFF
         c.stop()
         originalOrderUids = emptyList()
     }
@@ -876,21 +896,31 @@ class PlayerConnection internal constructor(
     }
 
     private fun refresh(c: MediaController) {
-        val items = (0 until c.mediaItemCount).map { MediaItems.toQueueItem(c.getMediaItemAt(it)) }
+        val raw = (0 until c.mediaItemCount).map { c.getMediaItemAt(it) }
+        val items = raw.map(MediaItems::toQueueItem)
         _queue.value = items
 
         // Seed the uid counter above anything already in the restored queue.
         items.maxOfOrNull { it.uid }?.let { maxUid -> if (maxUid >= nextUid) nextUid = maxUid + 1 }
         val knownUids = originalOrderUids.toSet()
-        if (knownUids.isEmpty() && items.isNotEmpty()) {
-            originalOrderUids = items.map { it.uid }
-        } else if (items.isNotEmpty() && items.none { it.uid in knownUids }) {
-            // The queue was replaced outside this connection (Android Auto's
-            // tap-to-queue, playback resumption): none of our bookkept uids
-            // survive. Adopt the new order and drop the stale shuffle flag,
-            // or the widget would keep showing the old queue's mode.
-            originalOrderUids = items.map { it.uid }
-            _shuffleMode.value = ShuffleMode.OFF
+        if (items.isNotEmpty() && (knownUids.isEmpty() || items.none { it.uid in knownUids })) {
+            // A queue this connection did not build: the first one seen, or
+            // one replaced outside it (Android Auto's tap-to-queue or voice,
+            // playback resumption) so that none of our bookkept uids survive.
+            // A queue the service shuffled for a voice request says so on
+            // every item, with each track's pre-shuffle position: adopt that
+            // order and flavor, so the toggle shows shuffle on and "shuffle
+            // off" restores it. Anything else is adopted as is; when it
+            // replaced a queue we knew, its stale flag goes too, or the
+            // widget would keep showing the old queue's mode.
+            val shuffled = raw.map(MediaItems::shuffled)
+            if (shuffled.all { it != null }) {
+                originalOrderUids = items.indices.sortedBy { shuffled[it]!!.originalIndex }.map { items[it].uid }
+                _shuffleMode.value = shuffled.first()!!.mode
+            } else {
+                originalOrderUids = items.map { it.uid }
+                if (knownUids.isNotEmpty()) _shuffleMode.value = ShuffleMode.OFF
+            }
         }
 
         val currentTrack = c.currentMediaItem?.let { MediaItems.toTrack(it) }
@@ -921,6 +951,9 @@ class PlayerConnection internal constructor(
     companion object {
         private const val TAG = "PlayerConnection"
         private const val POSITION_TICK_MS = 500L
+
+        /** How long [restoreSavedQueue] waits for the session's restore to reach the queue. */
+        private const val RESTORE_TIMEOUT_MS = 5_000L
 
         /** Renderer volume step for the voice "volume up/down" commands. */
         private const val VOICE_VOLUME_STEP = 10
