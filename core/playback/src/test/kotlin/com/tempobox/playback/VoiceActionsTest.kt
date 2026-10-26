@@ -132,7 +132,6 @@ class VoiceActionsTest {
         assertThat(actions.execute(VoiceCommand.PlaySearch("shuffle allicorn")))
             .isEqualTo("Playing 2 tracks shuffled (artist: Allicorn)")
         coVerify { player.playShuffled(allicorn.tracks) }
-        verify(exactly = 0) { player.playFromSearch(any(), any()) }
     }
 
     @Test
@@ -188,6 +187,51 @@ class VoiceActionsTest {
         val outcome = actions.execute(VoiceCommand.PlayNext("allicorn"))
         coVerify { player.playNext(allicorn.tracks) }
         assertThat(outcome).isEqualTo("Playing 2 tracks next (artist: Allicorn)")
+    }
+
+    // ------------------------------------------------------------------ assistant
+
+    @Test
+    fun `the assistant intent resolves in-process and logs like the dialog`() = runTest(dispatcher) {
+        actions.playFromAssistant("allicorn")
+        scope.advanceUntilIdle()
+        coVerify { player.playTracks(allicorn.tracks) }
+        verify {
+            voiceLog.record(
+                VoiceLog.SOURCE_ASSISTANT_INTENT, "allicorn", "PlaySearch(query=allicorn)",
+                "Playing 2 tracks (artist: Allicorn)", emptyList(),
+            )
+        }
+    }
+
+    @Test
+    fun `an assistant miss still plays something, in order of preference`() = runTest(dispatcher) {
+        val outcomes = mutableListOf<String>()
+        fun outcome(): String {
+            actions.playFromAssistant("nobody")
+            scope.advanceUntilIdle()
+            verify {
+                voiceLog.record(
+                    VoiceLog.SOURCE_ASSISTANT_INTENT, "nobody", "PlaySearch(query=nobody)", capture(outcomes), emptyList(),
+                )
+            }
+            return outcomes.last()
+        }
+        coEvery { player.resumeQueue() } returns true
+        assertThat(outcome()).isEqualTo("no match; resumed the current queue")
+
+        coEvery { player.resumeQueue() } returns false
+        coEvery { player.restoreSavedQueue() } returns true
+        assertThat(outcome()).isEqualTo("no match; resumed the saved queue")
+
+        coEvery { player.restoreSavedQueue() } returns false
+        coEvery { voiceSearch.wholeLibrary(shuffle = true) } returns
+            VoiceSearch.Resolution(allicorn.tracks, shuffle = true, description = "whole library (2 tracks)")
+        assertThat(outcome()).isEqualTo("no match; shuffled the whole library (2 tracks)")
+        coVerify { player.playShuffled(allicorn.tracks) }
+
+        coEvery { voiceSearch.wholeLibrary(shuffle = true) } returns null
+        assertThat(outcome()).isEqualTo("no match; the library is empty")
     }
 
     // ------------------------------------------------------------------ playlists

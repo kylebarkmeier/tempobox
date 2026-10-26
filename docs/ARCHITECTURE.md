@@ -159,8 +159,9 @@ and bumps each row's mtime so the path+mtime artwork cache key misses.
   `onSetMediaItems` to its whole context (album or playlist) with the tapped
   track first, the same contract as tapping a row in the app; the car's play
   button rebuilds the persisted queue via `onPlaybackResumption`.
-- Voice queries (Assistant play-from-search arrives as
-  `requestMetadata.searchQuery`; Auto's search screen via `onSearch`) resolve
+- Voice queries (the assistant's play-from-search through `MainActivity`'s
+  intent, another controller's as `requestMetadata.searchQuery` on the
+  session, Auto's search screen via `onSearch`, the in-app dialog) resolve
   in `VoiceSearch`, which reads a query several ways and tries every reading
   for an exact name match before any reading for a whole-word match, so a
   loose reading never beats a name that matches as spoken ("Stand By Me"
@@ -184,18 +185,28 @@ and bumps each row's mtime so the path+mtime artwork cache key misses.
   bucket loads at most once per query and only when a reading reaches it,
   off the main thread (the track bucket and the shuffled whole library use
   the unsorted one-shot `getTracks`; track artists come from a names-only
-  query). On the session path an unmatched query falls back to the persisted
-  queue, else a whole-library shuffle, so the assistant and the car always
-  play something. The assistant can only target the app by name because
+  query). The assistant can only target the app by name because
   `MainActivity` declares the `MEDIA_PLAY_FROM_SEARCH` intent filter (without
-  it, "play X on TempoBox" falls back to a web search); the activity forwards
-  the query once per launch (not again on a rotation) to the session via
-  `PlayerConnection.playFromSearch`, whose `source` argument rides in the
-  request extras; the service accepts only the app's own source names from
-  that extra, since any controller may connect, and logs any other
-  controller's query (Android Auto's own voice requests included) as
-  `session:<package>`. Auto's search screen resolves once: `onGetSearchResult`
-  serves what `onSearch` announced.
+  it, "play X on TempoBox" falls back to a web search); the activity hands
+  the query once per launch (not again on a rotation) to
+  `VoiceActions.playFromAssistant`, which resolves it in-process exactly like
+  the dialog's "play X" (`PlayerConnection.playTracks`/`playShuffled`, so the
+  shuffle toggle and "shuffle off" are right) and logs it with source
+  `assistant-intent`; since the assistant shows no outcome, a miss there
+  still plays something: the queue that is there (`PlayerConnection.resumeQueue`),
+  else the persisted one (`restoreSavedQueue`: a play request on an empty
+  player makes the session run `onPlaybackResumption`, the car's play-button
+  path), else the whole library shuffled. The session path
+  (`PlaybackService.onSetMediaItems` with a `searchQuery`) is now only for
+  other controllers, Android Auto's own voice requests among them, logged as
+  `session:<package>`; its miss falls back to the persisted queue, else a
+  whole-library shuffle, so the car always plays something. A queue the
+  service shuffles marks every item (`MediaItems.Shuffled`: flavor and
+  pre-shuffle position), and `PlayerConnection.refresh` adopts such a queue
+  with shuffle on and that order as the one "shuffle off" restores; any other
+  foreign queue is adopted as is, and when it replaced a queue the connection
+  knew, the stale shuffle flag goes with it. Auto's search screen
+  resolves once: `onGetSearchResult` serves what `onSearch` announced.
 - Every voice request is recorded by `VoiceLog` (`core:playback`), an
   append-only file at `no_backup/voice/commands.log` (256 KB, one rotated
   generation `.1`, one writer coroutine draining a channel so lines land in
@@ -208,11 +219,11 @@ and bumps each row's mtime so the path+mtime artwork cache key misses.
   the real outcome, every value quoted. Each line also goes to logcat under
   the `VoiceLog` tag, the tag to filter on for voice requests (a failure
   inside the code that handled one still logs under that code's own tag).
-  The service writes the line for play-from-search and Auto searches, a
-  failed lookup included (`outcome="failed: ..."`); `VoiceActions` writes it
-  for in-app utterances (one line per utterance, after the outcome is
-  known), and `VoiceCommandActivity` for recognizer errors, keeping any
-  partial transcription. Pull it from a debug build with
+  The service writes the `session:<package>` and `auto-search` lines, a
+  failed lookup included (`outcome="failed: ..."`); `VoiceActions` writes the
+  `dialog` lines (one per utterance, after the outcome is known) and the
+  `assistant-intent` lines, and `VoiceCommandActivity` the recognizer
+  errors, keeping any partial transcription. Pull it from a debug build with
   `adb exec-out run-as com.tempobox.debug cat no_backup/voice/commands.log`.
   A new voice entry point must record there too.
 - In-app voice commands need no assistant: `VoiceCommandActivity` (a transient

@@ -54,8 +54,9 @@ import javax.inject.Inject
  * [SpeechRecognizer], hands it to [VoiceActions] (which parses it through
  * the unit-tested [VoiceCommand] grammar, runs it, and logs it), shows the
  * outcome, and finishes. Launched from the Library top bar, the home-screen
- * widget, and the Quick Settings tile ([VoiceTileService]); the assistant
- * and Android Auto go through the media session instead (PlaybackService).
+ * widget, and the Quick Settings tile ([VoiceTileService]); the assistant's
+ * play request reaches [VoiceActions] through MainActivity's intent, and
+ * Android Auto goes through the media session (PlaybackService).
  *
  * Needs no assistant: the recognizer is the device's own speech service.
  */

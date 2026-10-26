@@ -10,8 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import com.tempobox.library.LibraryPermissions
-import com.tempobox.playback.PlayerConnection
-import com.tempobox.playback.VoiceLog
+import com.tempobox.playback.VoiceActions
 import com.tempobox.ui.AppRoot
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -24,13 +23,13 @@ import javax.inject.Inject
  *
  * Also the entry point for assistant voice playback: "play X on TempoBox"
  * arrives as a MEDIA_PLAY_FROM_SEARCH intent (the filter is what lets the
- * assistant target the app by name at all) and is handed to the service's
- * voice resolver.
+ * assistant target the app by name at all) and is handed to [VoiceActions],
+ * the same resolver the in-app dialog uses.
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    @Inject lateinit var playerConnection: PlayerConnection
+    @Inject lateinit var voiceActions: VoiceActions
 
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
@@ -64,13 +63,10 @@ class MainActivity : ComponentActivity() {
         handleVoicePlayIntent(intent)
     }
 
+    /** The VoiceLog line (source `assistant-intent`) records the request and what it played. */
     private fun handleVoicePlayIntent(intent: Intent?) {
         if (intent?.action != MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) return
-        val query = intent.getStringExtra(SearchManager.QUERY).orEmpty()
-        // Shows that the assistant dispatched at all; what the query resolved
-        // to is the service's VoiceLog line (`adb logcat -s MainActivity VoiceLog`).
-        Log.i(TAG, "Play-from-search intent: '$query'")
-        playerConnection.playFromSearch(query, VoiceLog.SOURCE_ASSISTANT_INTENT)
+        voiceActions.playFromAssistant(intent.getStringExtra(SearchManager.QUERY).orEmpty())
     }
 
     private companion object {

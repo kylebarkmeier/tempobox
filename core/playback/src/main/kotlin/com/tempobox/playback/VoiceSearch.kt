@@ -20,9 +20,9 @@ import javax.inject.Singleton
 /**
  * Resolves a voice/search query ("Allicorn", "shuffle back in black",
  * "songs by lamb of god", "thunderstruck by ac/dc", "everything") to a track
- * list. Fed by Assistant's play-from-search and Android Auto's search screen
- * through [PlaybackService]'s session callback, and by the in-app commands
- * through [VoiceActions].
+ * list. Fed by the in-app commands and the assistant's play request through
+ * [VoiceActions], and by other controllers (Android Auto's voice and search
+ * screen) through [PlaybackService]'s session callback.
  *
  * A query is read several ways, in order: as spoken with its type prefix
  * honored ("the artist X" searches artists only), then as "X by Y" (titles
