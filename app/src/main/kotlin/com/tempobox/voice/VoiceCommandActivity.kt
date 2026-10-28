@@ -190,7 +190,9 @@ class VoiceCommandActivity : ComponentActivity() {
         }
 
         override fun onError(error: Int) {
-            val message = recognizerErrorMessage(error)
+            // "No words" from a phone with no network is the service missing,
+            // not the user mumbling; the message and the log line say so.
+            val message = recognizerErrorMessage(error, offline = isOffline(this@VoiceCommandActivity))
             // Partial text already shown in the dialog is the best record of
             // what was said when the recognizer then gives up.
             val heard = (state as? VoiceState.Listening)?.heard.orEmpty()
