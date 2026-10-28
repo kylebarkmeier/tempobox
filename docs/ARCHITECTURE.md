@@ -257,7 +257,12 @@ and bumps each row's mtime so the path+mtime artwork cache key misses.
   object is only a pronoun or filler ("queue up", "play this next", "play
   my") rather than searching for those words, and treats "put on X" as a
   play request whatever X contains ("put on Born to Run"), never a playlist
-  edit. Unknown utterances and recognizer errors are shown with the real
+  edit. When the phone has no active network (airplane mode with every radio
+  off, typically) a recognizer error that an unconnected speech service
+  produces ("could not
+  make out any words", the network and server codes) carries that cause in
+  the dialog and in the log line, since the service then hears nothing
+  whatever was said. Unknown utterances and recognizer errors are shown with the real
   reason (what was heard, or the mapped `SpeechRecognizer` error), never
   silently dropped. The dialog owns the RECORD_AUDIO request; a denial
   switches it to the Open-settings recovery path, same as the local-network
